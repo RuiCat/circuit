@@ -1,0 +1,97 @@
+package resistor
+
+import (
+	"circuit/types"
+	"fmt"
+)
+
+// Type 元件类型
+const Type types.ElementType = 3
+
+// init 初始化
+func init() {
+	types.ElementRegister(Type, "R", &config{})
+}
+
+// config 默认配置
+type config struct{}
+
+// Init 初始化
+func (config) Init(value *types.ElementBase) types.ElementFace {
+	return &Base{
+		ElementBase: value,
+		Value:       value.Value.(*Value),
+	}
+}
+
+// InitValue 元件值
+func (config) InitValue() types.Value {
+	val := &Value{}
+	val.ValueMap = types.ValueMap{
+		"Resistance": float64(0),
+	}
+	return val
+}
+
+// GetPostCount 获取引脚数量
+func (config) GetPostCount() int { return 2 }
+
+// Value 元件值处理结构
+type Value struct {
+	types.ValueBase // 基础创建
+	Resistance      float64
+}
+
+// GetVoltageSourceCnt 电压源数量
+func (vlaue *Value) GetVoltageSourceCnt() int { return 0 }
+
+// GetInternalNodeCount 内壁引脚数量
+func (vlaue *Value) GetInternalNodeCount() int { return 0 }
+
+// Reset 元件值初始化
+func (vlaue *Value) Reset() {
+	val := vlaue.GetValue()
+	vlaue.Resistance = val["Resistance"].(float64)
+}
+
+// CirLoad 网表文件写入值
+func (vlaue *Value) CirLoad(value []string) {}
+
+// CirExport 网表文件导出值
+func (vlaue *Value) CirExport() []string { return []string{} }
+
+// Base 元件实现
+type Base struct {
+	*types.ElementBase
+	*Value
+}
+
+// Type 类型
+func (base *Base) Type() types.ElementType { return Type }
+
+// StartIteration 迭代开始
+func (base *Base) StartIteration(stamp types.Stamp) {}
+
+// Stamp 更新线性贡献
+func (base *Base) Stamp(stamp types.Stamp) {
+	stamp.StampResistor(base.Nodes[0], base.Nodes[1], base.Resistance)
+}
+
+// DoStep 执行元件仿真
+func (base *Base) DoStep(stamp types.Stamp) {}
+
+// CalculateCurrent 电流计算
+func (base *Base) CalculateCurrent(stamp types.Stamp) {
+	// 计算电流（欧姆定律）
+	current := (stamp.GetVoltage(base.Nodes[0]) - stamp.GetVoltage(base.Nodes[1])) / base.Resistance
+	// 储电流值
+	base.Current.SetVec(0, current)
+}
+
+// StepFinished 步长迭代结束
+func (base *Base) StepFinished(stamp types.Stamp) {}
+
+// Debug  调试
+func (base *Base) Debug(stamp types.Stamp) string {
+	return fmt.Sprintf("电阻:%+16f 电流:%+16f", base.Resistance, base.Current.AtVec(0))
+}
