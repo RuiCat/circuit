@@ -120,7 +120,7 @@ func (eb *ElementBase) SetInternalNode(internalNodeIndex int, nodeID NodeID) {
 // GetInternalNode 得到内部引脚ID,扩展使用
 func (eb *ElementBase) GetInternalNode(internalNodeIndex int) NodeID {
 	if internalNodeIndex < 0 || internalNodeIndex >= len(eb.InternalNodes) {
-		return -1 // 无效节点
+		return 0 // 无效节点(接地)
 	}
 	return eb.InternalNodes[internalNodeIndex]
 }

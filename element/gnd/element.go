@@ -8,16 +8,11 @@ import (
 // Type 元件类型
 const Type types.ElementType = 1
 
-// init 初始化
-func init() {
-	types.ElementRegister(Type, "G", &config{})
-}
-
-// config 默认配置
-type config struct{}
+// Config 默认配置
+type Config struct{}
 
 // Init 初始化
-func (config) Init(value *types.ElementBase) types.ElementFace {
+func (Config) Init(value *types.ElementBase) types.ElementFace {
 	return &Base{
 		ElementBase: value,
 		Value:       value.Value.(*Value),
@@ -25,14 +20,14 @@ func (config) Init(value *types.ElementBase) types.ElementFace {
 }
 
 // InitValue 元件值
-func (config) InitValue() types.Value {
+func (Config) InitValue() types.Value {
 	val := &Value{}
 	val.ValueMap = types.ValueMap{}
 	return val
 }
 
 // GetPostCount 获取引脚数量
-func (config) GetPostCount() int { return 1 }
+func (Config) GetPostCount() int { return 1 }
 
 // Value 元件值处理结构
 type Value struct {

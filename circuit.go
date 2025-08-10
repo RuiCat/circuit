@@ -5,9 +5,9 @@ import (
 	"circuit/graph"
 	"circuit/mna"
 	"circuit/types"
+	"math"
 
 	"fmt"
-	"math"
 
 	"os"
 	"strconv"
@@ -115,13 +115,17 @@ func (cir *Circuit) Export(filename string) error {
 	return nil
 }
 
-// Simulate 时域仿真主循环
-func (c *Circuit) Simulate(endTime float64, call func(mna *mna.MNA)) {
-	// 初始化
-	mna := mna.NewMNA(graph.NewGraph(c.WireLink))
-	if call != nil {
-		call(mna)
+// MNA 得到节点电压计算结构体
+func (c *Circuit) MNA() (*mna.MNA, error) {
+	g, err := graph.NewGraph(c.WireLink)
+	if err != nil {
+		return nil, err
 	}
+	return mna.NewMNA(g), nil
+}
+
+// Simulate 进行仿真
+func Simulate(endTime float64, mna *mna.MNA) error {
 	// 主时间循环
 	var goodIterations int
 	var maxGoodIter int
@@ -151,15 +155,18 @@ func (c *Circuit) Simulate(endTime float64, call func(mna *mna.MNA)) {
 				maxGoodIter = 0
 			}
 		case maxGoodIter > types.MaxIterations: // 达到最大错误数量
-			return
+			return nil
 		case mna.Time > endTime: // 结束位限制
-			return
+			return nil
 		}
 		// 计算矩阵
-		if mna.Solve() {
+		if ok, err := mna.Solve(); err != nil {
+			return err
+		} else if ok {
 			// 更新步进
 			goodIterations++
-			mna.DebugMNA()
+			// 递归次数
+			mna.GoodIterations++
 		} else {
 			// 失败不更新
 			goodIterations--
@@ -167,6 +174,8 @@ func (c *Circuit) Simulate(endTime float64, call func(mna *mna.MNA)) {
 		}
 		// 处理下一个时间片
 		mna.Time += mna.TimeStep
-		mna.GoodIterations++
+		// 输出调试
+		mna.DebugMNA()
 	}
+	return nil
 }

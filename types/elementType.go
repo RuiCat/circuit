@@ -58,9 +58,9 @@ func GetNameType(name string) ElementType {
 }
 
 // ElementRegister 注册元件类型
-func ElementRegister(et ElementType, name string, config ElementConfig) {
+func ElementRegister(et ElementType, name string, config ElementConfig) error {
 	if _, ok := slementTypeString[et]; ok {
-		panic(fmt.Errorf("指定元件类型已经注册: %s:%d", name, et))
+		return fmt.Errorf("指定元件类型已经注册: %s:%d", name, et)
 	}
 	mapName[name] = et
 	slementTypeString[et] = struct {
@@ -70,4 +70,5 @@ func ElementRegister(et ElementType, name string, config ElementConfig) {
 		Name:          name,
 		ElementConfig: config,
 	}
+	return nil
 }

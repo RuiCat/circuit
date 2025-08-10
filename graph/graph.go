@@ -11,7 +11,7 @@ import (
 type Graph struct{ types.ElementGraph }
 
 // NewGraph 创建图
-func NewGraph(wireLink *types.WireLink) (graph *Graph) {
+func NewGraph(wireLink *types.WireLink) (graph *Graph, err error) {
 	graph = &Graph{
 		ElementGraph: types.ElementGraph{
 			StampTime: &types.StampTime{
@@ -33,14 +33,14 @@ func NewGraph(wireLink *types.WireLink) (graph *Graph) {
 			OscillationCountMax: types.MaxOscillationCount, // 震荡最大值
 		},
 	}
-	graph.Init(wireLink)
-	return graph
+	err = graph.Init(wireLink)
+	return graph, err
 }
 
 // addElement 添加节点
-func (graph *Graph) addElement(eid types.ElementID, eleWire *types.ElementWire) {
+func (graph *Graph) addElement(eid types.ElementID, eleWire *types.ElementWire) error {
 	if _, ok := graph.ElementList[eid]; ok {
-		panic(fmt.Errorf("节点重复创建失败: %d", eid))
+		return fmt.Errorf("节点重复创建失败: %d", eid)
 	}
 	e := &types.Element{}
 	e.ElementBase = eleWire.ElementBase
@@ -50,10 +50,11 @@ func (graph *Graph) addElement(eid types.ElementID, eleWire *types.ElementWire) 
 		graph.NumVoltageSources++
 	}
 	graph.ElementList[eid] = e
+	return nil
 }
 
 // Init 初始化
-func (graph *Graph) Init(wireLink *types.WireLink) {
+func (graph *Graph) Init(wireLink *types.WireLink) error {
 	var isGND bool
 	var nodeIDCount int
 	nodeList := map[types.NodeID][]types.ElementID{}         // 节点连接
@@ -74,7 +75,9 @@ func (graph *Graph) Init(wireLink *types.WireLink) {
 					continue
 				}
 				// 创建节点
-				graph.addElement(eid, ew)
+				if err := graph.addElement(eid, ew); err != nil {
+					return err
+				}
 				// 重置
 				el = graph.ElementList[eid]
 			}
@@ -119,7 +122,9 @@ func (graph *Graph) Init(wireLink *types.WireLink) {
 				e.Nodes[0] = nodeIDCount
 				ele.Nodes[pinID] = nodeIDCount
 				// 添加节点
-				graph.addElement(nodeCount, e)
+				if err := graph.addElement(nodeCount, e); err != nil {
+					return err
+				}
 				nodeList[nodeIDCount] = []types.ElementID{nodeCount, eid}
 				// 更新索引
 				nodeCount++
@@ -139,4 +144,5 @@ func (graph *Graph) Init(wireLink *types.WireLink) {
 	for i := 0; i < nodeIDCount; i++ {
 		graph.NodeList[i] = nodeList[i]
 	}
+	return nil
 }
