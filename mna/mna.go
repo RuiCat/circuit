@@ -18,19 +18,24 @@ type MNA struct {
 	MatB *mat.VecDense // 右侧激励向量
 	// 线性分析备份
 	OrigJ *mat.Dense    // 原始矩阵备份(用于牛顿迭代回滚)
-	OrigX *mat.VecDense //未知量向量备份
+	OrigX *mat.VecDense // 未知量向量备份
 	OrigB *mat.VecDense // 原始右侧向量备份
 	// 因式分解
 	Lu mat.LU // 因式分解
 	// 阻尼Newton-Raphson参数
-	DampingFactor    float64 // 阻尼因子，初始值1.0
-	MinDampingFactor float64 // 最小阻尼因子，如0.1
-	DampingReduction float64 // 阻尼减少因子，如0.5
+	DampingFactor    float64 // 阻尼因子
+	MinDampingFactor float64 // 最小阻尼因子
+	DampingReduction float64 // 阻尼减少因子
 }
 
 // NewMNA 创建
 func NewMNA(graph *graph.Graph) (mna *MNA) {
-	mna = &MNA{Graph: graph}
+	mna = &MNA{
+		Graph:            graph,
+		DampingFactor:    1.0,
+		MinDampingFactor: 0.1,
+		DampingReduction: 0.5,
+	}
 	// 初始化矩阵
 	n := mna.NumNodes + mna.NumVoltageSources
 	mna.MatJ = mat.NewDense(n, n, nil) // 初始化系统矩阵
@@ -113,15 +118,22 @@ func (mna *MNA) OrigRestore() {
 }
 
 // 修改Solve方法，添加阻尼控制
-func (mna *MNA) Solve() (_ bool, err error) {
+func (mna *MNA) Solve() (ok bool, err error) {
+	// 处理备份
 	mna.BackupTimeStepState()
+	defer func() {
+		if !ok {
+			mna.RestoreTimeStepState()
+		}
+	}()
+	// 开始迭代
 	for _, ele := range mna.ElementList {
 		ele.StartIteration(mna)
 	}
-	iter := 0
-	prevResidual := 0.0
+	mna.Iter = 0            // 迭代次数
 	mna.DampingFactor = 1.0 // 重置阻尼因子
-	for ; iter < mna.MaxIter; iter++ {
+	prevResidual := 0.0     // 残差
+	for ; mna.Iter < mna.MaxIter; mna.Iter++ {
 		// 线性矩阵还原
 		mna.OrigRestore()
 		// 算计解
@@ -144,7 +156,7 @@ func (mna *MNA) Solve() (_ bool, err error) {
 		// 计算残差
 		maxResidual := mna.calculateResidual()
 		// 阻尼自适应调整
-		if iter > 0 && maxResidual > prevResidual {
+		if mna.Iter > 0 && maxResidual > prevResidual {
 			// 残差增大，减少阻尼因子
 			mna.DampingFactor = math.Max(mna.DampingFactor*mna.DampingReduction, mna.MinDampingFactor)
 		} else if maxResidual < prevResidual*0.5 {
@@ -152,18 +164,17 @@ func (mna *MNA) Solve() (_ bool, err error) {
 			mna.DampingFactor = math.Min(mna.DampingFactor*1.2, 1.0)
 		}
 		if maxResidual < mna.ConvergenceTol {
-			break
+			break // 已经收敛
 		}
 		// 振荡检测逻辑保持不变
-		if iter > 0 {
+		if mna.Iter > 0 {
 			if maxResidual > prevResidual*1.5 {
 				mna.OscillationCount++
 			} else if maxResidual < prevResidual*0.5 {
 				mna.OscillationCount = 0
 			}
 			if mna.OscillationCount > mna.OscillationCountMax {
-
-				return false, fmt.Errorf("发散振荡 at iter=%d, res=%.3e", iter, maxResidual)
+				return false, fmt.Errorf("发散振荡 at iter=%d, res=%.3e", mna.Iter, maxResidual)
 			}
 		}
 		prevResidual = maxResidual
@@ -188,8 +199,8 @@ func (mna *MNA) Solve() (_ bool, err error) {
 		}
 	}
 	// 迭代失败
-	if iter == mna.MaxIter && prevResidual > mna.ConvergenceTol {
-		mna.RestoreTimeStepState()
+	if mna.Iter == mna.MaxIter && prevResidual > mna.ConvergenceTol {
+		fmt.Println(mna.Iter, prevResidual, mna.ConvergenceTol)
 		return false, nil
 	}
 	return true, nil
@@ -418,7 +429,7 @@ func (mna *MNA) DebugMNA() {
 		}
 	}
 	// 周期输出
-	str += fmt.Sprintf("------------------------------------------ 时间:%f 步进: %f 步数:%d  ------------------------------------------\n", mna.Time, mna.TimeStep, mna.GoodIterations)
+	str += fmt.Sprintf("------------------------------------------ 时间: %f 步进: %f 步数: %d 迭代: %d 阻尼: %f ----------------------------------------\n", mna.Time, mna.TimeStep, mna.GoodIterations, mna.Iter, mna.DampingFactor)
 	str += fmt.Sprintln("系统矩阵: A")
 	str += fmt.Sprintln(mat.Formatted(mna.MatJ))
 	str += fmt.Sprintln("节点电压: x")

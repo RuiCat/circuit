@@ -21,7 +21,7 @@ func main() {
 	mna.Debug = true
 	mna.IsTrapezoidal = true
 	// 测试仿真
-	if err := circuit.Simulate(1, mna); err != nil {
+	if err := circuit.Simulate(2, mna); err != nil {
 		fmt.Println(err)
 	}
 }

@@ -155,7 +155,7 @@ func Simulate(endTime float64, mna *mna.MNA) error {
 				maxGoodIter = 0
 			}
 		case maxGoodIter > types.MaxIterations: // 达到最大错误数量
-			return nil
+			return fmt.Errorf("到达最大错误数量")
 		case mna.Time > endTime: // 结束位限制
 			return nil
 		}
