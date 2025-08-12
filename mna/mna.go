@@ -22,6 +22,10 @@ type MNA struct {
 	OrigB *mat.VecDense // 原始右侧向量备份
 	// 因式分解
 	Lu mat.LU // 因式分解
+	// 阻尼Newton-Raphson参数
+	DampingFactor    float64 // 阻尼因子，初始值1.0
+	MinDampingFactor float64 // 最小阻尼因子，如0.1
+	DampingReduction float64 // 阻尼减少因子，如0.5
 }
 
 // NewMNA 创建
@@ -108,49 +112,49 @@ func (mna *MNA) OrigRestore() {
 	mna.MatB.CopyVec(mna.OrigB)
 }
 
-// Solve 求解
+// 修改Solve方法，添加阻尼控制
 func (mna *MNA) Solve() (_ bool, err error) {
-	// 迭代开始
 	mna.BackupTimeStepState()
 	for _, ele := range mna.ElementList {
 		ele.StartIteration(mna)
 	}
-	// 牛顿-拉夫森方法
 	iter := 0
 	prevResidual := 0.0
+	mna.DampingFactor = 1.0 // 重置阻尼因子
 	for ; iter < mna.MaxIter; iter++ {
-		// 还原线性元件贡献
+		// 线性矩阵还原
 		mna.OrigRestore()
-		// 执行元件仿真
+		// 算计解
 		for _, ele := range mna.ElementList {
 			ele.DoStep(mna)
 		}
-		// 因式分解
+		// 标准Newton-Raphson求解得到的完整步长解
 		mna.Lu.Factorize(mna.MatJ)
 		if err := mna.Lu.SolveVecTo(mna.MatX, false, mna.MatB); err != nil {
 			return false, fmt.Errorf("矩阵求解失败: %v", err)
 		}
+		// mna.MatX = mna.OrigX + α × (mna.MatX - mna.OrigX) 阻尼实现
+		mna.MatX.SubVec(mna.MatX, mna.OrigX)           // Δx = x_newton - x_old
+		mna.MatX.ScaleVec(mna.DampingFactor, mna.MatX) // Δx = α × Δx
+		mna.MatX.AddVec(mna.MatX, mna.OrigX)           // x_final = x_old + α × Δx
 		// 计算电流
 		for _, ele := range mna.ElementList {
 			ele.CalculateCurrent(mna)
 		}
-		// 收敛判断
-		maxResidual := 0.0
-		for i := 0; i < mna.MatB.Len(); i++ {
-			row := mna.MatJ.RowView(i)
-			sum := 0.0
-			for j := 0; j < row.Len(); j++ {
-				sum += row.AtVec(j) * mna.MatX.AtVec(j)
-			}
-			res := math.Abs(sum - mna.MatB.AtVec(i))
-			if res > maxResidual {
-				maxResidual = res
-			}
+		// 计算残差
+		maxResidual := mna.calculateResidual()
+		// 阻尼自适应调整
+		if iter > 0 && maxResidual > prevResidual {
+			// 残差增大，减少阻尼因子
+			mna.DampingFactor = math.Max(mna.DampingFactor*mna.DampingReduction, mna.MinDampingFactor)
+		} else if maxResidual < prevResidual*0.5 {
+			// 残差快速减小，可以增加阻尼因子
+			mna.DampingFactor = math.Min(mna.DampingFactor*1.2, 1.0)
 		}
-		// 双阈值收敛判断
 		if maxResidual < mna.ConvergenceTol {
-			break // 退出迭代循环
+			break
 		}
+		// 振荡检测逻辑保持不变
 		if iter > 0 {
 			if maxResidual > prevResidual*1.5 {
 				mna.OscillationCount++
@@ -158,10 +162,11 @@ func (mna *MNA) Solve() (_ bool, err error) {
 				mna.OscillationCount = 0
 			}
 			if mna.OscillationCount > mna.OscillationCountMax {
+
 				return false, fmt.Errorf("发散振荡 at iter=%d, res=%.3e", iter, maxResidual)
 			}
 		}
-		prevResidual = maxResidual // 更新记录
+		prevResidual = maxResidual
 	}
 	// 调用结束
 	for _, ele := range mna.ElementList {
@@ -188,6 +193,23 @@ func (mna *MNA) Solve() (_ bool, err error) {
 		return false, nil
 	}
 	return true, nil
+}
+
+// 辅助方法：计算残差
+func (mna *MNA) calculateResidual() float64 {
+	maxResidual := 0.0
+	for i := 0; i < mna.MatB.Len(); i++ {
+		row := mna.MatJ.RowView(i)
+		sum := 0.0
+		for j := 0; j < row.Len(); j++ {
+			sum += row.AtVec(j) * mna.MatX.AtVec(j)
+		}
+		res := math.Abs(sum - mna.MatB.AtVec(i))
+		if res > maxResidual {
+			maxResidual = res
+		}
+	}
+	return maxResidual
 }
 
 // 返回电路节点数量,不包含电压数量

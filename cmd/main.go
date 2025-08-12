@@ -6,7 +6,6 @@ import (
 )
 
 func main() {
-
 	wl := circuit.NewCircuit()
 	fmt.Println(wl.Load("./test.asc"))
 	wl.ElementList[0].SetKeyValue("Voltage", float64(5))
