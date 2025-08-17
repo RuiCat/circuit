@@ -86,23 +86,14 @@ func (mna *MNA) StampUP() {
 	mna.MatB.Zero()
 	mna.OrigJ.Zero()
 	mna.OrigB.Zero()
+	mna.OrigX.Zero()
 	// 加盖矩阵
 	for _, ele := range mna.ElementList {
 		ele.Stamp(mna) // 加盖线性元件贡献
 	}
 	// 性矩阵备份
 	mna.OrigBackUP()
-	mna.BackupTimeStepState()
-}
-
-// 在时间步开始时备份
-func (mna *MNA) BackupTimeStepState() {
 	mna.OrigX.CopyVec(mna.MatX)
-}
-
-// 只在时间步长调整失败时还原
-func (mna *MNA) RestoreTimeStepState() {
-	mna.MatX.CopyVec(mna.OrigX)
 }
 
 // Orig 线性矩阵备份
@@ -111,7 +102,7 @@ func (mna *MNA) OrigBackUP() {
 	mna.OrigB.CopyVec(mna.MatB)
 }
 
-// OrigRestore 线性矩阵还原
+// OrigRestore 线性贡献矩阵还原
 func (mna *MNA) OrigRestore() {
 	mna.MatJ.Copy(mna.OrigJ)
 	mna.MatB.CopyVec(mna.OrigB)
@@ -120,10 +111,10 @@ func (mna *MNA) OrigRestore() {
 // 修改Solve方法，添加阻尼控制
 func (mna *MNA) Solve() (ok bool, err error) {
 	// 处理备份
-	mna.BackupTimeStepState()
 	defer func() {
 		if !ok {
-			mna.RestoreTimeStepState()
+			// 失败退回结果
+			mna.MatX.CopyVec(mna.OrigX)
 		}
 	}()
 	// 开始迭代
@@ -149,6 +140,7 @@ func (mna *MNA) Solve() (ok bool, err error) {
 		mna.MatX.SubVec(mna.MatX, mna.OrigX)           // Δx = x_newton - x_old
 		mna.MatX.ScaleVec(mna.DampingFactor, mna.MatX) // Δx = α × Δx
 		mna.MatX.AddVec(mna.MatX, mna.OrigX)           // x_final = x_old + α × Δx
+		mna.OrigX.CopyVec(mna.MatX)                    // 接受结果
 		// 计算电流
 		for _, ele := range mna.ElementList {
 			ele.CalculateCurrent(mna)
@@ -200,7 +192,6 @@ func (mna *MNA) Solve() (ok bool, err error) {
 	}
 	// 迭代失败
 	if mna.Iter == mna.MaxIter && prevResidual > mna.ConvergenceTol {
-		fmt.Println(mna.Iter, prevResidual, mna.ConvergenceTol)
 		return false, nil
 	}
 	return true, nil
