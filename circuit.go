@@ -167,15 +167,13 @@ func Simulate(endTime float64, mna *mna.MNA) error {
 			goodIterations++
 			// 递归次数
 			mna.GoodIterations++
+			// 推进时间
+			mna.Time += mna.TimeStep
 		} else {
 			// 失败不更新
 			goodIterations--
 			maxGoodIter++
 		}
-		// 处理下一个时间片
-		mna.Time += mna.TimeStep
-		// 输出调试
-		mna.DebugMNA()
 	}
 	return nil
 }

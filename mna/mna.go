@@ -11,15 +11,19 @@ import (
 
 // MMA 修正节点电压法实现
 type MNA struct {
-	*graph.Graph // 图表信息
+	*graph.Graph        // 图表信息
+	Debug        *Debug // 调试信息
+	// 底层数据
+	Data [][]float64
 	// 核心矩阵系统
 	MatJ *mat.Dense    // 系统导纳矩阵(N×N维)
 	MatX *mat.VecDense // 未知量向量(节点电压+支路电流)
 	MatB *mat.VecDense // 右侧激励向量
 	// 线性分析备份
-	OrigJ *mat.Dense    // 原始矩阵备份(用于牛顿迭代回滚)
-	OrigX *mat.VecDense // 未知量向量备份
-	OrigB *mat.VecDense // 原始右侧向量备份
+	OrigJ  *mat.Dense    // 原始矩阵备份(用于牛顿迭代回滚)
+	OrigX  *mat.VecDense // 未知量向量备份
+	OrigXs *mat.VecDense // 未知量向量回退使用
+	OrigB  *mat.VecDense // 原始右侧向量备份
 	// 因式分解
 	Lu mat.LU // 因式分解
 	// 阻尼Newton-Raphson参数
@@ -32,6 +36,7 @@ type MNA struct {
 func NewMNA(graph *graph.Graph) (mna *MNA) {
 	mna = &MNA{
 		Graph:            graph,
+		Debug:            NewDebug(graph),
 		DampingFactor:    1.0,
 		MinDampingFactor: 0.1,
 		DampingReduction: 0.5,
@@ -43,8 +48,16 @@ func NewMNA(graph *graph.Graph) (mna *MNA) {
 	mna.MatX = mat.NewVecDense(n, nil) // 初始化解向量
 	// 初始化备份
 	mna.OrigJ = mat.NewDense(n, n, nil)
-	mna.OrigX = mat.NewVecDense(n, nil)
 	mna.OrigB = mat.NewVecDense(n, nil)
+	mna.OrigX = mat.NewVecDense(n, nil)
+	mna.OrigXs = mat.NewVecDense(n, nil)
+	// 数据记录
+	mna.Data = append(mna.Data, mna.MatJ.RawMatrix().Data)
+	mna.Data = append(mna.Data, mna.MatB.RawVector().Data)
+	mna.Data = append(mna.Data, mna.MatX.RawVector().Data)
+	mna.Data = append(mna.Data, mna.OrigJ.RawMatrix().Data)
+	mna.Data = append(mna.Data, mna.OrigB.RawVector().Data)
+	mna.Data = append(mna.Data, mna.OrigX.RawVector().Data)
 	// 重置
 	mna.Zero()
 	return mna
@@ -92,29 +105,19 @@ func (mna *MNA) StampUP() {
 		ele.Stamp(mna) // 加盖线性元件贡献
 	}
 	// 性矩阵备份
-	mna.OrigBackUP()
-	mna.OrigX.CopyVec(mna.MatX)
-}
-
-// Orig 线性矩阵备份
-func (mna *MNA) OrigBackUP() {
 	mna.OrigJ.Copy(mna.MatJ)
 	mna.OrigB.CopyVec(mna.MatB)
-}
-
-// OrigRestore 线性贡献矩阵还原
-func (mna *MNA) OrigRestore() {
-	mna.MatJ.Copy(mna.OrigJ)
-	mna.MatB.CopyVec(mna.OrigB)
+	mna.OrigX.CopyVec(mna.MatX)
 }
 
 // 修改Solve方法，添加阻尼控制
 func (mna *MNA) Solve() (ok bool, err error) {
 	// 处理备份
+	mna.OrigXs.CopyVec(mna.MatX)
 	defer func() {
 		if !ok {
 			// 失败退回结果
-			mna.MatX.CopyVec(mna.OrigX)
+			mna.MatX.CopyVec(mna.OrigXs)
 		}
 	}()
 	// 开始迭代
@@ -126,7 +129,8 @@ func (mna *MNA) Solve() (ok bool, err error) {
 	prevResidual := 0.0     // 残差
 	for ; mna.Iter < mna.MaxIter; mna.Iter++ {
 		// 线性矩阵还原
-		mna.OrigRestore()
+		mna.MatJ.Copy(mna.OrigJ)
+		mna.MatB.CopyVec(mna.OrigB)
 		// 算计解
 		for _, ele := range mna.ElementList {
 			ele.DoStep(mna)
@@ -176,7 +180,7 @@ func (mna *MNA) Solve() (ok bool, err error) {
 		ele.StepFinished(mna)
 	}
 	// 检查矩阵
-	if mna.Debug {
+	if mna.Debug.IsDebug {
 		// 检查电压源约束行
 		for i := mna.NumNodes + 1; i < mna.MatJ.RawMatrix().Rows; i++ {
 			if math.Abs(mna.MatJ.At(i, i)) < 1e-12 {
@@ -189,6 +193,8 @@ func (mna *MNA) Solve() (ok bool, err error) {
 				return false, fmt.Errorf("弱节点%d (diag=%.1e)", i, mna.MatJ.At(i, i))
 			}
 		}
+		// 更新
+		mna.Debug.Update(mna)
 	}
 	// 迭代失败
 	if mna.Iter == mna.MaxIter && prevResidual > mna.ConvergenceTol {
@@ -395,29 +401,24 @@ func (mna *MNA) StampCCCS(n1, n2 types.NodeID, vs types.VoltageID, gain float64)
 }
 
 // String 输出结构
-func (mna *MNA) DebugMNA() {
-	if !mna.Debug {
-		return
-	}
+func (mna *MNA) String() string {
 	var str string
 	// 初始化输出
-	if mna.GoodIterations == 0 {
-		str += fmt.Sprintln("节点ID: [元件列表]")
-		for id, v := range mna.NodeList {
-			str += fmt.Sprintf(" %d: %v\n", id, v)
+	str += fmt.Sprintln("节点ID: [元件列表]")
+	for id, v := range mna.NodeList {
+		str += fmt.Sprintf(" %d: %v\n", id, v)
+	}
+	str += fmt.Sprintln("元件ID: 元件类型 [元件数据] {引脚索引}")
+	for id, v := range mna.ElementList {
+		str += fmt.Sprintf(" %d: %s [\n", id, v.Type())
+		for k, kv := range v.Value.GetValue() {
+			str += fmt.Sprintf("     %v:%v\n", k, kv)
 		}
-		str += fmt.Sprintln("元件ID: 元件类型 [元件数据] {引脚索引}")
-		for id, v := range mna.ElementList {
-			str += fmt.Sprintf(" %d: %s [\n", id, v.Type())
-			for k, kv := range v.Value.GetValue() {
-				str += fmt.Sprintf("     %v:%v\n", k, kv)
-			}
-			str += " ] Pin: {\n"
-			for k, kv := range v.Nodes {
-				str += fmt.Sprintf("     %v->%v\n", k, kv)
-			}
-			str += " }\n"
+		str += " ] Pin: {\n"
+		for k, kv := range v.Nodes {
+			str += fmt.Sprintf("     %v->%v\n", k, kv)
 		}
+		str += " }\n"
 	}
 	// 周期输出
 	str += fmt.Sprintf("------------------------------------------ 时间: %f 步进: %f 步数: %d 迭代: %d 阻尼: %f ----------------------------------------\n", mna.Time, mna.TimeStep, mna.GoodIterations, mna.Iter, mna.DampingFactor)
@@ -427,16 +428,14 @@ func (mna *MNA) DebugMNA() {
 	str += fmt.Sprintln(mat.Formatted(mna.MatX))
 	str += fmt.Sprintln("激励向量: b")
 	str += fmt.Sprintln(mat.Formatted(mna.MatB))
-	if mna.GoodIterations == 0 {
-		str += fmt.Sprintln("系统矩阵(线性贡献): A")
-		str += fmt.Sprintln(mat.Formatted(mna.OrigJ))
-		str += fmt.Sprintln("激励向量(线性贡献): b")
-		str += fmt.Sprint(mat.Formatted(mna.OrigB))
-		str += "\n"
-	}
+	str += fmt.Sprintln("系统矩阵(线性贡献): A")
+	str += fmt.Sprintln(mat.Formatted(mna.OrigJ))
+	str += fmt.Sprintln("激励向量(线性贡献): b")
+	str += fmt.Sprint(mat.Formatted(mna.OrigB))
+	str += "\n"
 	str += fmt.Sprintln("元件调试信息:")
 	for i := types.ElementID(0); i < types.ElementID(mna.NumNodes+1); i++ {
 		str += fmt.Sprintf("元件 %d 调试信息: [%s]\n", i, mna.ElementList[i].ElementFace.Debug(mna))
 	}
-	fmt.Println(str)
+	return str
 }

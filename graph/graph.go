@@ -22,7 +22,6 @@ func NewGraph(wireLink *types.WireLink) (graph *Graph, err error) {
 			StampConfig: &types.StampConfig{
 				IsDCAnalysis:  false, // DC分析
 				IsTrapezoidal: false, // 梯形法/向后欧拉法
-				Debug:         false, // 调试
 			}, // 仿真参数
 			MaxIter:             types.MaxIterations,       // 最大迭代次数
 			MaxGoodIter:         types.MaxGoodIter,         // 最大失败数

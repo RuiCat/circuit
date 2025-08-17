@@ -72,5 +72,4 @@ func (time *StampTime) Zero() {
 type StampConfig struct {
 	IsDCAnalysis  bool // DC分析
 	IsTrapezoidal bool // 梯形法
-	Debug         bool // 设置调试
 }
