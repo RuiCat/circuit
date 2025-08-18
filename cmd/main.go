@@ -2,6 +2,7 @@ package main
 
 import (
 	"circuit"
+	"circuit/mna/debug"
 	"fmt"
 	"net/http"
 )
@@ -20,7 +21,8 @@ func main() {
 		return
 	}
 	// 开启调试
-	mna.Debug.IsDebug = true
+	charts := &debug.Charts{}
+	mna.Debug = charts
 	mna.IsTrapezoidal = true
 	go func() {
 		// 测试仿真
@@ -28,6 +30,6 @@ func main() {
 			fmt.Println(err)
 		}
 	}()
-	http.HandleFunc("/", mna.Debug.Handler)
+	http.HandleFunc("/", charts.Handler)
 	http.ListenAndServe(":8081", nil)
 }

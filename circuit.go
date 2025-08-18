@@ -126,6 +126,8 @@ func (c *Circuit) MNA() (*mna.MNA, error) {
 
 // Simulate 进行仿真
 func Simulate(endTime float64, mna *mna.MNA) error {
+	// 初始化调试
+	mna.Debug.Init(mna)
 	// 主时间循环
 	var goodIterations int
 	var maxGoodIter int

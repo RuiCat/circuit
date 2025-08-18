@@ -11,8 +11,8 @@ import (
 
 // MMA 修正节点电压法实现
 type MNA struct {
-	*graph.Graph        // 图表信息
-	Debug        *Debug // 调试信息
+	*graph.Graph       // 图表信息
+	Debug        Debug // 调试信息
 	// 底层数据
 	Data [][]float64
 	// 核心矩阵系统
@@ -36,7 +36,7 @@ type MNA struct {
 func NewMNA(graph *graph.Graph) (mna *MNA) {
 	mna = &MNA{
 		Graph:            graph,
-		Debug:            NewDebug(graph),
+		Debug:            &debug{},
 		DampingFactor:    1.0,
 		MinDampingFactor: 0.1,
 		DampingReduction: 0.5,
@@ -179,8 +179,12 @@ func (mna *MNA) Solve() (ok bool, err error) {
 	for _, ele := range mna.ElementList {
 		ele.StepFinished(mna)
 	}
+	// 迭代失败
+	if mna.Iter == mna.MaxIter && prevResidual > mna.ConvergenceTol {
+		return false, nil
+	}
 	// 检查矩阵
-	if mna.Debug.IsDebug {
+	if mna.Debug.IsDebug() {
 		// 检查电压源约束行
 		for i := mna.NumNodes + 1; i < mna.MatJ.RawMatrix().Rows; i++ {
 			if math.Abs(mna.MatJ.At(i, i)) < 1e-12 {
@@ -195,10 +199,6 @@ func (mna *MNA) Solve() (ok bool, err error) {
 		}
 		// 更新
 		mna.Debug.Update(mna)
-	}
-	// 迭代失败
-	if mna.Iter == mna.MaxIter && prevResidual > mna.ConvergenceTol {
-		return false, nil
 	}
 	return true, nil
 }
@@ -398,44 +398,4 @@ func (mna *MNA) StampCCCS(n1, n2 types.NodeID, vs types.VoltageID, gain float64)
 		}
 	}
 	return nil
-}
-
-// String 输出结构
-func (mna *MNA) String() string {
-	var str string
-	// 初始化输出
-	str += fmt.Sprintln("节点ID: [元件列表]")
-	for id, v := range mna.NodeList {
-		str += fmt.Sprintf(" %d: %v\n", id, v)
-	}
-	str += fmt.Sprintln("元件ID: 元件类型 [元件数据] {引脚索引}")
-	for id, v := range mna.ElementList {
-		str += fmt.Sprintf(" %d: %s [\n", id, v.Type())
-		for k, kv := range v.Value.GetValue() {
-			str += fmt.Sprintf("     %v:%v\n", k, kv)
-		}
-		str += " ] Pin: {\n"
-		for k, kv := range v.Nodes {
-			str += fmt.Sprintf("     %v->%v\n", k, kv)
-		}
-		str += " }\n"
-	}
-	// 周期输出
-	str += fmt.Sprintf("------------------------------------------ 时间: %f 步进: %f 步数: %d 迭代: %d 阻尼: %f ----------------------------------------\n", mna.Time, mna.TimeStep, mna.GoodIterations, mna.Iter, mna.DampingFactor)
-	str += fmt.Sprintln("系统矩阵: A")
-	str += fmt.Sprintln(mat.Formatted(mna.MatJ))
-	str += fmt.Sprintln("节点电压: x")
-	str += fmt.Sprintln(mat.Formatted(mna.MatX))
-	str += fmt.Sprintln("激励向量: b")
-	str += fmt.Sprintln(mat.Formatted(mna.MatB))
-	str += fmt.Sprintln("系统矩阵(线性贡献): A")
-	str += fmt.Sprintln(mat.Formatted(mna.OrigJ))
-	str += fmt.Sprintln("激励向量(线性贡献): b")
-	str += fmt.Sprint(mat.Formatted(mna.OrigB))
-	str += "\n"
-	str += fmt.Sprintln("元件调试信息:")
-	for i := types.ElementID(0); i < types.ElementID(mna.NumNodes+1); i++ {
-		str += fmt.Sprintf("元件 %d 调试信息: [%s]\n", i, mna.ElementList[i].ElementFace.Debug(mna))
-	}
-	return str
 }
