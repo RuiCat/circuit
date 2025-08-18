@@ -93,6 +93,29 @@ func (c *Charts) Render(w io.Writer) error {
 		}),
 		charts.WithAnimation(true),
 	)
+	lineI := charts.NewLine()
+	lineI.SetGlobalOptions(
+		charts.WithInitializationOpts(opts.Initialization{
+			Theme: types.ThemeWesteros,
+		}),
+		charts.WithTitleOpts(opts.Title{
+			Title:    "激励曲线",
+			Subtitle: "电路节点激励随时间变化曲线",
+		}),
+		charts.WithXAxisOpts(opts.XAxis{
+			SplitNumber: 20,
+		}),
+		charts.WithYAxisOpts(opts.YAxis{
+			Scale: opts.Bool(true),
+		}),
+		charts.WithDataZoomOpts(opts.DataZoom{
+			Type:       "inside",
+			Start:      50,
+			End:        100,
+			XAxisIndex: []int{0},
+		}),
+		charts.WithAnimation(true),
+	)
 	// 处理数据
 	{
 		// 初始化电路节点
@@ -145,43 +168,68 @@ func (c *Charts) Render(w io.Writer) error {
 				FocusNodeAdjacency: opts.Bool(true),
 			}))
 		// 电压信息
-		lineV.SetXAxis(c.Time)
-		itemsV := make([][]opts.LineData, 0)
-		seriesV := make([]charts.SingleSeries, 0)
-		for i := range c.Voltage[0] {
-			itemsV = append(itemsV, make([]opts.LineData, len(c.Time)))
-			seriesV = append(seriesV, charts.SingleSeries{
-				Name: fmt.Sprintf("%d", i),
-				Data: itemsV[i],
-				Type: types.ChartLine,
-			})
-			seriesV[i].InitSeriesDefaultOpts(lineV.BaseConfiguration)
-		}
-		for i, v := range c.Voltage {
-			for x, t := range v {
-				itemsV[x][i].Value = t
+		{
+			lineV.SetXAxis(c.Time)
+			itemsV := make([][]opts.LineData, 0)
+			seriesV := make([]charts.SingleSeries, 0)
+			for i := range c.Voltage[0] {
+				itemsV = append(itemsV, make([]opts.LineData, len(c.Time)))
+				seriesV = append(seriesV, charts.SingleSeries{
+					Name: fmt.Sprintf("Node(%d)", i+1),
+					Data: itemsV[i],
+					Type: types.ChartLine,
+				})
+				seriesV[i].InitSeriesDefaultOpts(lineV.BaseConfiguration)
 			}
+			for i, v := range c.Voltage {
+				for x, t := range v {
+					itemsV[x][i].Value = t
+				}
+			}
+			lineV.MultiSeries = seriesV
 		}
-		lineV.MultiSeries = seriesV
 		// 电流信息
-		lineA.SetXAxis(c.Time)
-		itemsA := make([][]opts.LineData, 0)
-		seriesA := make([]charts.SingleSeries, 0)
-		for i := range c.Current[0] {
-			itemsA = append(itemsA, make([]opts.LineData, len(c.Time)))
-			seriesA = append(seriesA, charts.SingleSeries{
-				Name: fmt.Sprintf("%d", i),
-				Data: itemsA[i],
-				Type: types.ChartLine,
-			})
-			seriesA[i].InitSeriesDefaultOpts(lineA.BaseConfiguration)
-		}
-		for i, v := range c.Current {
-			for x, t := range v {
-				itemsA[x][i].Value = t
+		{
+			lineA.SetXAxis(c.Time)
+			itemsA := make([][]opts.LineData, 0)
+			seriesA := make([]charts.SingleSeries, 0)
+			for i := range c.Current[0] {
+				itemsA = append(itemsA, make([]opts.LineData, len(c.Time)))
+				seriesA = append(seriesA, charts.SingleSeries{
+					Name: fmt.Sprintf("%d", i),
+					Data: itemsA[i],
+					Type: types.ChartLine,
+				})
+				seriesA[i].InitSeriesDefaultOpts(lineA.BaseConfiguration)
 			}
+			for i, v := range c.Current {
+				for x, t := range v {
+					itemsA[x][i].Value = t
+				}
+			}
+			lineA.MultiSeries = seriesA
 		}
-		lineA.MultiSeries = seriesA
+		// 激励信息
+		{
+			lineI.SetXAxis(c.Time)
+			itemsI := make([][]opts.LineData, 0)
+			seriesI := make([]charts.SingleSeries, 0)
+			for i := range c.Incentive[0] {
+				itemsI = append(itemsI, make([]opts.LineData, len(c.Time)))
+				seriesI = append(seriesI, charts.SingleSeries{
+					Name: fmt.Sprintf("%d", i),
+					Data: itemsI[i],
+					Type: types.ChartLine,
+				})
+				seriesI[i].InitSeriesDefaultOpts(lineI.BaseConfiguration)
+			}
+			for i, v := range c.Incentive {
+				for x, t := range v {
+					itemsI[x][i].Value = t
+				}
+			}
+			lineI.MultiSeries = seriesI
+		}
 	}
 	// 构建界面
 	page := components.NewPage()
@@ -189,6 +237,7 @@ func (c *Charts) Render(w io.Writer) error {
 		graph,
 		lineV,
 		lineA,
+		lineI,
 	)
 	return page.Render(w)
 }

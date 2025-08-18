@@ -70,6 +70,11 @@ func (mna *MNA) SetValue(id types.ElementID, value types.ValueMap) {
 	}
 }
 
+// GetDampingFactor 得到阻尼因子
+func (mna *MNA) GetDampingFactor() float64 {
+	return mna.DampingFactor
+}
+
 // GetValue 得到元件的值
 func (mna *MNA) GetValue(id types.ElementID) (value types.ValueMap) {
 	if v, ok := mna.ElementList[id]; ok {
@@ -85,8 +90,9 @@ func (mna *MNA) Zero() {
 	mna.OrigX.Zero()
 	mna.ElementGraph.Zero()
 	// 节点重置
-	for _, ele := range mna.ElementList {
-		ele.Reset()
+	m := len(mna.ElementList)
+	for i := range m {
+		mna.ElementList[types.ElementID(i)].Reset()
 	}
 	// 更新电路
 	mna.StampUP()
@@ -101,8 +107,9 @@ func (mna *MNA) StampUP() {
 	mna.OrigB.Zero()
 	mna.OrigX.Zero()
 	// 加盖矩阵
-	for _, ele := range mna.ElementList {
-		ele.Stamp(mna) // 加盖线性元件贡献
+	m := len(mna.ElementList)
+	for i := range m {
+		mna.ElementList[types.ElementID(i)].Stamp(mna) // 加盖线性元件贡献
 	}
 	// 性矩阵备份
 	mna.OrigJ.Copy(mna.MatJ)
@@ -121,8 +128,9 @@ func (mna *MNA) Solve() (ok bool, err error) {
 		}
 	}()
 	// 开始迭代
-	for _, ele := range mna.ElementList {
-		ele.StartIteration(mna)
+	m := len(mna.ElementList)
+	for i := range m {
+		mna.ElementList[types.ElementID(i)].StartIteration(mna)
 	}
 	mna.Iter = 0            // 迭代次数
 	mna.DampingFactor = 1.0 // 重置阻尼因子
@@ -132,8 +140,8 @@ func (mna *MNA) Solve() (ok bool, err error) {
 		mna.MatJ.Copy(mna.OrigJ)
 		mna.MatB.CopyVec(mna.OrigB)
 		// 算计解
-		for _, ele := range mna.ElementList {
-			ele.DoStep(mna)
+		for i := range m {
+			mna.ElementList[types.ElementID(i)].DoStep(mna)
 		}
 		// 标准Newton-Raphson求解得到的完整步长解
 		mna.Lu.Factorize(mna.MatJ)
@@ -146,8 +154,8 @@ func (mna *MNA) Solve() (ok bool, err error) {
 		mna.MatX.AddVec(mna.MatX, mna.OrigX)           // x_final = x_old + α × Δx
 		mna.OrigX.CopyVec(mna.MatX)                    // 接受结果
 		// 计算电流
-		for _, ele := range mna.ElementList {
-			ele.CalculateCurrent(mna)
+		for i := range m {
+			mna.ElementList[types.ElementID(i)].CalculateCurrent(mna)
 		}
 		// 计算残差
 		maxResidual := mna.calculateResidual()
@@ -176,8 +184,8 @@ func (mna *MNA) Solve() (ok bool, err error) {
 		prevResidual = maxResidual
 	}
 	// 调用结束
-	for _, ele := range mna.ElementList {
-		ele.StepFinished(mna)
+	for i := range m {
+		mna.ElementList[types.ElementID(i)].StepFinished(mna)
 	}
 	// 迭代失败
 	if mna.Iter == mna.MaxIter && prevResidual > mna.ConvergenceTol {

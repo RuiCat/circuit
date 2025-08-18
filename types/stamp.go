@@ -38,6 +38,7 @@ type Stamp interface {
 	GetTime() *StampTime                                                          // 仿真时间
 	GetConfig() *StampConfig                                                      // 仿真参数
 	GetNumNodes() int                                                             // 返回电路节点数量,不包含电压数量
+	GetDampingFactor() float64                                                    // 阻尼
 	GetNumVoltageSources() int                                                    // 返回电路电压数量
 	GetVoltage(i NodeID) float64                                                  // 返回节点电压
 	SetVoltage(i NodeID, v float64) error                                         // 设置节点电压
