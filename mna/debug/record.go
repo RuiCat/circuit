@@ -10,12 +10,13 @@ import (
 
 // Record 记录历史状态
 type Record struct {
-	Nodes     [][][2]int  // 连接信息
-	Elements  []string    // 元件列表
-	Current   [][]float64 // 电流列
-	Voltage   [][]float64 // 电压列
-	Incentive [][]float64 // 激励列
-	Time      []float64   // 时间列
+	Nodes      [][][2]int  // 连接信息
+	Elements   []string    // 元件列表
+	Current    [][]float64 // 电流列
+	CurrentStr []string    //电流信息
+	Voltage    [][]float64 // 电压列
+	Incentive  [][]float64 // 激励列
+	Time       []float64   // 时间列
 }
 
 // Init 初始化
@@ -41,6 +42,15 @@ func (list *Record) Init(mna *mna.MNA) {
 	}
 	list.Elements = eList
 	list.Nodes = nList
+	for id := range mna.NumVoltageSources {
+		list.CurrentStr = append(list.CurrentStr, fmt.Sprintf("电压源(%d)", id))
+	}
+	for i := range m {
+		ele := mna.ElementList[i]
+		for i := range ele.Current.Len() {
+			list.CurrentStr = append(list.CurrentStr, fmt.Sprintf("%s-%d(%d)", ele.Type(), ele.ID, i))
+		}
+	}
 }
 
 func (Record) IsDebug() bool    { return true }

@@ -28,6 +28,13 @@ func (c *Charts) Render(w io.Writer) error {
 			Title:    "电路节点信息",
 			Subtitle: "电路连接节点网络图",
 		}),
+		charts.WithLegendOpts(opts.Legend{
+			Type:   "scroll",
+			Orient: "vertical",
+			Right:  "10",
+			Top:    "20",
+			Bottom: "20",
+		}),
 		charts.WithYAxisOpts(opts.YAxis{
 			Scale: opts.Bool(true),
 		}),
@@ -56,6 +63,13 @@ func (c *Charts) Render(w io.Writer) error {
 			Title:    "电压曲线",
 			Subtitle: "电路节点电压随时间变化曲线",
 		}),
+		charts.WithLegendOpts(opts.Legend{
+			Type:   "scroll",
+			Orient: "vertical",
+			Right:  "10",
+			Top:    "20",
+			Bottom: "20",
+		}),
 		charts.WithXAxisOpts(opts.XAxis{
 			SplitNumber: 20,
 		}),
@@ -72,12 +86,19 @@ func (c *Charts) Render(w io.Writer) error {
 	)
 	lineA := charts.NewLine()
 	lineA.SetGlobalOptions(
-		charts.WithInitializationOpts(opts.Initialization{
-			Theme: types.ThemeWesteros,
-		}),
 		charts.WithTitleOpts(opts.Title{
 			Title:    "电流曲线",
 			Subtitle: "电路节点电流随时间变化曲线",
+		}),
+		charts.WithInitializationOpts(opts.Initialization{
+			Theme: types.ThemeWesteros,
+		}),
+		charts.WithLegendOpts(opts.Legend{
+			Type:   "scroll",
+			Orient: "vertical",
+			Right:  "10",
+			Top:    "20",
+			Bottom: "20",
 		}),
 		charts.WithXAxisOpts(opts.XAxis{
 			SplitNumber: 20,
@@ -101,6 +122,13 @@ func (c *Charts) Render(w io.Writer) error {
 		charts.WithTitleOpts(opts.Title{
 			Title:    "激励曲线",
 			Subtitle: "电路节点激励随时间变化曲线",
+		}),
+		charts.WithLegendOpts(opts.Legend{
+			Type:   "scroll",
+			Orient: "vertical",
+			Right:  "10",
+			Top:    "20",
+			Bottom: "20",
 		}),
 		charts.WithXAxisOpts(opts.XAxis{
 			SplitNumber: 20,
@@ -196,7 +224,7 @@ func (c *Charts) Render(w io.Writer) error {
 			for i := range c.Current[0] {
 				itemsA = append(itemsA, make([]opts.LineData, len(c.Time)))
 				seriesA = append(seriesA, charts.SingleSeries{
-					Name: fmt.Sprintf("%d", i),
+					Name: c.CurrentStr[i],
 					Data: itemsA[i],
 					Type: types.ChartLine,
 				})
