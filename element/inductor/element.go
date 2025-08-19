@@ -82,7 +82,9 @@ func (base *Base) Reset() {
 func (base *Base) StartIteration(stamp types.Stamp) {
 	config := stamp.GetConfig()
 	if config.IsTrapezoidal {
-		voltdiff := stamp.GetVoltage(base.Nodes[0]) - stamp.GetVoltage(base.Nodes[1])
+		v1, _ := stamp.GetVoltage(base.Nodes[0])
+		v2, _ := stamp.GetVoltage(base.Nodes[1])
+		voltdiff := v1 - v2
 		base.curSourceValue = voltdiff/base.compResistance + base.Current.AtVec(0)
 	} else {
 		base.curSourceValue = base.Current.AtVec(0)
@@ -109,7 +111,9 @@ func (base *Base) DoStep(stamp types.Stamp) {
 // CalculateCurrent 电流计算
 func (base *Base) CalculateCurrent(stamp types.Stamp) {
 	if base.compResistance > 0 {
-		voltdiff := stamp.GetVoltage(base.Nodes[0]) - stamp.GetVoltage(base.Nodes[1])
+		v1, _ := stamp.GetVoltage(base.Nodes[0])
+		v2, _ := stamp.GetVoltage(base.Nodes[1])
+		voltdiff := v1 - v2
 		base.Current.SetVec(0, voltdiff/base.compResistance+base.curSourceValue)
 	}
 }

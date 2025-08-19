@@ -239,31 +239,32 @@ func (mna *MNA) GetNumVoltageSources() int {
 }
 
 // 返回节点电压
-func (mna *MNA) GetVoltage(i types.NodeID) float64 {
-	if i > types.ElementGndNodeID {
-		return mna.MatX.AtVec(i)
+func (mna *MNA) GetVoltage(i types.NodeID) (float64, error) {
+	switch {
+	case i == types.ElementGndNodeID:
+		return 0, nil
+	case i < mna.NumNodes:
+		return mna.MatX.AtVec(i), nil
 	}
-	return 0
+	return 0, fmt.Errorf("获取节点电压 %b 错误", i)
 }
 
 // 设置节点电压
 func (mna *MNA) SetVoltage(i types.NodeID, v float64) error {
-	if i > types.ElementGndNodeID {
+	if i > types.ElementGndNodeID && i < mna.NumNodes {
 		mna.MatX.SetVec(i, mna.MatX.AtVec(i)+v)
-	} else {
-		return fmt.Errorf("设置节点电压 %b:%b 错误", i, v)
+		return nil
 	}
-	return nil
+	return fmt.Errorf("设置节点电压 %b:%b 错误", i, v)
 }
 
 // 在矩阵A的(i,j)位置叠加值
 func (mna *MNA) StampMatrix(i, j types.NodeID, v float64) error {
 	if i > types.ElementGndNodeID && j > types.ElementGndNodeID {
 		mna.MatJ.Set(i, j, mna.MatJ.At(i, j)+v)
-	} else {
-		return fmt.Errorf("矩阵加盖失败 %b:%b -> %b", i, j, v)
+		return nil
 	}
-	return nil
+	return fmt.Errorf("矩阵加盖失败 %b:%b -> %b", i, j, v)
 }
 
 // 在右侧向量B的i位置叠加值

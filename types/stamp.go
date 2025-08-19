@@ -16,13 +16,13 @@ type PinList []NodeID
 type VoltageList []VoltageID
 
 // WireID 连接
-type WireID int
+type WireID = int
 
 // WireList 连接列表
 type WireList []WireID
 
 // ElementID 元件
-type ElementID int
+type ElementID = int
 
 // ElementType 元件类型
 type ElementType uint
@@ -40,7 +40,7 @@ type Stamp interface {
 	GetNumNodes() int                                                             // 返回电路节点数量,不包含电压数量
 	GetDampingFactor() float64                                                    // 阻尼
 	GetNumVoltageSources() int                                                    // 返回电路电压数量
-	GetVoltage(i NodeID) float64                                                  // 返回节点电压
+	GetVoltage(i NodeID) (float64, error)                                         // 返回节点电压
 	SetVoltage(i NodeID, v float64) error                                         // 设置节点电压
 	StampMatrix(i, j NodeID, value float64) error                                 // 在矩阵A的(i,j)位置叠加值
 	StampRightSide(i VoltageID, value float64) error                              // 在右侧向量B的i位置叠加值

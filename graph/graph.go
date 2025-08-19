@@ -59,7 +59,12 @@ func (graph *Graph) Init(wireLink *types.WireLink) error {
 	nodeList := map[types.NodeID][]types.ElementID{}         // 节点连接
 	graph.ElementList = map[types.ElementID]*types.Element{} // 元件列表
 	graph.NumVoltageSources = 0
-	for wid, wl := range wireLink.WireList {
+	// 排序
+	for wid := range len(wireLink.WireList) {
+		wl := wireLink.WireList[wid]
+		if wl == nil {
+			continue
+		}
 		// 复位地线标记
 		isGND = false
 		for _, eid := range wl {
@@ -111,7 +116,11 @@ func (graph *Graph) Init(wireLink *types.WireLink) error {
 	}
 	// 处理其他节点
 	nodeCount := wireLink.NodeCount
-	for eid, ele := range graph.ElementList {
+	for eid := range len(graph.ElementList) {
+		ele := graph.ElementList[eid]
+		if ele == nil {
+			continue
+		}
 		// 分析节点引脚是否存在悬浮引脚
 		for pinID, wid := range ele.WireList {
 			if wid == types.ElementHeghWireID {

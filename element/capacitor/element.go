@@ -110,7 +110,9 @@ func (base *Base) DoStep(stamp types.Stamp) {
 
 // CalculateCurrent 电流计算
 func (base *Base) CalculateCurrent(stamp types.Stamp) {
-	base.voltdiff = stamp.GetVoltage(base.Nodes[0]) - stamp.GetVoltage(base.Nodes[1])
+	v1, _ := stamp.GetVoltage(base.Nodes[0])
+	v2, _ := stamp.GetVoltage(base.Nodes[1])
+	base.voltdiff = v1 - v2
 	if stamp.GetConfig().IsDCAnalysis {
 		base.Current.SetVec(0, base.voltdiff/1e8)
 		return
