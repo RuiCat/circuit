@@ -60,7 +60,8 @@ func (list *Record) Update(mna *mna.MNA) {
 	list.Incentive = append(list.Incentive, append([]float64{}, mna.MatB.RawVector().Data...))
 	list.Current = append(list.Current, append([]float64{}, X[mna.NumNodes:]...))
 	// 解析元件电流
-	for _, ele := range mna.ElementList {
-		list.Current[n] = append(list.Current[n], ele.Current.RawVector().Data...)
+	m := mna.ElementList
+	for i := range m {
+		list.Current[n] = append(list.Current[n], mna.ElementList[i].Current.RawVector().Data...)
 	}
 }
