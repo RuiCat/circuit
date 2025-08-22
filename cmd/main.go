@@ -13,8 +13,8 @@ func main() {
 	wl.ElementList[0].SetKeyValue("Voltage", float64(5))
 	wl.ElementList[1].SetKeyValue("Resistance", float64(10))
 	wl.ElementList[2].SetKeyValue("Capacitance", float64(0.01))
-	wl.ElementList[3].SetKeyValue("Resistance", float64(10))
-	wl.ElementList[4].SetKeyValue("Capacitance", float64(0.01))
+	wl.ElementList[4].SetKeyValue("Resistance", float64(10))
+	wl.ElementList[5].SetKeyValue("Capacitance", float64(0.01))
 	mna, err := wl.MNA()
 	if err != nil {
 		fmt.Println(err)

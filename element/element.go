@@ -2,6 +2,7 @@ package element
 
 import (
 	"circuit/element/capacitor"
+	"circuit/element/diode"
 	"circuit/element/gnd"
 	"circuit/element/hegh"
 	"circuit/element/inductor"
@@ -18,6 +19,7 @@ func init() {
 	isError(types.ElementRegister(inductor.Type, "L", &inductor.Config{}))
 	isError(types.ElementRegister(resistor.Type, "R", &resistor.Config{}))
 	isError(types.ElementRegister(vcc.Type, "V", &vcc.Config{}))
+	isError(types.ElementRegister(diode.Type, "D", &diode.Config{}))
 }
 func isError(err error) {
 	if err != nil {
