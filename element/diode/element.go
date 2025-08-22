@@ -16,7 +16,7 @@ func (Config) Init(value *types.ElementBase) types.ElementFace {
 	return &Base{
 		ElementBase: value,
 		Value:       value.Value.(*Value),
-		Resistance:  1e9,
+		Conduction:  true,
 	}
 }
 
@@ -26,6 +26,7 @@ func (Config) InitValue() types.Value {
 	val.ValueMap = types.ValueMap{
 		"IsolateVoltage": float64(0),   // 截止电压
 		"ForwardVoltage": float64(0.7), // 正向导通电压
+		"Resistance":     float64(1e9), // 内阻
 	}
 	return val
 }
@@ -38,6 +39,7 @@ type Value struct {
 	types.ValueBase         // 基础创建
 	IsolateVoltage  float64 // 截止电压
 	ForwardVoltage  float64 // 正向导通电压
+	Resistance      float64 // 当前内阻
 }
 
 // GetVoltageSourceCnt 电压源数量
@@ -51,6 +53,7 @@ func (vlaue *Value) Reset() {
 	val := vlaue.GetValue()
 	vlaue.IsolateVoltage = val["IsolateVoltage"].(float64)
 	vlaue.ForwardVoltage = val["ForwardVoltage"].(float64)
+	vlaue.Resistance = val["Resistance"].(float64)
 }
 
 // CirLoad 网表文件写入值
@@ -63,13 +66,11 @@ func (vlaue *Value) CirExport() []string { return []string{} }
 type Base struct {
 	*types.ElementBase
 	*Value
-	Resistance float64 // 当前内阻
-	Conduction bool    // 导通状态
+	Conduction bool // 导通状态
 }
 
 // Reset 元件值初始化
 func (base *Base) Reset() {
-	base.Resistance = 1e9
 	base.Conduction = false
 	base.Value.Reset()
 }
@@ -96,7 +97,7 @@ func (base *Base) DoStep(stamp types.Stamp) {
 	case vDiff > base.ForwardVoltage:
 		base.Conduction = true
 	}
-	// 超出数据
+	// 处理压降
 	if base.Conduction {
 		base.Resistance = (base.ForwardVoltage / (vDiff)) * base.Resistance
 	}
