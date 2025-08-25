@@ -70,6 +70,11 @@ func (mna *MNA) SetValue(id types.ElementID, value types.ValueMap) {
 	}
 }
 
+// GetGraph 获取底层
+func (mna *MNA) GetGraph() *types.ElementGraph {
+	return &mna.ElementGraph
+}
+
 // GetDampingFactor 得到阻尼因子
 func (mna *MNA) GetDampingFactor() float64 {
 	return mna.DampingFactor
@@ -349,7 +354,7 @@ func (mna *MNA) UpdateVoltageSource(n1, n2 types.NodeID, vs types.VoltageID, v f
 }
 
 // StampVCVS 加盖电压控制电压源
-func (mna *MNA) StampVCVS(n1, n2 types.NodeID, coef float64, vs types.VoltageID) error {
+func (mna *MNA) StampVCVS(n1, n2 types.NodeID, vs types.VoltageID, coef float64) error {
 	vsRow := mna.NumNodes + vs
 	// 控制电压方程
 	if n1 > types.ElementGndNodeID {
