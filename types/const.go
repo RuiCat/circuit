@@ -2,10 +2,9 @@ package types
 
 // 默认连接常量定义
 const (
-	ElementHeghWireID WireID = -1 // 引脚未连接标记
-	ElementGndWireID  WireID = -1 // 用于虚拟接地标记
 	ElementGndNodeID  NodeID = -1 // 标记为地
 	ElementHeghNodeID NodeID = -2 // 标记为高阻
+	ElementHeghWireID WireID = -2 // 引脚未连接标记
 )
 
 // 默认参数常量定义

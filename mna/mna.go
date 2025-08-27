@@ -13,6 +13,7 @@ import (
 type MNA struct {
 	*graph.Graph       // 图表信息
 	Debug        Debug // 调试信息
+	Converged    bool  // 收敛条件
 	// 底层数据
 	Data [][]float64
 	// 核心矩阵系统
@@ -43,6 +44,9 @@ func NewMNA(graph *graph.Graph) (mna *MNA) {
 	}
 	// 初始化矩阵
 	n := mna.NumNodes + mna.NumVoltageSources
+	if n <= 0 {
+		return nil
+	}
 	mna.MatJ = mat.NewDense(n, n, nil) // 初始化系统矩阵
 	mna.MatB = mat.NewVecDense(n, nil) // 初始化激励向量
 	mna.MatX = mat.NewVecDense(n, nil) // 初始化解向量
@@ -70,6 +74,11 @@ func (mna *MNA) SetValue(id types.ElementID, value types.ValueMap) {
 	}
 }
 
+// SetConverged 标记元件无法收敛
+func (mna *MNA) SetConverged() {
+	mna.Converged = false
+}
+
 // GetGraph 获取底层
 func (mna *MNA) GetGraph() *types.ElementGraph {
 	return &mna.ElementGraph
@@ -95,9 +104,11 @@ func (mna *MNA) Zero() {
 	mna.OrigX.Zero()
 	mna.ElementGraph.Zero()
 	// 节点重置
-	m := len(mna.ElementList)
+	m := types.ElementID(len(mna.ElementList))
 	for i := range m {
-		mna.ElementList[types.ElementID(i)].Reset()
+		if ele, ok := mna.ElementList[i]; ok {
+			ele.Reset()
+		}
 	}
 	// 更新电路
 	mna.StampUP()
@@ -114,7 +125,9 @@ func (mna *MNA) StampUP() {
 	// 加盖矩阵
 	m := len(mna.ElementList)
 	for i := range m {
-		mna.ElementList[types.ElementID(i)].Stamp(mna) // 加盖线性元件贡献
+		if ele, ok := mna.ElementList[i]; ok {
+			ele.Stamp(mna) // 加盖线性元件贡献
+		}
 	}
 	// 性矩阵备份
 	mna.OrigJ.Copy(mna.MatJ)
@@ -128,25 +141,33 @@ func (mna *MNA) Solve() (ok bool, err error) {
 	mna.OrigXs.CopyVec(mna.MatX)
 	defer func() {
 		if !ok {
+			// 输出调试信息
+			fmt.Println(mna.String())
 			// 失败退回结果
 			mna.MatX.CopyVec(mna.OrigXs)
 		}
 	}()
 	// 开始迭代
-	m := len(mna.ElementList)
+	m := types.ElementID(len(mna.ElementList))
 	for i := range m {
-		mna.ElementList[types.ElementID(i)].StartIteration(mna)
+		if ele, ok := mna.ElementList[i]; ok {
+			ele.StartIteration(mna)
+		}
 	}
 	mna.Iter = 0            // 迭代次数
 	mna.DampingFactor = 1.0 // 重置阻尼因子
 	prevResidual := 0.0     // 残差
 	for ; mna.Iter < mna.MaxIter; mna.Iter++ {
+		// 设置为收敛状态
+		mna.Converged = true
 		// 线性矩阵还原
 		mna.MatJ.Copy(mna.OrigJ)
 		mna.MatB.CopyVec(mna.OrigB)
 		// 算计解
 		for i := range m {
-			mna.ElementList[types.ElementID(i)].DoStep(mna)
+			if ele, ok := mna.ElementList[i]; ok {
+				ele.DoStep(mna)
+			}
 		}
 		// 标准Newton-Raphson求解得到的完整步长解
 		mna.Lu.Factorize(mna.MatJ)
@@ -160,7 +181,9 @@ func (mna *MNA) Solve() (ok bool, err error) {
 		mna.OrigX.CopyVec(mna.MatX)                    // 接受结果
 		// 计算电流
 		for i := range m {
-			mna.ElementList[types.ElementID(i)].CalculateCurrent(mna)
+			if ele, ok := mna.ElementList[i]; ok {
+				ele.CalculateCurrent(mna)
+			}
 		}
 		// 计算残差
 		maxResidual := mna.calculateResidual()
@@ -172,7 +195,7 @@ func (mna *MNA) Solve() (ok bool, err error) {
 			// 残差快速减小，可以增加阻尼因子
 			mna.DampingFactor = math.Min(mna.DampingFactor*1.2, 1.0)
 		}
-		if maxResidual < mna.ConvergenceTol {
+		if maxResidual < mna.ConvergenceTol && mna.Converged {
 			break // 已经收敛
 		}
 		// 振荡检测逻辑保持不变
@@ -190,7 +213,9 @@ func (mna *MNA) Solve() (ok bool, err error) {
 	}
 	// 调用结束
 	for i := range m {
-		mna.ElementList[types.ElementID(i)].StepFinished(mna)
+		if ele, ok := mna.ElementList[i]; ok {
+			ele.StepFinished(mna)
+		}
 	}
 	// 迭代失败
 	if mna.Iter == mna.MaxIter && prevResidual > mna.ConvergenceTol {
@@ -248,7 +273,7 @@ func (mna *MNA) GetVoltage(i types.NodeID) (float64, error) {
 	switch {
 	case i == types.ElementGndNodeID:
 		return 0, nil
-	case i < mna.NumNodes:
+	case i >= 0 && i < mna.NumNodes:
 		return mna.MatX.AtVec(i), nil
 	}
 	return 0, fmt.Errorf("获取节点电压 %b 错误", i)
@@ -412,4 +437,47 @@ func (mna *MNA) StampCCCS(n1, n2 types.NodeID, vs types.VoltageID, gain float64)
 		}
 	}
 	return nil
+}
+
+// String 输出结构
+func (mna *MNA) String() string {
+	var str string
+	// 初始化输出
+	str += fmt.Sprintln("节点ID: [元件列表]")
+	for id, v := range mna.NodeList {
+		str += fmt.Sprintf(" %d: %v\n", id, v)
+	}
+	str += fmt.Sprintln("元件ID: 元件类型 [元件数据] {引脚索引}")
+	m := types.ElementID(len(mna.ElementList))
+	for id := range m {
+		v := mna.ElementList[id]
+		str += fmt.Sprintf(" %d: %s [\n", id, v.Type())
+		for k, kv := range v.Value.GetValue() {
+			str += fmt.Sprintf("     %v:%v\n", k, kv)
+		}
+		str += " ] Pin: {\n"
+		for k, kv := range v.Nodes {
+			str += fmt.Sprintf("     %v->%v\n", k, kv)
+		}
+		str += " }\n"
+	}
+	// 周期输出
+	str += fmt.Sprintf("------------------------------------------ 时间: %f 步进: %f 步数: %d 迭代: %d 阻尼: %f ----------------------------------------\n", mna.Time, mna.TimeStep, mna.GoodIterations, mna.Iter, mna.DampingFactor)
+	str += fmt.Sprintln("系统矩阵: A")
+	str += fmt.Sprintln(mat.Formatted(mna.MatJ))
+	str += fmt.Sprintln("节点电压: x")
+	str += fmt.Sprintln(mat.Formatted(mna.MatX))
+	str += fmt.Sprintln("激励向量: b")
+	str += fmt.Sprintln(mat.Formatted(mna.MatB))
+	str += fmt.Sprintln("系统矩阵(线性贡献): A")
+	str += fmt.Sprintln(mat.Formatted(mna.OrigJ))
+	str += fmt.Sprintln("激励向量(线性贡献): b")
+	str += fmt.Sprint(mat.Formatted(mna.OrigB))
+	str += "\n"
+	str += fmt.Sprintln("元件调试信息:")
+	for i := range m {
+		v := mna.ElementList[i]
+		str += fmt.Sprintf("元件 %d 调试信息: [%s]\n", i, v.ElementFace.Debug(mna))
+	}
+	return str
 }

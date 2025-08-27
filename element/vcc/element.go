@@ -4,6 +4,7 @@ import (
 	"circuit/types"
 	"fmt"
 	"math"
+	"strconv"
 )
 
 // Type 元件类型
@@ -60,10 +61,46 @@ func (vlaue *Value) Reset() {
 }
 
 // CirLoad 网表文件写入值
-func (vlaue *Value) CirLoad(value []string) {}
+func (vlaue *Value) CirLoad(value []string) {
+	if len(value) >= 1 {
+		// 解析电压值
+		if voltage, err := strconv.ParseFloat(value[0], 64); err == nil {
+			vlaue.Voltage = voltage
+			vlaue.SetKeyValue("Voltage", voltage)
+		}
+	}
+	if len(value) >= 2 {
+		// 解析是否为交流
+		if isAC, err := strconv.ParseBool(value[1]); err == nil {
+			vlaue.IsAC = isAC
+			vlaue.SetKeyValue("IsAC", isAC)
+		}
+	}
+	if len(value) >= 3 {
+		// 解析频率
+		if freq, err := strconv.ParseFloat(value[2], 64); err == nil {
+			vlaue.Freq = freq
+			vlaue.SetKeyValue("Freq", freq)
+		}
+	}
+	if len(value) >= 4 {
+		// 解析相位
+		if phase, err := strconv.ParseFloat(value[3], 64); err == nil {
+			vlaue.Phase = phase
+			vlaue.SetKeyValue("Phase", phase)
+		}
+	}
+}
 
 // CirExport 网表文件导出值
-func (vlaue *Value) CirExport() []string { return []string{} }
+func (vlaue *Value) CirExport() []string {
+	return []string{
+		fmt.Sprintf("%.6g", vlaue.Voltage),
+		fmt.Sprintf("%t", vlaue.IsAC),
+		fmt.Sprintf("%.6g", vlaue.Freq),
+		fmt.Sprintf("%.6g", vlaue.Phase),
+	}
+}
 
 // Base 元件实现
 type Base struct {

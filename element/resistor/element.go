@@ -3,6 +3,7 @@ package resistor
 import (
 	"circuit/types"
 	"fmt"
+	"strconv"
 )
 
 // Type 元件类型
@@ -50,10 +51,20 @@ func (vlaue *Value) Reset() {
 }
 
 // CirLoad 网表文件写入值
-func (vlaue *Value) CirLoad(value []string) {}
+func (vlaue *Value) CirLoad(value []string) {
+	if len(value) >= 1 {
+		// 解析电阻值
+		if resistance, err := strconv.ParseFloat(value[0], 64); err == nil {
+			vlaue.Resistance = resistance
+			vlaue.SetKeyValue("Resistance", resistance)
+		}
+	}
+}
 
 // CirExport 网表文件导出值
-func (vlaue *Value) CirExport() []string { return []string{} }
+func (vlaue *Value) CirExport() []string {
+	return []string{fmt.Sprintf("%.6g", vlaue.Resistance)}
+}
 
 // Base 元件实现
 type Base struct {

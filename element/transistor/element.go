@@ -4,6 +4,7 @@ import (
 	"circuit/types"
 	"fmt"
 	"math"
+	"strconv"
 )
 
 // Type 元件类型
@@ -63,7 +64,7 @@ type Value struct {
 
 // GetVoltageSourceCnt 电压源数量
 // 返回0，因为晶体管是被动元件
-func (v *Value) GetVoltageSourceCnt() int { return 0 }
+func (v *Value) GetVoltageSourceCnt() int { return 3 }
 
 // GetInternalNodeCount 内壁引脚数量
 // 返回0，因为晶体管没有内部节点
@@ -79,12 +80,38 @@ func (v *Value) Reset() {
 }
 
 // CirLoad 网表文件写入值
-// 从网表格式加载晶体管参数(未实现)
-func (v *Value) CirLoad(value []string) {}
+// 从网表格式加载晶体管参数
+func (v *Value) CirLoad(value []string) {
+	if len(value) >= 1 {
+		// 解析PNP标志
+		if pnp, err := strconv.ParseBool(value[0]); err == nil {
+			v.PNP = pnp
+			v.SetKeyValue("PNP", pnp)
+		}
+	}
+	if len(value) >= 2 {
+		// 解析电流增益
+		if beta, err := strconv.ParseFloat(value[1], 64); err == nil {
+			v.Beta = beta
+			v.SetKeyValue("Beta", beta)
+		}
+	}
+	if len(value) >= 3 {
+		// 解析模型名称
+		v.ModelName = value[2]
+		v.SetKeyValue("ModelName", value[2])
+	}
+}
 
 // CirExport 网表文件导出值
-// 将晶体管参数导出到网表格式(未实现)
-func (v *Value) CirExport() []string { return []string{} }
+// 将晶体管参数导出到网表格式
+func (v *Value) CirExport() []string {
+	return []string{
+		fmt.Sprintf("%t", v.PNP),
+		fmt.Sprintf("%.6g", v.Beta),
+		v.ModelName,
+	}
+}
 
 // Base 元件实现
 // 晶体管元件的主要实现
@@ -186,7 +213,7 @@ func (base *Base) DoStep(stamp types.Stamp) {
 	// 检查收敛性
 	// 检查电压变化是否足够显著以影响收敛
 	if math.Abs(vbc-base.lastvbc) > 0.01 || math.Abs(vbe-base.lastvbe) > 0.01 {
-		// sim.converged = false;
+		stamp.SetConverged()
 	}
 
 	// 为了防止可能的奇异矩阵，在每个P-N结上并联一个小电导
@@ -317,9 +344,9 @@ func (base *Base) DoStep(stamp types.Stamp) {
 
 		// 加盖电流源
 		// 在右边向量中加蓋电流源
-		stamp.StampRightSide(0, -ceqbe-ceqbc) // 第一个电压源
-		stamp.StampRightSide(1, ceqbc)        // 第二个电压源
-		stamp.StampRightSide(2, ceqbe)        // 第三个电压源
+		stamp.StampRightSide(base.VoltSource[0], -ceqbe-ceqbc) // 第一个电压源
+		stamp.StampRightSide(base.VoltSource[1], ceqbc)        // 第二个电压源
+		stamp.StampRightSide(base.VoltSource[2], ceqbe)        // 第三个电压源
 	}
 }
 

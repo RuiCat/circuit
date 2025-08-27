@@ -3,6 +3,7 @@ package inductor
 import (
 	"circuit/types"
 	"fmt"
+	"strconv"
 )
 
 // Type 元件类型
@@ -58,10 +59,30 @@ func (value *Value) Reset() {
 }
 
 // CirLoad 网表文件写入值
-func (value *Value) CirLoad(values []string) {}
+func (value *Value) CirLoad(values []string) {
+	if len(values) >= 1 {
+		// 解析电感值
+		if inductance, err := strconv.ParseFloat(values[0], 64); err == nil {
+			value.Inductance = inductance
+			value.SetKeyValue("Inductance", inductance)
+		}
+	}
+	if len(values) >= 2 {
+		// 解析初始电流值
+		if initialCurrent, err := strconv.ParseFloat(values[1], 64); err == nil {
+			value.InitialCurrent = initialCurrent
+			value.SetKeyValue("InitialCurrent", initialCurrent)
+		}
+	}
+}
 
 // CirExport 网表文件导出值
-func (value *Value) CirExport() []string { return []string{} }
+func (value *Value) CirExport() []string {
+	return []string{
+		fmt.Sprintf("%.6g", value.Inductance),
+		fmt.Sprintf("%.6g", value.InitialCurrent),
+	}
+}
 
 // Base 元件实现
 type Base struct {

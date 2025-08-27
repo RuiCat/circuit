@@ -55,35 +55,42 @@ type ElementFace interface {
 	Type() ElementType                                      // 元件类型
 	Reset()                                                 // 数据重置
 	GetValue() Value                                        // 获取元件自身数据
-	Debug(stamp Stamp) string                               //调试输出
+	Debug(stamp Stamp) string                               // 调试输出
 	GetPinNodeList() (node PinList)                         // 得到引脚的节点ID了列表
-	GetPinWireList() (wireID WireList)                      // 得到引脚的线路连接列表
 	SetInternalNode(internalNodeIndex PinID, nodeID NodeID) // 设置内部引脚ID,扩展使用
 	GetInternalNode(internalNodeIndex PinID) NodeID         // 得到内部引脚ID,扩展使用
+	StartIteration(stamp Stamp)                             // 步长迭代开始
+	Stamp(stamp Stamp)                                      // 加盖线性贡献
+	DoStep(stamp Stamp)                                     // 执行仿真
+	CalculateCurrent(stamp Stamp)                           // 电流计算
+	StepFinished(stamp Stamp)                               // 步长迭代结束
 
-	StartIteration(stamp Stamp)   // 步长迭代开始
-	Stamp(stamp Stamp)            // 加盖线性贡献
-	DoStep(stamp Stamp)           // 执行仿真
-	CalculateCurrent(stamp Stamp) // 电流计算
-	StepFinished(stamp Stamp)     // 步长迭代结束
+}
 
+// ElementWireBase 连接底层
+type ElementWireBase struct {
+	ID       ElementID // 元件ID
+	WireList WireList  // 引脚连接信息
+}
+
+// GetPinWireList 得到引脚的线路连接列表
+func (base *ElementWireBase) GetPinWireList() (wireID WireList) {
+	return base.WireList
 }
 
 // ElementBase 元件基础配置
 type ElementBase struct {
 	Value                       // 基础记录值
-	ID            ElementID     // 元件ID
 	Nodes         PinList       // 节点ID列表
 	VoltSource    VoltageList   // 电压源索引
 	InternalNodes PinList       // 内部节点ID列表
-	WireList      WireList      // 引脚连接信息
 	Current       *mat.VecDense // 节点电流数组，存储各引脚的电流值
 }
 
 // Init 初始化
-func (base *ElementBase) Init() {
-	base.Nodes = make(PinList, len(base.WireList))
-	base.Current = mat.NewVecDense(len(base.WireList), nil)
+func (base *ElementBase) Init(n int) {
+	base.Nodes = make(PinList, n)
+	base.Current = mat.NewVecDense(n, nil)
 	base.VoltSource = make(VoltageList, base.Value.GetVoltageSourceCnt())
 	base.InternalNodes = make(PinList, base.Value.GetInternalNodeCount())
 	for id := range base.Nodes {
@@ -100,27 +107,22 @@ func (base *ElementBase) GetPinNodeList() (node PinList) {
 // Debug 调试输出
 func (base *ElementBase) Debug(stamp Stamp) string { return "" }
 
-// GetPinWireList 得到引脚的线路连接列表
-func (base *ElementBase) GetPinWireList() (wireID WireList) {
-	return base.WireList
-}
-
 // GetValue 获取元件自身数据
 func (base *ElementBase) GetValue() Value { return base.Value }
 
 // SetInternalNode 设置内部引脚ID,扩展使用
-func (eb *ElementBase) SetInternalNode(internalNodeIndex int, nodeID NodeID) {
+func (base *ElementBase) SetInternalNode(internalNodeIndex int, nodeID NodeID) {
 	// 确保InternalNodes切片足够大
-	for len(eb.InternalNodes) <= internalNodeIndex {
-		eb.InternalNodes = append(eb.InternalNodes, -1)
+	for len(base.InternalNodes) <= internalNodeIndex {
+		base.InternalNodes = append(base.InternalNodes, -1)
 	}
-	eb.InternalNodes[internalNodeIndex] = nodeID
+	base.InternalNodes[internalNodeIndex] = nodeID
 }
 
 // GetInternalNode 得到内部引脚ID,扩展使用
-func (eb *ElementBase) GetInternalNode(internalNodeIndex int) NodeID {
-	if internalNodeIndex < 0 || internalNodeIndex >= len(eb.InternalNodes) {
+func (base *ElementBase) GetInternalNode(internalNodeIndex int) NodeID {
+	if internalNodeIndex < 0 || internalNodeIndex >= len(base.InternalNodes) {
 		return 0 // 无效节点(接地)
 	}
-	return eb.InternalNodes[internalNodeIndex]
+	return base.InternalNodes[internalNodeIndex]
 }

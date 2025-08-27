@@ -13,7 +13,7 @@ type Record struct {
 	Nodes      [][][2]int  // 连接信息
 	Elements   []string    // 元件列表
 	Current    [][]float64 // 电流列
-	CurrentStr []string    //电流信息
+	CurrentStr []string    // 电流信息
 	Voltage    [][]float64 // 电压列
 	Incentive  [][]float64 // 激励列
 	Time       []float64   // 时间列
@@ -23,14 +23,14 @@ type Record struct {
 func (list *Record) Init(mna *mna.MNA) {
 	eList := make([]string, 0, len(mna.ElementList))
 	eList = append(eList, "Gnd")
-	m := len(mna.ElementList)
-	for i := range m {
-		v := mna.ElementList[types.ElementID(i)]
+	m := types.ElementID(len(mna.ElementList))
+	for i := 0; i < m; i++ {
+		v := mna.ElementList[i]
 		eList = append(eList, fmt.Sprintf("%s(%d)", v.Type().String(), i+1))
 	}
 	nList := make([][][2]int, len(mna.NodeList)+1)
-	for i := range m {
-		v := mna.ElementList[types.ElementID(i)]
+	for i := 0; i < m; i++ {
+		v := mna.ElementList[i]
 		for l, n := range v.Nodes {
 			n += 1
 			nList[n] = append(nList[n], [2]int{int(i + 1), int(l)})
@@ -45,10 +45,10 @@ func (list *Record) Init(mna *mna.MNA) {
 	for id := range mna.NumVoltageSources {
 		list.CurrentStr = append(list.CurrentStr, fmt.Sprintf("电压源(%d)", id))
 	}
-	for i := range m {
+	for i := 0; i < m; i++ {
 		ele := mna.ElementList[i]
-		for i := range ele.Current.Len() {
-			list.CurrentStr = append(list.CurrentStr, fmt.Sprintf("%s-%d(%d)", ele.Type(), ele.ID, i))
+		for j := 0; j < ele.Current.Len(); j++ {
+			list.CurrentStr = append(list.CurrentStr, fmt.Sprintf("%s-%d(%d)", ele.Type(), ele.ID, j))
 		}
 	}
 }

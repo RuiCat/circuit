@@ -3,6 +3,7 @@ package capacitor
 import (
 	"circuit/types"
 	"fmt"
+	"strconv"
 )
 
 // Type 元件类型
@@ -60,10 +61,30 @@ func (value *Value) Reset() {
 }
 
 // CirLoad 网表文件写入值
-func (value *Value) CirLoad(values []string) {}
+func (value *Value) CirLoad(values []string) {
+	if len(values) >= 1 {
+		// 解析电容值
+		if capacitance, err := strconv.ParseFloat(values[0], 64); err == nil {
+			value.Capacitance = capacitance
+			value.SetKeyValue("Capacitance", capacitance)
+		}
+	}
+	if len(values) >= 2 {
+		// 解析初始电压值
+		if initialVoltage, err := strconv.ParseFloat(values[1], 64); err == nil {
+			value.InitialVoltage = initialVoltage
+			value.SetKeyValue("InitialVoltage", initialVoltage)
+		}
+	}
+}
 
 // CirExport 网表文件导出值
-func (value *Value) CirExport() []string { return []string{} }
+func (value *Value) CirExport() []string {
+	return []string{
+		fmt.Sprintf("%.6g", value.Capacitance),
+		fmt.Sprintf("%.6g", value.InitialVoltage),
+	}
+}
 
 // Base 元件实现
 type Base struct {

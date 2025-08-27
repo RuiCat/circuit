@@ -5,16 +5,20 @@ import (
 	"circuit/mna/debug"
 	"fmt"
 	"net/http"
+	"os"
 )
 
 func main() {
+	// 从命令行参数获取文件名
+	filename := "./test.asc"
+	if len(os.Args) > 1 {
+		filename = os.Args[1]
+	}
 	wl := circuit.NewCircuit()
-	fmt.Println(wl.Load("./test.asc"))
-	wl.ElementList[0].SetKeyValue("Voltage", float64(5))
-	wl.ElementList[1].SetKeyValue("Resistance", float64(10))
-	wl.ElementList[2].SetKeyValue("Capacitance", float64(0.01))
-	wl.ElementList[4].SetKeyValue("Resistance", float64(10))
-	wl.ElementList[5].SetKeyValue("Capacitance", float64(0.01))
+	if err := wl.Load(filename); err != nil {
+		fmt.Println(err)
+		return
+	}
 	mna, err := wl.MNA()
 	if err != nil {
 		fmt.Println(err)
@@ -28,6 +32,7 @@ func main() {
 		// 测试仿真
 		if err := circuit.Simulate(2, mna); err != nil {
 			fmt.Println(err)
+			os.Exit(0)
 		}
 	}()
 	http.HandleFunc("/", charts.Handler)

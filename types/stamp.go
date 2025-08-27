@@ -29,8 +29,9 @@ type ElementType uint
 
 // Element 元件信息
 type Element struct {
-	ElementFace  // 元件实现
-	*ElementBase // 元件基础信息
+	ID           ElementID // 仿真节点ID
+	ElementFace            // 元件实现
+	*ElementBase           // 元件基础信息
 }
 
 // Stamp 直流分析矩阵加盖接口
@@ -38,6 +39,7 @@ type Stamp interface {
 	GetGraph() *ElementGraph                                                      // 获取底层
 	GetTime() *StampTime                                                          // 仿真时间
 	GetConfig() *StampConfig                                                      // 仿真参数
+	SetConverged()                                                                // 元件无法收敛调用
 	GetNumNodes() int                                                             // 返回电路节点数量,不包含电压数量
 	GetDampingFactor() float64                                                    // 阻尼
 	GetNumVoltageSources() int                                                    // 返回电路电压数量

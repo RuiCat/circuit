@@ -4,6 +4,7 @@ import (
 	"circuit/types"
 	"fmt"
 	"math"
+	"strconv"
 )
 
 // Type 元件类型
@@ -71,10 +72,54 @@ func (v *Value) Reset() {
 }
 
 // CirLoad 网表文件写入值
-func (v *Value) CirLoad(values []string) {}
+func (v *Value) CirLoad(values []string) {
+	if len(values) >= 1 {
+		// 解析反向饱和电流
+		if saturationCurrent, err := strconv.ParseFloat(values[0], 64); err == nil {
+			v.SaturationCurrent = saturationCurrent
+			v.SetKeyValue("SaturationCurrent", saturationCurrent)
+		}
+	}
+	if len(values) >= 2 {
+		// 解析击穿电压
+		if breakdownVoltage, err := strconv.ParseFloat(values[1], 64); err == nil {
+			v.BreakdownVoltage = breakdownVoltage
+			v.SetKeyValue("BreakdownVoltage", breakdownVoltage)
+		}
+	}
+	if len(values) >= 3 {
+		// 解析发射系数
+		if emissionCoefficient, err := strconv.ParseFloat(values[2], 64); err == nil {
+			v.EmissionCoefficient = emissionCoefficient
+			v.SetKeyValue("EmissionCoefficient", emissionCoefficient)
+		}
+	}
+	if len(values) >= 4 {
+		// 解析串联电阻
+		if seriesResistance, err := strconv.ParseFloat(values[3], 64); err == nil {
+			v.SeriesResistance = seriesResistance
+			v.SetKeyValue("SeriesResistance", seriesResistance)
+		}
+	}
+	if len(values) >= 5 {
+		// 解析温度
+		if temperature, err := strconv.ParseFloat(values[4], 64); err == nil {
+			v.Temperature = temperature
+			v.SetKeyValue("Temperature", temperature)
+		}
+	}
+}
 
 // CirExport 网表文件导出值
-func (v *Value) CirExport() []string { return []string{} }
+func (v *Value) CirExport() []string {
+	return []string{
+		fmt.Sprintf("%.6g", v.SaturationCurrent),
+		fmt.Sprintf("%.6g", v.BreakdownVoltage),
+		fmt.Sprintf("%.6g", v.EmissionCoefficient),
+		fmt.Sprintf("%.6g", v.SeriesResistance),
+		fmt.Sprintf("%.6g", v.Temperature),
+	}
+}
 
 // Base 元件实现
 type Base struct {

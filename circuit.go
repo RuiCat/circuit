@@ -121,7 +121,11 @@ func (c *Circuit) MNA() (*mna.MNA, error) {
 	if err != nil {
 		return nil, err
 	}
-	return mna.NewMNA(g), nil
+	mna := mna.NewMNA(g)
+	if mna == nil {
+		return nil, fmt.Errorf("矩阵始化失败")
+	}
+	return mna, nil
 }
 
 // Simulate 进行仿真

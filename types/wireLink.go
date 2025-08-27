@@ -4,21 +4,24 @@ import "slices"
 
 // ElementWire 电路记录信息
 type ElementWire struct {
-	ElementType  // 元件类型
-	*ElementBase // 元件数据
+	ElementType     // 元件类型
+	ElementWireBase // 连接信息
+	*ElementBase    // 元件数据
 }
 
 // NewElementWire 创建记录
 func NewElementWire(id ElementID, t ElementType) *ElementWire {
 	ew := &ElementWire{
 		ElementType: t,
-		ElementBase: &ElementBase{
-			Value:    t.InitValue(),
+		ElementWireBase: ElementWireBase{
 			ID:       id,
 			WireList: make(WireList, t.GetPostCount()),
 		},
+		ElementBase: &ElementBase{
+			Value: t.InitValue(),
+		},
 	}
-	ew.ElementBase.Init()
+	ew.ElementBase.Init(t.GetPostCount())
 	for id := range ew.WireList {
 		ew.WireList[id] = ElementHeghWireID
 	}
