@@ -223,12 +223,6 @@ func (mna *MNA) Solve() (ok bool, err error) {
 	}
 	// 检查矩阵
 	if mna.Debug.IsDebug() {
-		// 检查电压源约束行
-		for i := mna.NumNodes + 1; i < mna.MatJ.RawMatrix().Rows; i++ {
-			if math.Abs(mna.MatJ.At(i, i)) < 1e-12 {
-				return false, fmt.Errorf("电压源约束失效 at row%d", i)
-			}
-		}
 		// 检查关键节点
 		for i := 0; i < mna.NumNodes; i++ {
 			if math.Abs(mna.MatJ.At(i, i)) < 1e-9 {
