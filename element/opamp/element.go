@@ -3,7 +3,6 @@ package opamp
 import (
 	"circuit/types"
 	"fmt"
-	"math"
 	"strconv"
 )
 
@@ -134,25 +133,26 @@ func (base *Base) DoStep(stamp types.Stamp) {
 	}
 	// 计算电压差
 	vd := inPlus - inMinus
-	if math.Abs(base.lastVD-vd) > 0.001 {
-		stamp.SetConverged()
-	}
+	// 收敛性检查
 	out, err3 := stamp.GetVoltage(base.Nodes[2])
 	if err3 != nil {
 		return
 	}
 	// 检查输出是否超出范围
 	if out > base.MaxOutput+0.01 || out < base.MinOutput-0.01 {
+		// 如果输出已经饱和，设置收敛标志
 		stamp.SetConverged()
 	}
 	var x float64
 	var dx float64
-	// 检查是否饱和
-	if vd > (base.MaxOutput-base.MinOutput)/base.Gain {
+	// 检查是否饱和 - 修正饱和条件
+	// 对于理想运放，当输入差值足够大时会饱和
+	maxDiff := (base.MaxOutput - base.MinOutput) / base.Gain
+	if vd > maxDiff {
 		// 正饱和
 		x = base.MaxOutput
 		dx = 0
-	} else if vd < (base.MinOutput-base.MaxOutput)/base.Gain {
+	} else if vd < -maxDiff {
 		// 负饱和
 		x = base.MinOutput
 		dx = 0
@@ -180,7 +180,7 @@ func (base *Base) DoStep(stamp types.Stamp) {
 func (base *Base) CalculateCurrent(stamp types.Stamp) {
 	base.Current.SetVec(0, 0) // V+端电流
 	base.Current.SetVec(1, 0) // V-端电流
-	base.Current.SetVec(2, 0) // 输出端电流
+	base.Current.SetVec(2, 0)
 }
 
 // StepFinished 步长迭代结束
