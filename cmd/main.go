@@ -30,7 +30,7 @@ func main() {
 	mna.IsTrapezoidal = true
 	go func() {
 		// 测试仿真
-		if err := circuit.Simulate(2, mna); err != nil {
+		if err := circuit.Simulate(10, mna); err != nil {
 			fmt.Println(err)
 			os.Exit(0)
 		}

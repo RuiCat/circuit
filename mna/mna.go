@@ -140,11 +140,25 @@ func (mna *MNA) Solve() (ok bool, err error) {
 	// 处理备份
 	mna.OrigXs.CopyVec(mna.MatX)
 	defer func() {
+		// 检查状态
 		if !ok {
-			// 输出调试信息
-			fmt.Println(mna.String())
-			// 失败退回结果
-			mna.MatX.CopyVec(mna.OrigXs)
+			// 迭代失败回退
+			if err == nil {
+				mna.MatX.CopyVec(mna.OrigXs)
+				return
+			}
+		}
+		// 检查矩阵
+		if mna.Debug.IsDebug() {
+			// 更新调试信息
+			mna.Debug.Update(mna)
+			// 检查关键节点
+			for i := 0; i < mna.NumNodes; i++ {
+				if math.Abs(mna.MatJ.At(i, i)) < 1e-9 {
+					ok = false
+					err = fmt.Errorf("弱节点%d (diag=%.1e)", i, mna.MatJ.At(i, i))
+				}
+			}
 		}
 	}()
 	// 开始迭代
@@ -220,17 +234,6 @@ func (mna *MNA) Solve() (ok bool, err error) {
 	// 迭代失败
 	if mna.Iter == mna.MaxIter && prevResidual > mna.ConvergenceTol {
 		return false, nil
-	}
-	// 检查矩阵
-	if mna.Debug.IsDebug() {
-		// 检查关键节点
-		for i := 0; i < mna.NumNodes; i++ {
-			if math.Abs(mna.MatJ.At(i, i)) < 1e-9 {
-				return false, fmt.Errorf("弱节点%d (diag=%.1e)", i, mna.MatJ.At(i, i))
-			}
-		}
-		// 更新
-		mna.Debug.Update(mna)
 	}
 	return true, nil
 }

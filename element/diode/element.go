@@ -25,7 +25,6 @@ func (Config) Init(value *types.ElementBase) types.ElementFace {
 		ElementBase:  value,
 		Value:        value.Value.(*Value),
 		lastvoltdiff: 0,
-		converged:    true,
 	}
 }
 
@@ -137,14 +136,12 @@ type Base struct {
 	vzcrit   float64 // 齐纳击穿临界电压
 	// 仿真状态
 	lastvoltdiff float64 // 上次电压差
-	converged    bool    // 收敛状态
 }
 
 // Reset 元件值初始化
 func (base *Base) Reset() {
 	base.Value.Reset()
 	base.lastvoltdiff = 0
-	base.converged = true
 	// 计算温度相关的热电压
 	base.vt = ThermalVoltage * (base.Temperature / 300.15)
 	base.leakage = base.SaturationCurrent
@@ -216,7 +213,7 @@ func (base *Base) Type() types.ElementType { return Type }
 func (base *Base) StartIteration(stamp types.Stamp) {}
 
 // limitStep 电压步长限制 - 防止数值不稳定
-func (base *Base) limitStep(vnew, vold float64) float64 {
+func (base *Base) limitStep(stamp types.Stamp, vnew, vold float64) float64 {
 	// 检查正向电压：电流是否变化了e^2倍？
 	if vnew > base.vcrit && math.Abs(vnew-vold) > (base.vscale+base.vscale) {
 		if vold > 0 {
@@ -233,7 +230,7 @@ func (base *Base) limitStep(vnew, vold float64) float64 {
 				vnew = base.vscale * math.Log(vnew/base.vscale)
 			}
 		}
-		base.converged = false
+		stamp.SetConverged()
 	} else if vnew < 0 && base.zoffset != 0 {
 		// 对于齐纳击穿，使用相同的逻辑但转换值
 		vnewTranslated := -vnew - base.zoffset
@@ -251,7 +248,7 @@ func (base *Base) limitStep(vnew, vold float64) float64 {
 					vnewTranslated = base.vt * math.Log(vnewTranslated/base.vt)
 				}
 			}
-			base.converged = false
+			stamp.SetConverged()
 		}
 		vnew = -(vnewTranslated + base.zoffset)
 	}
@@ -269,10 +266,10 @@ func (base *Base) DoStep(stamp types.Stamp) {
 	voltdiff := v1 - v2
 	// 检查电压变化是否足够大以影响收敛
 	if math.Abs(voltdiff-base.lastvoltdiff) > 0.01 {
-		base.converged = false
+		stamp.SetConverged()
 	}
 	// 限制电压步长以保证数值稳定性
-	voltdiff = base.limitStep(voltdiff, base.lastvoltdiff)
+	voltdiff = base.limitStep(stamp, voltdiff, base.lastvoltdiff)
 	base.lastvoltdiff = voltdiff
 	// 计算最小电导防止奇异矩阵
 	// 基础最小电导

@@ -39,15 +39,15 @@ type Value struct {
 }
 
 // GetVoltageSourceCnt 电压源数量
-func (vlaue *Value) GetVoltageSourceCnt() int { return 0 }
+func (value *Value) GetVoltageSourceCnt() int { return 0 }
 
 // GetInternalNodeCount 内壁引脚数量
-func (vlaue *Value) GetInternalNodeCount() int { return 0 }
+func (value *Value) GetInternalNodeCount() int { return 0 }
 
 // Reset 元件值初始化
-func (vlaue *Value) Reset() {
-	val := vlaue.GetValue()
-	vlaue.Resistance = val["Resistance"].(float64)
+func (value *Value) Reset() {
+	val := value.GetValue()
+	value.Resistance = val["Resistance"].(float64)
 }
 
 // CirLoad 网表文件写入值
@@ -62,8 +62,8 @@ func (vlaue *Value) CirLoad(value []string) {
 }
 
 // CirExport 网表文件导出值
-func (vlaue *Value) CirExport() []string {
-	return []string{fmt.Sprintf("%.6g", vlaue.Resistance)}
+func (value *Value) CirExport() []string {
+	return []string{fmt.Sprintf("%.6g", value.Resistance)}
 }
 
 // Base 元件实现
