@@ -186,6 +186,7 @@ func (mna *MNA) Solve() (ok bool, err error) {
 		// 标准Newton-Raphson求解得到的完整步长解
 		mna.Lu.Factorize(mna.MatJ)
 		if err := mna.Lu.SolveVecTo(mna.MatX, false, mna.MatB); err != nil {
+			fmt.Println(mna)
 			return false, fmt.Errorf("矩阵求解失败: %v", err)
 		}
 		// mna.MatX = mna.OrigX + α × (mna.MatX - mna.OrigX) 阻尼实现
@@ -295,7 +296,7 @@ func (mna *MNA) StampMatrix(i, j types.NodeID, v float64) error {
 }
 
 // 在右侧向量B的i位置叠加值
-func (mna *MNA) StampRightSide(i types.VoltageID, v float64) error {
+func (mna *MNA) StampRightSide(i types.NodeID, v float64) error {
 	if i > types.ElementGndNodeID {
 		mna.MatB.SetVec(i, mna.MatB.AtVec(i)+v)
 	} else {

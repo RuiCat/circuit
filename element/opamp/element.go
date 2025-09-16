@@ -3,6 +3,7 @@ package opamp
 import (
 	"circuit/types"
 	"fmt"
+	"math"
 	"strconv"
 )
 
@@ -27,7 +28,6 @@ func (Config) InitValue() types.Value {
 		"MaxOutput": float64(15),     // 最大输出电压
 		"MinOutput": float64(-15),    // 最小输出电压
 		"Gain":      float64(100000), // 开环增益
-		"GBW":       float64(1e6),    // 带宽增益积
 	}
 	return val
 }
@@ -41,7 +41,6 @@ type Value struct {
 	MaxOutput       float64 // 最大输出电压
 	MinOutput       float64 // 最小输出电压
 	Gain            float64 // 开环增益
-	GBW             float64 // 带宽增益积
 }
 
 // GetVoltageSourceCnt 电压源数量
@@ -56,7 +55,6 @@ func (value *Value) Reset() {
 	value.MaxOutput = val["MaxOutput"].(float64)
 	value.MinOutput = val["MinOutput"].(float64)
 	value.Gain = val["Gain"].(float64)
-	value.GBW = val["GBW"].(float64)
 }
 
 // CirLoad 网表文件写入值
@@ -75,13 +73,6 @@ func (value *Value) CirLoad(valueStr []string) {
 			value.SetKeyValue("MinOutput", minOutput)
 		}
 	}
-	if len(valueStr) >= 3 {
-		// 解析带宽增益积
-		if gbw, err := strconv.ParseFloat(valueStr[2], 64); err == nil {
-			value.GBW = gbw
-			value.SetKeyValue("GBW", gbw)
-		}
-	}
 	if len(valueStr) >= 4 {
 		// 解析开环增益
 		if gain, err := strconv.ParseFloat(valueStr[3], 64); err == nil {
@@ -96,7 +87,6 @@ func (value *Value) CirExport() []string {
 	return []string{
 		fmt.Sprintf("%.6g", value.MaxOutput),
 		fmt.Sprintf("%.6g", value.MinOutput),
-		fmt.Sprintf("%.6g", value.GBW),
 		fmt.Sprintf("%.6g", value.Gain),
 	}
 }
@@ -121,58 +111,47 @@ func (base *Base) Reset() {
 func (base *Base) StartIteration(stamp types.Stamp) {}
 
 // Stamp 更新线性贡献 - 实现运放约束建模
-func (base *Base) Stamp(stamp types.Stamp) {}
+func (base *Base) Stamp(stamp types.Stamp) {
+	// 根据Java参考实现，运放约束应该在Stamp阶段建立
+	// sim.stampMatrix(nodes[2], vn, 1);
+	vn := stamp.GetNumNodes() + base.VoltSource[0]
+	stamp.StampMatrix(base.Nodes[2], vn, 1)
+}
 
 // DoStep 执行元件仿真 - 实现完整的非线性求解
 func (base *Base) DoStep(stamp types.Stamp) {
 	// 获取输入电压
-	inPlus, err1 := stamp.GetVoltage(base.Nodes[1])  // 正输入
-	inMinus, err2 := stamp.GetVoltage(base.Nodes[0]) // 负输入
-	if err1 != nil || err2 != nil {
+	volts0, err1 := stamp.GetVoltage(base.Nodes[0]) // 负输入
+	volts1, err2 := stamp.GetVoltage(base.Nodes[1]) // 正输入
+	volts2, err3 := stamp.GetVoltage(base.Nodes[2]) // 输出
+	if err1 != nil || err2 != nil || err3 != nil {
 		return
 	}
 	// 计算电压差
-	vd := inPlus - inMinus
-	// 收敛性检查
-	out, err3 := stamp.GetVoltage(base.Nodes[2])
-	if err3 != nil {
-		return
-	}
-	// 检查输出是否超出范围
-	if out > base.MaxOutput+0.01 || out < base.MinOutput-0.01 {
-		// 如果输出已经饱和，设置收敛标志
+	vd := volts1 - volts0
+	if math.Abs(base.lastVD-vd) > 0.1 {
+		stamp.SetConverged()
+	} else if volts2 > base.MaxOutput+.1 || volts2 < base.MinOutput-.1 {
 		stamp.SetConverged()
 	}
-	var x float64
-	var dx float64
-	// 检查是否饱和 - 修正饱和条件
-	// 对于理想运放，当输入差值足够大时会饱和
-	maxDiff := (base.MaxOutput - base.MinOutput) / base.Gain
-	if vd > maxDiff {
-		// 正饱和
-		x = base.MaxOutput
-		dx = 0
-	} else if vd < -maxDiff {
-		// 负饱和
-		x = base.MinOutput
-		dx = 0
+	// 计算
+	var x, dx float64
+	vn := stamp.GetNumNodes() + base.VoltSource[0]
+
+	if vd >= base.MaxOutput/base.Gain && (base.lastVD >= 0) {
+		dx = 1e-4
+		x = base.MaxOutput - dx*base.MaxOutput/base.Gain
+	} else if vd <= base.MinOutput/base.Gain && (base.lastVD <= 0) {
+		dx = 1e-4
+		x = base.MinOutput - dx*base.MinOutput/base.Gain
 	} else {
-		// 线性区域
-		x = vd * base.Gain
 		dx = base.Gain
 	}
-	if len(base.VoltSource) == 0 {
-		return
-	}
-	// 构建约束方程
-	vn := stamp.GetNumNodes() + base.VoltSource[0]
-	stamp.StampMatrix(base.Nodes[0], vn, -dx) // 负输入节点
-	stamp.StampMatrix(base.Nodes[1], vn, dx)  // 正输入节点
-	stamp.StampMatrix(base.Nodes[2], vn, -1)  // 输出节点
-	stamp.StampMatrix(vn, base.Nodes[0], -dx) // 负输入节点
-	stamp.StampMatrix(vn, base.Nodes[1], dx)  // 正输入节点
-	stamp.StampMatrix(vn, base.Nodes[2], -1)  // 输出节点
-	stamp.StampRightSide(vn, -x)
+	// 通过设置电压源右侧向量来实现约束
+	stamp.StampMatrix(vn, base.Nodes[0], dx)
+	stamp.StampMatrix(vn, base.Nodes[1], -dx)
+	stamp.StampMatrix(vn, base.Nodes[2], 1)
+	stamp.StampRightSide(vn, x) // 设置电压源值为运放输出电压
 	base.lastVD = vd
 }
 

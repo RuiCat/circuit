@@ -46,7 +46,7 @@ type Stamp interface {
 	GetVoltage(i NodeID) (float64, error)                                         // 返回节点电压
 	SetVoltage(i NodeID, v float64) error                                         // 设置节点电压
 	StampMatrix(i, j NodeID, value float64) error                                 // 在矩阵A的(i,j)位置叠加值
-	StampRightSide(i VoltageID, value float64) error                              // 在右侧向量B的i位置叠加值
+	StampRightSide(i NodeID, value float64) error                                 // 在右侧向量B的i位置叠加值
 	StampResistor(n1, n2 NodeID, r float64) error                                 // 加盖电阻元件
 	StampConductance(n1, n2 NodeID, g float64) error                              // 加盖电导元件
 	StampCurrentSource(n1, n2 NodeID, i float64) error                            // 加盖电流源
