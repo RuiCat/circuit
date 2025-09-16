@@ -200,10 +200,9 @@ func (base *Base) Stamp(stamp types.Stamp) {}
 // 执行此时间步长的主要晶体管仿真计算
 func (base *Base) DoStep(stamp types.Stamp) {
 	// 从电路节点获取电压
-	v1, _ := stamp.GetVoltage(base.Nodes[0])
-	v2, _ := stamp.GetVoltage(base.Nodes[1])
-	v3, _ := stamp.GetVoltage(base.Nodes[2])
-
+	v1 := stamp.GetVoltage(base.Nodes[0])
+	v2 := stamp.GetVoltage(base.Nodes[1])
+	v3 := stamp.GetVoltage(base.Nodes[2])
 	// 计算电压差 (P/NPN)
 	// 基极-集电极电压(通常在活跃模式下为负)
 	vbc := float64(base.pnp) * (v1 - v2)

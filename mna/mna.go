@@ -267,174 +267,94 @@ func (mna *MNA) GetNumVoltageSources() int {
 }
 
 // 返回节点电压
-func (mna *MNA) GetVoltage(i types.NodeID) (float64, error) {
+func (mna *MNA) GetVoltage(i types.NodeID) float64 {
 	switch {
 	case i == types.ElementGndNodeID:
-		return 0, nil
+		return 0
 	case i >= 0 && i < mna.NumNodes:
-		return mna.MatX.AtVec(i), nil
+		return mna.MatX.AtVec(i)
 	}
-	return 0, fmt.Errorf("获取节点电压 %b 错误", i)
+	return 0
 }
 
 // 设置节点电压
-func (mna *MNA) SetVoltage(i types.NodeID, v float64) error {
+func (mna *MNA) SetVoltage(i types.NodeID, v float64) {
 	if i > types.ElementGndNodeID && i < mna.NumNodes {
 		mna.MatX.SetVec(i, mna.MatX.AtVec(i)+v)
-		return nil
 	}
-	return fmt.Errorf("设置节点电压 %b:%b 错误", i, v)
 }
 
 // 在矩阵A的(i,j)位置叠加值
-func (mna *MNA) StampMatrix(i, j types.NodeID, v float64) error {
+func (mna *MNA) StampMatrix(i, j types.NodeID, v float64) {
 	if i > types.ElementGndNodeID && j > types.ElementGndNodeID {
 		mna.MatJ.Set(i, j, mna.MatJ.At(i, j)+v)
-		return nil
 	}
-	return fmt.Errorf("矩阵加盖失败 %b:%b -> %b", i, j, v)
 }
 
 // 在右侧向量B的i位置叠加值
-func (mna *MNA) StampRightSide(i types.NodeID, v float64) error {
+func (mna *MNA) StampRightSide(i types.NodeID, v float64) {
 	if i > types.ElementGndNodeID {
 		mna.MatB.SetVec(i, mna.MatB.AtVec(i)+v)
-	} else {
-		return fmt.Errorf("设置激励向量 %b:%b 错误", i, v)
 	}
-	return nil
 }
 
 // 加盖电阻元件
-func (mna *MNA) StampResistor(n1, n2 types.NodeID, r float64) error {
+func (mna *MNA) StampResistor(n1, n2 types.NodeID, r float64) {
 	g := 1.0 / math.Max(r, 1e-12) // 防止除零
-	return mna.StampConductance(n1, n2, g)
+	mna.StampConductance(n1, n2, g)
 }
 
 // 加盖电导元件
-func (mna *MNA) StampConductance(n1, n2 types.NodeID, g float64) error {
-	if n1 > types.ElementGndNodeID {
-		if err := mna.StampMatrix(n1, n1, g); err != nil {
-			return err
-		}
-	}
-	if n2 > types.ElementGndNodeID {
-		if err := mna.StampMatrix(n2, n2, g); err != nil {
-			return err
-		}
-	}
-	if n1 > types.ElementGndNodeID && n2 > types.ElementGndNodeID {
-		if err := mna.StampMatrix(n1, n2, -g); err != nil {
-			return err
-		}
-		if err := mna.StampMatrix(n2, n1, -g); err != nil {
-			return err
-		}
-	}
-	return nil
+func (mna *MNA) StampConductance(n1, n2 types.NodeID, g float64) {
+	mna.StampMatrix(n1, n1, g)
+	mna.StampMatrix(n2, n2, g)
+	mna.StampMatrix(n1, n2, -g)
+	mna.StampMatrix(n2, n1, -g)
 }
 
 // 加盖电流源
-func (mna *MNA) StampCurrentSource(n1, n2 types.NodeID, i float64) error {
-	if n1 > types.ElementGndNodeID {
-		if err := mna.StampRightSide(n1, -i); err != nil {
-			return err
-		}
-	}
-	if n2 > types.ElementGndNodeID {
-		if err := mna.StampRightSide(n2, i); err != nil {
-			return err
-		}
-	}
-	return nil
+func (mna *MNA) StampCurrentSource(n1, n2 types.NodeID, i float64) {
+	mna.StampRightSide(n1, -i)
+	mna.StampRightSide(n2, i)
 }
 
 // 加盖电压源
-func (mna *MNA) StampVoltageSource(n1, n2 types.NodeID, vs types.VoltageID, v float64) error {
-	vsRow := mna.NumNodes + vs
-	if n1 > types.ElementGndNodeID {
-		if err := mna.StampMatrix(vsRow, n1, 1); err != nil { // 约束方程
-			return err
-		}
-		if err := mna.StampMatrix(n1, vsRow, 1); err != nil { // 电流变量
-			return err
-		}
-	}
-	if n2 > types.ElementGndNodeID {
-		if err := mna.StampMatrix(vsRow, n2, -1); err != nil { // 约束方程
-			return err
-		}
-		if err := mna.StampMatrix(n2, vsRow, -1); err != nil { // 电流变量
-			return err
-		}
-	}
-	return mna.StampRightSide(vsRow, v)
+func (mna *MNA) StampVoltageSource(n1, n2 types.NodeID, vs types.VoltageID, v float64) {
+	vn := mna.NumNodes + vs
+	mna.StampMatrix(vn, n1, -1)
+	mna.StampMatrix(vn, n2, 1)
+	mna.StampRightSide(vn, v)
+	mna.StampMatrix(n1, vn, 1)
+	mna.StampMatrix(n2, vn, -1)
 }
 
 // 更新电压源值
-func (mna *MNA) UpdateVoltageSource(n1, n2 types.NodeID, vs types.VoltageID, v float64) error {
-	return mna.StampRightSide(mna.NumNodes+vs, v)
+func (mna *MNA) UpdateVoltageSource(n1, n2 types.NodeID, vs types.VoltageID, v float64) {
+	mna.StampRightSide(mna.NumNodes+vs, v)
 }
 
 // StampVCVS 加盖电压控制电压源
-func (mna *MNA) StampVCVS(n1, n2 types.NodeID, vs types.VoltageID, coef float64) error {
-	vsRow := mna.NumNodes + vs
-	// 控制电压方程
-	if n1 > types.ElementGndNodeID {
-		if err := mna.StampMatrix(vsRow, n1, coef); err != nil {
-			return err
-		}
-	}
-	if n2 > types.ElementGndNodeID {
-		if err := mna.StampMatrix(vsRow, n2, -coef); err != nil {
-			return err
-		}
-	}
-	// 受控电压源约束
-	return mna.StampMatrix(vsRow, vs, -1)
+func (mna *MNA) StampVCVS(n1, n2 types.NodeID, vs types.VoltageID, coef float64) {
+	vn := mna.NumNodes + vs
+	mna.StampMatrix(vn, n1, coef)
+	mna.StampMatrix(vn, n2, -coef)
 }
 
 // StampVCCurrentSource 加盖电压控制电流源
-func (mna *MNA) StampVCCurrentSource(cn1, cn2 types.NodeID, vn1, vn2 types.VoltageID, gain float64) error {
+func (mna *MNA) StampVCCurrentSource(cn1, cn2 types.NodeID, vn1, vn2 types.VoltageID, gain float64) {
 	// 控制电压差
-	if cn1 > types.ElementGndNodeID && vn1 > types.ElementGndNodeID {
-		if err := mna.StampMatrix(vn1, cn1, gain); err != nil {
-			return err
-		}
-	}
-	if cn1 > types.ElementGndNodeID && vn2 > types.ElementGndNodeID {
-		if err := mna.StampMatrix(vn2, cn1, -gain); err != nil {
-			return err
-		}
-	}
-	if cn2 > types.ElementGndNodeID && vn1 > types.ElementGndNodeID {
-		if err := mna.StampMatrix(vn1, cn2, -gain); err != nil {
-			return err
-		}
-	}
-	if cn2 > types.ElementGndNodeID && vn2 > types.ElementGndNodeID {
-		if err := mna.StampMatrix(vn2, cn2, gain); err != nil {
-			return err
-		}
-	}
-	return nil
+	mna.StampMatrix(cn1, vn1, gain)
+	mna.StampMatrix(cn2, vn2, gain)
+	mna.StampMatrix(cn1, vn2, -gain)
+	mna.StampMatrix(cn2, vn1, -gain)
 }
 
 // StampCCCS 加盖电流控制电流源
-func (mna *MNA) StampCCCS(n1, n2 types.NodeID, vs types.VoltageID, gain float64) error {
-	vsRow := mna.NumNodes + vs
+func (mna *MNA) StampCCCS(n1, n2 types.NodeID, vs types.VoltageID, gain float64) {
+	vn := mna.NumNodes + vs
 	// 控制电流方程
-	if n1 > types.ElementGndNodeID {
-		if err := mna.StampMatrix(n1, vsRow, gain); err != nil {
-			return err
-		}
-	}
-	if n2 > types.ElementGndNodeID {
-		if err := mna.StampMatrix(n2, vsRow, -gain); err != nil {
-			return err
-		}
-	}
-	return nil
+	mna.StampMatrix(n1, vn, gain)
+	mna.StampMatrix(n2, vn, -gain)
 }
 
 // String 输出结构

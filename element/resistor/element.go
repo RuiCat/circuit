@@ -89,8 +89,8 @@ func (base *Base) DoStep(stamp types.Stamp) {}
 // CalculateCurrent 电流计算
 func (base *Base) CalculateCurrent(stamp types.Stamp) {
 	// 计算电流（欧姆定律）
-	v1, _ := stamp.GetVoltage(base.Nodes[0])
-	v2, _ := stamp.GetVoltage(base.Nodes[1])
+	v1 := stamp.GetVoltage(base.Nodes[0])
+	v2 := stamp.GetVoltage(base.Nodes[1])
 	current := (v1 - v2) / base.Resistance
 	// 储电流值
 	base.Current.SetVec(0, current)

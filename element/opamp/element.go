@@ -121,12 +121,9 @@ func (base *Base) Stamp(stamp types.Stamp) {
 // DoStep 执行元件仿真 - 实现完整的非线性求解
 func (base *Base) DoStep(stamp types.Stamp) {
 	// 获取输入电压
-	volts0, err1 := stamp.GetVoltage(base.Nodes[0]) // 负输入
-	volts1, err2 := stamp.GetVoltage(base.Nodes[1]) // 正输入
-	volts2, err3 := stamp.GetVoltage(base.Nodes[2]) // 输出
-	if err1 != nil || err2 != nil || err3 != nil {
-		return
-	}
+	volts0 := stamp.GetVoltage(base.Nodes[0]) // 负输入
+	volts1 := stamp.GetVoltage(base.Nodes[1]) // 正输入
+	volts2 := stamp.GetVoltage(base.Nodes[2]) // 输出
 	// 计算电压差
 	vd := volts1 - volts0
 	if math.Abs(base.lastVD-vd) > 0.1 {
@@ -167,9 +164,9 @@ func (base *Base) StepFinished(stamp types.Stamp) {}
 
 // Debug 调试
 func (base *Base) Debug(stamp types.Stamp) string {
-	inPlus, _ := stamp.GetVoltage(base.Nodes[1])
-	inMinus, _ := stamp.GetVoltage(base.Nodes[0])
-	out, _ := stamp.GetVoltage(base.Nodes[2])
+	inPlus := stamp.GetVoltage(base.Nodes[1])
+	inMinus := stamp.GetVoltage(base.Nodes[0])
+	out := stamp.GetVoltage(base.Nodes[2])
 	return fmt.Sprintf("运放: V+=%+8.3f V-=%+8.3f Vout=%+8.3f Gain=%+8.0f Max=%+8.1f Min=%+8.1f",
 		inPlus, inMinus, out, base.Gain, base.MaxOutput, base.MinOutput)
 }

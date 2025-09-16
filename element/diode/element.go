@@ -261,8 +261,8 @@ func (base *Base) Stamp(stamp types.Stamp) {}
 // DoStep 执行元件仿真
 func (base *Base) DoStep(stamp types.Stamp) {
 	// 获取电压差
-	v1, _ := stamp.GetVoltage(base.Nodes[0])
-	v2, _ := stamp.GetVoltage(base.Nodes[1])
+	v1 := stamp.GetVoltage(base.Nodes[0])
+	v2 := stamp.GetVoltage(base.Nodes[1])
 	voltdiff := v1 - v2
 	// 检查电压变化是否足够大以影响收敛
 	if math.Abs(voltdiff-base.lastvoltdiff) > 0.01 {
@@ -333,8 +333,8 @@ func (base *Base) calculateCurrent(voltdiff float64) float64 {
 
 // CalculateCurrent 电流计算
 func (base *Base) CalculateCurrent(stamp types.Stamp) {
-	v1, _ := stamp.GetVoltage(base.Nodes[0])
-	v2, _ := stamp.GetVoltage(base.Nodes[1])
+	v1 := stamp.GetVoltage(base.Nodes[0])
+	v2 := stamp.GetVoltage(base.Nodes[1])
 	voltdiff := v1 - v2
 	current := base.calculateCurrent(voltdiff)
 	base.Current.SetVec(0, current)
@@ -345,8 +345,8 @@ func (base *Base) StepFinished(stamp types.Stamp) {}
 
 // Debug 调试
 func (base *Base) Debug(stamp types.Stamp) string {
-	v1, _ := stamp.GetVoltage(base.Nodes[0])
-	v2, _ := stamp.GetVoltage(base.Nodes[1])
+	v1 := stamp.GetVoltage(base.Nodes[0])
+	v2 := stamp.GetVoltage(base.Nodes[1])
 	voltdiff := v1 - v2
 	current := base.calculateCurrent(voltdiff)
 	return fmt.Sprintf("二极管: 电压差=%+12.6fV 电流=%+12.6fA", voltdiff, current)
