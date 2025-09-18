@@ -64,19 +64,19 @@ type Value struct {
 
 // GetVoltageSourceCnt 电压源数量
 // 返回0，因为晶体管是被动元件
-func (v *Value) GetVoltageSourceCnt() int { return 3 }
+func (value *Value) GetVoltageSourceCnt() int { return 3 }
 
 // GetInternalNodeCount 内壁引脚数量
 // 返回0，因为晶体管没有内部节点
-func (v *Value) GetInternalNodeCount() int { return 0 }
+func (value *Value) GetInternalNodeCount() int { return 0 }
 
 // Reset 元件值初始化
 // 从值映射中重置晶体管参数
-func (v *Value) Reset() {
-	val := v.GetValue()
-	v.PNP = val["PNP"].(bool)
-	v.Beta = val["Beta"].(float64)
-	v.ModelName = val["ModelName"].(string)
+func (value *Value) Reset() {
+	val := value.GetValue()
+	value.PNP = val["PNP"].(bool)
+	value.Beta = val["Beta"].(float64)
+	value.ModelName = val["ModelName"].(string)
 }
 
 // CirLoad 网表文件写入值
@@ -85,31 +85,28 @@ func (v *Value) CirLoad(value []string) {
 	if len(value) >= 1 {
 		// 解析PNP标志
 		if pnp, err := strconv.ParseBool(value[0]); err == nil {
-			v.PNP = pnp
 			v.SetKeyValue("PNP", pnp)
 		}
 	}
 	if len(value) >= 2 {
 		// 解析电流增益
 		if beta, err := strconv.ParseFloat(value[1], 64); err == nil {
-			v.Beta = beta
 			v.SetKeyValue("Beta", beta)
 		}
 	}
 	if len(value) >= 3 {
 		// 解析模型名称
-		v.ModelName = value[2]
 		v.SetKeyValue("ModelName", value[2])
 	}
 }
 
 // CirExport 网表文件导出值
 // 将晶体管参数导出到网表格式
-func (v *Value) CirExport() []string {
+func (value *Value) CirExport() []string {
 	return []string{
-		fmt.Sprintf("%t", v.PNP),
-		fmt.Sprintf("%.6g", v.Beta),
-		v.ModelName,
+		fmt.Sprintf("%t", value.PNP),
+		fmt.Sprintf("%.6g", value.Beta),
+		value.ModelName,
 	}
 }
 

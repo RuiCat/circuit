@@ -63,14 +63,12 @@ func (value *Value) CirLoad(values []string) {
 	if len(values) >= 1 {
 		// 解析电感值
 		if inductance, err := strconv.ParseFloat(values[0], 64); err == nil {
-			value.Inductance = inductance
 			value.SetKeyValue("Inductance", inductance)
 		}
 	}
 	if len(values) >= 2 {
 		// 解析初始电流值
 		if initialCurrent, err := strconv.ParseFloat(values[1], 64); err == nil {
-			value.InitialCurrent = initialCurrent
 			value.SetKeyValue("InitialCurrent", initialCurrent)
 		}
 	}

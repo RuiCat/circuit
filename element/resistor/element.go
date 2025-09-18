@@ -55,7 +55,6 @@ func (vlaue *Value) CirLoad(value []string) {
 	if len(value) >= 1 {
 		// 解析电阻值
 		if resistance, err := strconv.ParseFloat(value[0], 64); err == nil {
-			vlaue.Resistance = resistance
 			vlaue.SetKeyValue("Resistance", resistance)
 		}
 	}

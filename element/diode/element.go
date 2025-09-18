@@ -75,35 +75,30 @@ func (v *Value) CirLoad(values []string) {
 	if len(values) >= 1 {
 		// 解析反向饱和电流
 		if saturationCurrent, err := strconv.ParseFloat(values[0], 64); err == nil {
-			v.SaturationCurrent = saturationCurrent
 			v.SetKeyValue("SaturationCurrent", saturationCurrent)
 		}
 	}
 	if len(values) >= 2 {
 		// 解析击穿电压
 		if breakdownVoltage, err := strconv.ParseFloat(values[1], 64); err == nil {
-			v.BreakdownVoltage = breakdownVoltage
 			v.SetKeyValue("BreakdownVoltage", breakdownVoltage)
 		}
 	}
 	if len(values) >= 3 {
 		// 解析发射系数
 		if emissionCoefficient, err := strconv.ParseFloat(values[2], 64); err == nil {
-			v.EmissionCoefficient = emissionCoefficient
 			v.SetKeyValue("EmissionCoefficient", emissionCoefficient)
 		}
 	}
 	if len(values) >= 4 {
 		// 解析串联电阻
 		if seriesResistance, err := strconv.ParseFloat(values[3], 64); err == nil {
-			v.SeriesResistance = seriesResistance
 			v.SetKeyValue("SeriesResistance", seriesResistance)
 		}
 	}
 	if len(values) >= 5 {
 		// 解析温度
 		if temperature, err := strconv.ParseFloat(values[4], 64); err == nil {
-			v.Temperature = temperature
 			v.SetKeyValue("Temperature", temperature)
 		}
 	}
@@ -225,10 +220,7 @@ func (base *Base) limitStep(stamp types.Stamp, vnew, vold float64) float64 {
 				vnew = base.vcrit
 			}
 		} else {
-			// 调整vnew使电流与前一次迭代的线性化模型相同
-			if base.vscale > 0 && vnew > 0 {
-				vnew = base.vscale * math.Log(vnew/base.vscale)
-			}
+			vnew = base.vscale * math.Log(vnew/base.vscale)
 		}
 		stamp.SetConverged()
 	} else if vnew < 0 && base.zoffset != 0 {
@@ -244,9 +236,7 @@ func (base *Base) limitStep(stamp types.Stamp, vnew, vold float64) float64 {
 					vnewTranslated = base.vzcrit
 				}
 			} else {
-				if base.vt > 0 && vnewTranslated > 0 {
-					vnewTranslated = base.vt * math.Log(vnewTranslated/base.vt)
-				}
+				vnewTranslated = base.vt * math.Log(vnewTranslated/base.vt)
 			}
 			stamp.SetConverged()
 		}

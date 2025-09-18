@@ -65,14 +65,12 @@ func (value *Value) CirLoad(values []string) {
 	if len(values) >= 1 {
 		// 解析电容值
 		if capacitance, err := strconv.ParseFloat(values[0], 64); err == nil {
-			value.Capacitance = capacitance
 			value.SetKeyValue("Capacitance", capacitance)
 		}
 	}
 	if len(values) >= 2 {
 		// 解析初始电压值
 		if initialVoltage, err := strconv.ParseFloat(values[1], 64); err == nil {
-			value.InitialVoltage = initialVoltage
 			value.SetKeyValue("InitialVoltage", initialVoltage)
 		}
 	}

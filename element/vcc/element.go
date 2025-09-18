@@ -4,7 +4,19 @@ import (
 	"circuit/types"
 	"fmt"
 	"math"
+	"math/rand"
 	"strconv"
+)
+
+// 电源类型
+const (
+	WfDC       = 0 // 直流波形
+	WfAC       = 1 // 交流波形
+	WfSQUARE   = 2 // 方波
+	WfTRIANGLE = 3 // 三角波
+	WfSAWTOOTH = 4 // 锯齿波
+	WfPULSE    = 5 // 脉冲波
+	WfNOISE    = 6 // 噪声波
 )
 
 // Type 元件类型
@@ -25,10 +37,12 @@ func (Config) Init(value *types.ElementBase) types.ElementFace {
 func (Config) InitValue() types.Value {
 	val := &Value{}
 	val.ValueMap = types.ValueMap{
-		"Voltage": float64(0),
-		"IsAC":    false,
-		"Freq":    float64(0),
-		"Phase":   float64(0),
+		"Waveform":   int(WfDC),
+		"Bias":       float64(0),
+		"Frequency":  float64(0),
+		"PhaseShift": float64(1 / (2 * math.Pi)),
+		"MaxVoltage": float64(0),
+		"DutyCycle":  float64(0),
 	}
 	return val
 }
@@ -39,10 +53,13 @@ func (Config) GetPostCount() int { return 2 }
 // Value 元件值处理结构
 type Value struct {
 	types.ValueBase         // 基础创建
-	Voltage         float64 // 源电压(V) - 对AC表示峰值电压
-	IsAC            bool    // 是否为交流电压源
-	Freq            float64 // 频率(Hz)，仅AC有效
-	Phase           float64 // 相位(弧度)，仅AC有效
+	Waveform        int     // 波形类型，定义电压源的波形形状（DC、AC、方波等）
+	Bias            float64 // 偏置电压，直流偏置值
+	FreqTimeZero    float64 // 频率时间零点，频率计算的时间参考点
+	Frequency       float64 // 频率，波形的频率值
+	PhaseShift      float64 // 相位偏移，波形的相位角度偏移
+	MaxVoltage      float64 // 最大电压，波形的最大电压幅度
+	DutyCycle       float64 // 占空比，方波和脉冲波形的占空比值
 }
 
 // GetVoltageSourceCnt 电压源数量
@@ -54,51 +71,81 @@ func (vlaue *Value) GetInternalNodeCount() int { return 0 }
 // Reset 元件值初始化
 func (vlaue *Value) Reset() {
 	val := vlaue.GetValue()
-	vlaue.Voltage = val["Voltage"].(float64)
-	vlaue.IsAC = val["IsAC"].(bool)
-	vlaue.Freq = val["Freq"].(float64)
-	vlaue.Phase = val["Phase"].(float64)
+	vlaue.Waveform = val["Waveform"].(int)
+	vlaue.Bias = val["Bias"].(float64)
+	vlaue.Frequency = val["Frequency"].(float64)
+	vlaue.PhaseShift = val["PhaseShift"].(float64)
+	vlaue.MaxVoltage = val["MaxVoltage"].(float64)
+	vlaue.DutyCycle = val["DutyCycle"].(float64)
+	vlaue.FreqTimeZero = 0
 }
 
 // CirLoad 网表文件写入值
 func (vlaue *Value) CirLoad(value []string) {
-	if len(value) >= 1 {
-		// 解析电压值
-		if voltage, err := strconv.ParseFloat(value[0], 64); err == nil {
-			vlaue.Voltage = voltage
-			vlaue.SetKeyValue("Voltage", voltage)
-		}
+	if len(value) == 0 {
+		return
 	}
-	if len(value) >= 2 {
-		// 解析是否为交流
-		if isAC, err := strconv.ParseBool(value[1]); err == nil {
-			vlaue.IsAC = isAC
-			vlaue.SetKeyValue("IsAC", isAC)
+	if waveform, err := strconv.Atoi(value[0]); err == nil {
+		switch waveform {
+		case WfDC, WfNOISE: // 直流波形,噪声波
+			if bias, err := strconv.ParseFloat(value[1], 64); err == nil {
+				vlaue.SetKeyValue("Bias", bias)
+			}
+		case WfAC, WfTRIANGLE, WfSAWTOOTH: // 交流波形,三角波,锯齿波
+			if bias, err := strconv.ParseFloat(value[1], 64); err == nil {
+				vlaue.SetKeyValue("Bias", bias)
+			}
+			if frequency, err := strconv.ParseFloat(value[2], 64); err == nil {
+				vlaue.SetKeyValue("Frequency", frequency)
+			}
+			if phaseShift, err := strconv.ParseFloat(value[3], 64); err == nil {
+				vlaue.SetKeyValue("PhaseShift", phaseShift)
+			}
+		case WfSQUARE, WfPULSE:
+			if bias, err := strconv.ParseFloat(value[1], 64); err == nil {
+				vlaue.SetKeyValue("Bias", bias)
+			}
+			if frequency, err := strconv.ParseFloat(value[2], 64); err == nil {
+				vlaue.SetKeyValue("Frequency", frequency)
+			}
+			if phaseShift, err := strconv.ParseFloat(value[3], 64); err == nil {
+				vlaue.SetKeyValue("PhaseShift", phaseShift)
+			}
+			if dutyCycle, err := strconv.ParseFloat(value[4], 64); err == nil {
+				vlaue.SetKeyValue("DutyCycle", dutyCycle)
+			}
+		default:
+			return
 		}
-	}
-	if len(value) >= 3 {
-		// 解析频率
-		if freq, err := strconv.ParseFloat(value[2], 64); err == nil {
-			vlaue.Freq = freq
-			vlaue.SetKeyValue("Freq", freq)
-		}
-	}
-	if len(value) >= 4 {
-		// 解析相位
-		if phase, err := strconv.ParseFloat(value[3], 64); err == nil {
-			vlaue.Phase = phase
-			vlaue.SetKeyValue("Phase", phase)
-		}
+		vlaue.Waveform = waveform
 	}
 }
 
 // CirExport 网表文件导出值
 func (vlaue *Value) CirExport() []string {
-	return []string{
-		fmt.Sprintf("%.6g", vlaue.Voltage),
-		fmt.Sprintf("%t", vlaue.IsAC),
-		fmt.Sprintf("%.6g", vlaue.Freq),
-		fmt.Sprintf("%.6g", vlaue.Phase),
+	switch vlaue.Waveform {
+	case WfDC, WfNOISE: // 直流波形,噪声波
+		return []string{
+			fmt.Sprintf("%d", vlaue.Waveform),
+			fmt.Sprintf("%.6g", vlaue.Bias),
+		}
+	case WfAC, WfTRIANGLE, WfSAWTOOTH: // 交流波形,三角波,锯齿波
+		return []string{
+			fmt.Sprintf("%d", vlaue.Waveform),
+			fmt.Sprintf("%.6g", vlaue.Bias),
+			fmt.Sprintf("%.6g", vlaue.Frequency),
+			fmt.Sprintf("%.6g", vlaue.PhaseShift),
+		}
+	case WfSQUARE, WfPULSE:
+		return []string{
+			fmt.Sprintf("%d", vlaue.Waveform),
+			fmt.Sprintf("%.6g", vlaue.Bias),
+			fmt.Sprintf("%.6g", vlaue.Frequency),
+			fmt.Sprintf("%.6g", vlaue.PhaseShift),
+			fmt.Sprintf("%.6g", vlaue.DutyCycle),
+		}
+	default:
+		return []string{}
 	}
 }
 
@@ -106,42 +153,95 @@ func (vlaue *Value) CirExport() []string {
 type Base struct {
 	*types.ElementBase
 	*Value
+	NoiseValue float64 // 噪声值，噪声波形的当前值
 }
 
 // Type 类型
 func (base *Base) Type() types.ElementType { return Type }
 
 // StartIteration 迭代开始
-func (base *Base) StartIteration(stamp types.Stamp) {
-	if base.IsAC {
-		// 计算瞬时交流电压值: V(t) = Vpeak * sin(2πft + φ)
-		time := stamp.GetTime().Time
-		base.Voltage = base.Voltage * math.Sin(2*math.Pi*base.Freq*time+base.Phase)
-	}
-}
+func (base *Base) StartIteration(stamp types.Stamp) {}
 
 // Stamp 更新线性贡献
 func (base *Base) Stamp(stamp types.Stamp) {
-	if !base.IsAC {
-		// 直流电压源
-		stamp.StampVoltageSource(base.Nodes[0], base.Nodes[1], base.VoltSource[0], base.Voltage)
+	if base.Waveform == WfDC {
+		stamp.StampVoltageSource(base.Nodes[0], base.Nodes[1], base.VoltSource[0], base.getVoltage(stamp))
+	} else {
+		stamp.StampVoltageSource(base.Nodes[0], base.Nodes[1], base.VoltSource[0], 0)
 	}
 }
 
 // DoStep 执行元件仿真
 func (base *Base) DoStep(stamp types.Stamp) {
-	if base.IsAC {
-		stamp.StampVoltageSource(base.Nodes[0], base.Nodes[1], base.VoltSource[0], base.Voltage)
+	if base.Waveform != WfDC {
+		stamp.UpdateVoltageSource(base.Nodes[0], base.Nodes[1], base.VoltSource[0], base.getVoltage(stamp))
 	}
+}
+
+// getVoltage 得到电压值
+func (base *Base) getVoltage(stamp types.Stamp) float64 {
+	if base.Waveform != WfDC && stamp.GetConfig().IsDCAnalysis {
+		return base.Bias
+	}
+	sim := stamp.GetTime()
+	w := 2*math.Pi*(sim.Time-base.FreqTimeZero)*base.Frequency + base.PhaseShift
+	switch base.Waveform {
+	case WfDC:
+		return base.MaxVoltage + base.Bias
+	case WfAC:
+		return math.Sin(w)*base.MaxVoltage + base.Bias
+	case WfSQUARE:
+		if math.Mod(w, 2*math.Pi) > (2 * math.Pi * base.DutyCycle) {
+			return base.Bias - base.MaxVoltage
+		} else {
+			return base.Bias + base.MaxVoltage
+		}
+	case WfTRIANGLE:
+		return base.Bias + triangleFunc(math.Mod(w, 2*math.Pi))*base.MaxVoltage
+	case WfSAWTOOTH:
+		return base.Bias + math.Mod(w, 2*math.Pi)*(base.MaxVoltage/math.Pi) - base.MaxVoltage
+	case WfPULSE:
+		if math.Mod(w, 2*math.Pi) < (2 * math.Pi * base.DutyCycle) {
+			return base.MaxVoltage + base.Bias
+		} else {
+			return base.Bias
+		}
+	case WfNOISE:
+		return base.NoiseValue
+	default:
+		return 0
+	}
+}
+
+// triangleFunc 三角波函数计算
+func triangleFunc(x float64) float64 {
+	if x < math.Pi {
+		return x*(2/math.Pi) - 1
+	}
+	return 1 - (x-math.Pi)*(2/math.Pi)
 }
 
 // CalculateCurrent 电流计算
 func (base *Base) CalculateCurrent(stamp types.Stamp) {}
 
 // StepFinished 步长迭代结束
-func (base *Base) StepFinished(stamp types.Stamp) {}
+func (base *Base) StepFinished(stamp types.Stamp) {
+	if base.Waveform == WfNOISE {
+		base.NoiseValue = (rand.NormFloat64()*2-1)*base.MaxVoltage + base.Bias
+	}
+}
+
+var waveformMap = map[int]string{
+	WfDC:       "DC",
+	WfAC:       "AC",
+	WfSQUARE:   "SQUARE",
+	WfTRIANGLE: "TRIANGLE",
+	WfSAWTOOTH: "SAWTOOTH",
+	WfPULSE:    "PULSE",
+	WfNOISE:    "NOISE",
+}
 
 // Debug  调试
 func (base *Base) Debug(stamp types.Stamp) string {
-	return fmt.Sprintf("电压:%+16f", base.Voltage)
+	return fmt.Sprintf("类型:%s 电压:%+16f", waveformMap[base.Waveform], base.Bias)
 }

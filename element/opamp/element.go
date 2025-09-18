@@ -62,21 +62,18 @@ func (value *Value) CirLoad(valueStr []string) {
 	if len(valueStr) >= 1 {
 		// 解析最大输出电压
 		if maxOutput, err := strconv.ParseFloat(valueStr[0], 64); err == nil {
-			value.MaxOutput = maxOutput
 			value.SetKeyValue("MaxOutput", maxOutput)
 		}
 	}
 	if len(valueStr) >= 2 {
 		// 解析最小输出电压
 		if minOutput, err := strconv.ParseFloat(valueStr[1], 64); err == nil {
-			value.MinOutput = minOutput
 			value.SetKeyValue("MinOutput", minOutput)
 		}
 	}
 	if len(valueStr) >= 4 {
 		// 解析开环增益
 		if gain, err := strconv.ParseFloat(valueStr[3], 64); err == nil {
-			value.Gain = gain
 			value.SetKeyValue("Gain", gain)
 		}
 	}
