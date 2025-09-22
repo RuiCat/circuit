@@ -151,7 +151,9 @@ func (mna *MNA) Solve() (ok bool, err error) {
 		// 检查矩阵
 		if mna.Debug.IsDebug() {
 			// 更新调试信息
-			mna.Debug.Update(mna)
+			if math.Mod(mna.MaxTimeStep, mna.Time) == mna.MaxTimeStep {
+				mna.Debug.Update(mna)
+			}
 			// 检查关键节点
 			for i := 0; i < mna.NumNodes; i++ {
 				if math.Abs(mna.MatJ.At(i, i)) < 1e-9 {
