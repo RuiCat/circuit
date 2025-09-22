@@ -329,7 +329,7 @@ func (mna *MNA) StampVoltageSource(n1, n2 types.NodeID, vs types.VoltageID, v fl
 }
 
 // 更新电压源值
-func (mna *MNA) UpdateVoltageSource(n1, n2 types.NodeID, vs types.VoltageID, v float64) {
+func (mna *MNA) UpdateVoltageSource(vs types.VoltageID, v float64) {
 	mna.StampRightSide(mna.NumNodes+vs, v)
 }
 

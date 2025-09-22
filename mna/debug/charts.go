@@ -3,6 +3,7 @@ package debug
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 
 	"github.com/go-echarts/go-echarts/v2/charts"
@@ -274,3 +275,5 @@ func (c *Charts) Render(w io.Writer) error {
 func (c *Charts) Handler(w http.ResponseWriter, _ *http.Request) {
 	c.Render(w)
 }
+
+func (c *Charts) Error(err error) { log.Println(err) }

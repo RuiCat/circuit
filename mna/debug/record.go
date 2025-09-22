@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 )
 
 // Record 记录历史状态
@@ -75,3 +76,5 @@ func (list *Record) Update(mna *mna.MNA) {
 		list.Current[n] = append(list.Current[n], mna.ElementList[i].Current.RawVector().Data...)
 	}
 }
+
+func (list *Record) Error(err error) { log.Println(err) }

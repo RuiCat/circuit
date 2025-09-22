@@ -9,11 +9,11 @@ const (
 
 // 默认参数常量定义
 var (
-	Tolerance           = 1e-6     // 收敛容差
-	MaxIterations       = 50       // 最大迭代次数
-	MaxOscillationCount = 6        // 最大震荡次数
-	MaxGoodIter         = 5        // 最大失败数
-	DefaultTimeStep     = 0.0005   // 默认时间步长
-	MinTimeStep         = 0.000001 // 最小时间步长
-	MaxTimeStep         = 0.01     // 最大时间步长
+	Tolerance           = 1e-6      // 收敛容差
+	MaxIterations       = 50        // 最大迭代错误次数
+	MaxOscillationCount = 15        // 最大震荡次数
+	MaxGoodIter         = 10        // 最大失败数
+	DefaultTimeStep     = 0.000005  // 默认时间步长
+	MinTimeStep         = 0.0000001 // 最小时间步长
+	MaxTimeStep         = 0.0001    // 最大时间步长
 )

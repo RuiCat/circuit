@@ -37,12 +37,13 @@ func (Config) Init(value *types.ElementBase) types.ElementFace {
 func (Config) InitValue() types.Value {
 	val := &Value{}
 	val.ValueMap = types.ValueMap{
-		"Waveform":   int(WfDC),
-		"Bias":       float64(0),
-		"Frequency":  float64(0),
-		"PhaseShift": float64(1 / (2 * math.Pi)),
-		"MaxVoltage": float64(0),
-		"DutyCycle":  float64(0),
+		"Waveform":     int(WfDC),
+		"Bias":         float64(0),
+		"Frequency":    float64(0),
+		"PhaseShift":   float64(0),
+		"MaxVoltage":   float64(0),
+		"DutyCycle":    float64(0),
+		"FreqTimeZero": float64(0),
 	}
 	return val
 }
@@ -77,7 +78,7 @@ func (vlaue *Value) Reset() {
 	vlaue.PhaseShift = val["PhaseShift"].(float64)
 	vlaue.MaxVoltage = val["MaxVoltage"].(float64)
 	vlaue.DutyCycle = val["DutyCycle"].(float64)
-	vlaue.FreqTimeZero = 0
+	vlaue.FreqTimeZero = val["FreqTimeZero"].(float64)
 }
 
 // CirLoad 网表文件写入值
@@ -95,29 +96,41 @@ func (vlaue *Value) CirLoad(value []string) {
 			if bias, err := strconv.ParseFloat(value[1], 64); err == nil {
 				vlaue.SetKeyValue("Bias", bias)
 			}
-			if frequency, err := strconv.ParseFloat(value[2], 64); err == nil {
+			if maxVoltage, err := strconv.ParseFloat(value[2], 64); err == nil {
+				vlaue.SetKeyValue("MaxVoltage", maxVoltage)
+			}
+			if frequency, err := strconv.ParseFloat(value[3], 64); err == nil {
 				vlaue.SetKeyValue("Frequency", frequency)
 			}
-			if phaseShift, err := strconv.ParseFloat(value[3], 64); err == nil {
+			if phaseShift, err := strconv.ParseFloat(value[4], 64); err == nil {
 				vlaue.SetKeyValue("PhaseShift", phaseShift)
+			}
+			if freqTimeZero, err := strconv.ParseFloat(value[5], 64); err == nil {
+				vlaue.SetKeyValue("FreqTimeZero", freqTimeZero)
 			}
 		case WfSQUARE, WfPULSE:
 			if bias, err := strconv.ParseFloat(value[1], 64); err == nil {
 				vlaue.SetKeyValue("Bias", bias)
 			}
-			if frequency, err := strconv.ParseFloat(value[2], 64); err == nil {
+			if maxVoltage, err := strconv.ParseFloat(value[2], 64); err == nil {
+				vlaue.SetKeyValue("MaxVoltage", maxVoltage)
+			}
+			if frequency, err := strconv.ParseFloat(value[3], 64); err == nil {
 				vlaue.SetKeyValue("Frequency", frequency)
 			}
-			if phaseShift, err := strconv.ParseFloat(value[3], 64); err == nil {
+			if phaseShift, err := strconv.ParseFloat(value[4], 64); err == nil {
 				vlaue.SetKeyValue("PhaseShift", phaseShift)
 			}
-			if dutyCycle, err := strconv.ParseFloat(value[4], 64); err == nil {
+			if dutyCycle, err := strconv.ParseFloat(value[5], 64); err == nil {
 				vlaue.SetKeyValue("DutyCycle", dutyCycle)
+			}
+			if freqTimeZero, err := strconv.ParseFloat(value[6], 64); err == nil {
+				vlaue.SetKeyValue("FreqTimeZero", freqTimeZero)
 			}
 		default:
 			return
 		}
-		vlaue.Waveform = waveform
+		vlaue.SetKeyValue("Waveform", waveform)
 	}
 }
 
@@ -133,16 +146,20 @@ func (vlaue *Value) CirExport() []string {
 		return []string{
 			fmt.Sprintf("%d", vlaue.Waveform),
 			fmt.Sprintf("%.6g", vlaue.Bias),
+			fmt.Sprintf("%.6g", vlaue.MaxVoltage),
 			fmt.Sprintf("%.6g", vlaue.Frequency),
 			fmt.Sprintf("%.6g", vlaue.PhaseShift),
+			fmt.Sprintf("%.6g", vlaue.FreqTimeZero),
 		}
 	case WfSQUARE, WfPULSE:
 		return []string{
 			fmt.Sprintf("%d", vlaue.Waveform),
 			fmt.Sprintf("%.6g", vlaue.Bias),
+			fmt.Sprintf("%.6g", vlaue.MaxVoltage),
 			fmt.Sprintf("%.6g", vlaue.Frequency),
 			fmt.Sprintf("%.6g", vlaue.PhaseShift),
 			fmt.Sprintf("%.6g", vlaue.DutyCycle),
+			fmt.Sprintf("%.6g", vlaue.FreqTimeZero),
 		}
 	default:
 		return []string{}
@@ -174,7 +191,7 @@ func (base *Base) Stamp(stamp types.Stamp) {
 // DoStep 执行元件仿真
 func (base *Base) DoStep(stamp types.Stamp) {
 	if base.Waveform != WfDC {
-		stamp.UpdateVoltageSource(base.Nodes[0], base.Nodes[1], base.VoltSource[0], base.getVoltage(stamp))
+		stamp.UpdateVoltageSource(base.VoltSource[0], base.getVoltage(stamp))
 	}
 }
 
@@ -184,7 +201,7 @@ func (base *Base) getVoltage(stamp types.Stamp) float64 {
 		return base.Bias
 	}
 	sim := stamp.GetTime()
-	w := 2*math.Pi*(sim.Time-base.FreqTimeZero)*base.Frequency + base.PhaseShift
+	w := (2*math.Pi)*(sim.Time-base.FreqTimeZero)*base.Frequency + base.PhaseShift
 	switch base.Waveform {
 	case WfDC:
 		return base.MaxVoltage + base.Bias

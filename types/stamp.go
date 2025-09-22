@@ -54,7 +54,7 @@ type Stamp interface {
 	StampVCVS(n1, n2 NodeID, vs VoltageID, coef float64)                    // 加盖电压控制电压源
 	StampVCCurrentSource(cn1, cn2 NodeID, vn1, vn2 VoltageID, gain float64) // 加盖电压控制电流源
 	StampCCCS(n1, n2 NodeID, vs VoltageID, gain float64)                    // 加盖电流控制电流源
-	UpdateVoltageSource(n1, n2 NodeID, vs VoltageID, v float64)             // 更新电压源值
+	UpdateVoltageSource(vs VoltageID, v float64)                            // 更新电压源值
 }
 
 // StampTime 仿真时间

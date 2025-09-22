@@ -2,6 +2,7 @@ package mna
 
 import (
 	"io"
+	"log"
 )
 
 // Debug 调试j接口
@@ -11,12 +12,16 @@ type Debug interface {
 	SetDebug(is bool)
 	Update(mna *MNA)
 	Render(w io.Writer) error
+	Error(err error)
 }
 
-type debug struct{ is bool }
+type debug struct {
+	is bool
+}
 
 func (debug) Init(mna *MNA)            {}
 func (debug *debug) IsDebug() bool     { return debug.is }
 func (debug *debug) SetDebug(is bool)  { debug.is = is }
 func (debug) Update(mna *MNA)          {}
 func (debug) Render(w io.Writer) error { return nil }
+func (debug) Error(err error)          { log.Println(err) }
