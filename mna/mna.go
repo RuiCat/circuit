@@ -107,6 +107,7 @@ func (mna *MNA) Zero() {
 	m := types.ElementID(len(mna.ElementList))
 	for i := range m {
 		if ele, ok := mna.ElementList[i]; ok {
+			ele.Current.Zero()
 			ele.Reset()
 		}
 	}
@@ -188,7 +189,6 @@ func (mna *MNA) Solve() (ok bool, err error) {
 		// 标准Newton-Raphson求解得到的完整步长解
 		mna.Lu.Factorize(mna.MatJ)
 		if err := mna.Lu.SolveVecTo(mna.MatX, false, mna.MatB); err != nil {
-			fmt.Println(mna)
 			return false, fmt.Errorf("矩阵求解失败: %v", err)
 		}
 		// mna.MatX = mna.OrigX + α × (mna.MatX - mna.OrigX) 阻尼实现

@@ -6,6 +6,7 @@ import (
 	"circuit/element/inductor"
 	"circuit/element/opamp"
 	"circuit/element/resistor"
+	"circuit/element/transformer"
 	"circuit/element/transistor"
 	"circuit/element/vcc"
 	"circuit/types"
@@ -20,6 +21,7 @@ func init() {
 	isError(types.ElementRegister(vcc.Type, "V", &vcc.Config{}))
 	isError(types.ElementRegister(diode.Type, "D", &diode.Config{}))
 	isError(types.ElementRegister(transistor.Type, "T", &transistor.Config{}))
+	isError(types.ElementRegister(transformer.Type, "Transformer", &transformer.Config{}))
 }
 func isError(err error) {
 	if err != nil {

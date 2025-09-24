@@ -93,6 +93,9 @@ func (vlaue *Value) CirLoad(value []string) {
 				vlaue.SetKeyValue("Bias", bias)
 			}
 		case WfAC, WfTRIANGLE, WfSAWTOOTH: // 交流波形,三角波,锯齿波
+			if len(value) < 5 {
+				return
+			}
 			if bias, err := strconv.ParseFloat(value[1], 64); err == nil {
 				vlaue.SetKeyValue("Bias", bias)
 			}
@@ -109,6 +112,9 @@ func (vlaue *Value) CirLoad(value []string) {
 				vlaue.SetKeyValue("FreqTimeZero", freqTimeZero)
 			}
 		case WfSQUARE, WfPULSE:
+			if len(value) < 6 {
+				return
+			}
 			if bias, err := strconv.ParseFloat(value[1], 64); err == nil {
 				vlaue.SetKeyValue("Bias", bias)
 			}

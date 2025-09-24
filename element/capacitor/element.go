@@ -142,8 +142,7 @@ func (base *Base) CalculateCurrent(stamp types.Stamp) {
 }
 
 // StepFinished 步长迭代结束
-func (base *Base) StepFinished(stamp types.Stamp) {
-}
+func (base *Base) StepFinished(stamp types.Stamp) {}
 
 // Debug  调试
 func (base *Base) Debug(stamp types.Stamp) string {
