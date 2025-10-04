@@ -343,7 +343,7 @@ func (mna *MNA) StampVCVS(n1, n2 types.NodeID, vs types.VoltageID, coef float64)
 }
 
 // StampVCCurrentSource 加盖电压控制电流源
-func (mna *MNA) StampVCCurrentSource(cn1, cn2 types.NodeID, vn1, vn2 types.VoltageID, gain float64) {
+func (mna *MNA) StampVCCurrentSource(cn1, cn2, vn1, vn2 types.NodeID, gain float64) {
 	// 控制电压差
 	mna.StampMatrix(cn1, vn1, gain)
 	mna.StampMatrix(cn2, vn2, gain)
