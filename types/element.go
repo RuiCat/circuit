@@ -1,7 +1,9 @@
 package types
 
 import (
+	"encoding/json"
 	"image"
+	"reflect"
 
 	"gioui.org/layout"
 	"gonum.org/v1/gonum/mat"
@@ -9,6 +11,44 @@ import (
 
 // ValueMap 元件值列表
 type ValueMap map[string]any
+
+// Init 初始化
+func (value *ValueMap) Init(uesr any) {
+	val := reflect.TypeOf(uesr)
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+	if val.Kind() != reflect.Struct {
+		return
+	}
+	for i := 0; i < val.NumField(); i++ {
+		field := val.Field(i)
+		v, n := reflect.New(field.Type), field.Tag.Get("value")
+		if n != "" {
+			if json.Unmarshal([]byte(n), v.Interface()) == nil {
+				(*value)[field.Name] = v.Elem().Interface()
+			}
+		}
+	}
+}
+
+// Reset 元件值初始化
+func (value *ValueMap) Reset(uesr any) {
+	val := reflect.ValueOf(uesr)
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+	if val.Kind() != reflect.Struct {
+		return
+	}
+	f := val.Type()
+	for i := 0; i < val.NumField(); i++ {
+		field := val.Field(i)
+		if v, ok := (*value)[f.Field(i).Name]; ok {
+			field.Set(reflect.ValueOf(v))
+		}
+	}
+}
 
 // ValueBase 元件属性
 type ValueBase struct {
