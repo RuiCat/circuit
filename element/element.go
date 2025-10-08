@@ -2,23 +2,29 @@ package element
 
 import (
 	"circuit/element/capacitor"
+	"circuit/element/current"
 	"circuit/element/diode"
 	"circuit/element/inductor"
 	"circuit/element/opamp"
 	"circuit/element/resistor"
+	sw "circuit/element/switch"
 	"circuit/element/transformer"
 	"circuit/element/transistor"
 	"circuit/element/vcc"
+	"circuit/element/vcvs"
 	"circuit/types"
 )
 
 // init 初始化
 func init() {
 	isError(types.ElementRegister(capacitor.Type, "C", &capacitor.Config{}))
+	isError(types.ElementRegister(current.Type, "I", &current.Config{}))
 	isError(types.ElementRegister(inductor.Type, "L", &inductor.Config{}))
 	isError(types.ElementRegister(opamp.Type, "OpAmp", &opamp.Config{}))
 	isError(types.ElementRegister(resistor.Type, "R", &resistor.Config{}))
+	isError(types.ElementRegister(sw.Type, "SW", &sw.Config{}))
 	isError(types.ElementRegister(vcc.Type, "V", &vcc.Config{}))
+	isError(types.ElementRegister(vcvs.Type, "VCVS", &vcvs.Config{}))
 	isError(types.ElementRegister(diode.Type, "D", &diode.Config{}))
 	isError(types.ElementRegister(transistor.Type, "T", &transistor.Config{}))
 	isError(types.ElementRegister(transformer.Type, "Transformer", &transformer.Config{}))

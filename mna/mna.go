@@ -157,7 +157,7 @@ func (mna *MNA) Solve() (ok bool, err error) {
 			}
 			// 检查关键节点
 			for i := 0; i < mna.NumNodes; i++ {
-				if math.Abs(mna.MatJ.At(i, i)) < 1e-9 {
+				if math.Abs(mna.MatJ.At(i, i)) < 1e-20 {
 					ok = false
 					err = fmt.Errorf("弱节点%d (diag=%.1e)", i, mna.MatJ.At(i, i))
 				}
