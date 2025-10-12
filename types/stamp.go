@@ -36,9 +36,20 @@ type Element struct {
 
 // Stamp 直流分析矩阵加盖接口
 type Stamp interface {
-	GetGraph() *ElementGraph                                      // 获取底层
-	GetTime() *StampTime                                          // 仿真时间
-	GetConfig() *StampConfig                                      // 仿真参数
+	Zero()                                  // 重置
+	StampUP()                               // 更新电路
+	GetGraph() *ElementGraph                // 获取底层
+	GetTime() *StampTime                    // 仿真时间
+	GetConfig() *StampConfig                // 仿真参数
+	GetValue(id ElementID) (value ValueMap) // 获取元件值
+	SetValue(id ElementID, value ValueMap)  // 设置元件值
+	Solve() (ok bool, err error)            // 保存
+	String() string                         // 输出状态
+
+	GetJ() []float64 // 系统导纳矩阵
+	GetX() []float64 // 未知量向量
+	GetB() []float64 // 右侧激励向量
+
 	SetConverged()                                                // 元件无法收敛调用
 	GetNumNodes() int                                             // 返回电路节点数量,不包含电压数量
 	GetDampingFactor() float64                                    // 阻尼
@@ -70,10 +81,13 @@ type StampTime struct {
 func (time *StampTime) Zero() {
 	time.Time = 0
 	time.TimeStep = DefaultTimeStep
+	time.GoodIterations = 0
 }
 
 // StampConfig 仿真参数
 type StampConfig struct {
-	IsDCAnalysis  bool // DC分析
-	IsTrapezoidal bool // 梯形法
+	IsDCAnalysis  bool  // DC分析
+	IsTrapezoidal bool  // 梯形法
+	Debug         Debug // 调试信息
+	Converged     bool  // 收敛条件
 }

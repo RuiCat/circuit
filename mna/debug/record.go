@@ -1,7 +1,6 @@
 package debug
 
 import (
-	"circuit/mna"
 	"circuit/types"
 	"encoding/json"
 	"fmt"
@@ -21,17 +20,18 @@ type Record struct {
 }
 
 // Init 初始化
-func (list *Record) Init(mna *mna.MNA) {
-	eList := make([]string, 0, len(mna.ElementList))
+func (list *Record) Init(mna types.Stamp) {
+	graph := mna.GetGraph()
+	eList := make([]string, 0, len(graph.ElementList))
 	eList = append(eList, "Gnd")
-	m := types.ElementID(len(mna.ElementList))
+	m := types.ElementID(len(graph.ElementList))
 	for i := 0; i < m; i++ {
-		v := mna.ElementList[i]
+		v := graph.ElementList[i]
 		eList = append(eList, fmt.Sprintf("%s(%d)", v.Type().String(), i+1))
 	}
-	nList := make([][][2]int, len(mna.NodeList)+1)
+	nList := make([][][2]int, len(graph.NodeList)+1)
 	for i := 0; i < m; i++ {
-		v := mna.ElementList[i]
+		v := graph.ElementList[i]
 		for l, n := range v.Nodes {
 			n += 1
 			nList[n] = append(nList[n], [2]int{int(i + 1), int(l)})
@@ -43,11 +43,11 @@ func (list *Record) Init(mna *mna.MNA) {
 	}
 	list.Elements = eList
 	list.Nodes = nList
-	for id := range mna.NumVoltageSources {
+	for id := range graph.NumVoltageSources {
 		list.CurrentStr = append(list.CurrentStr, fmt.Sprintf("电压源(%d)", id))
 	}
 	for i := 0; i < m; i++ {
-		ele := mna.ElementList[i]
+		ele := graph.ElementList[i]
 		for j := 0; j < ele.Current.Len(); j++ {
 			list.CurrentStr = append(list.CurrentStr, fmt.Sprintf("%s-%d(%d)", ele.Type(), ele.ID, j))
 		}
@@ -61,19 +61,20 @@ func (Record) SetDebug(is bool) {}
 func (list *Record) Render(w io.Writer) error { return json.NewEncoder(w).Encode(list) }
 
 // Update 记录数据
-func (list *Record) Update(mna *mna.MNA) {
+func (list *Record) Update(mna types.Stamp) {
+	graph := mna.GetGraph()
 	n := len(list.Current)
 	// 记录时间
-	list.Time = append(list.Time, mna.Time)
+	list.Time = append(list.Time, graph.Time)
 	// 记录电压电流
-	X := mna.MatX.RawVector().Data
-	list.Voltage = append(list.Voltage, append([]float64{}, X[:mna.NumNodes]...))
-	list.Incentive = append(list.Incentive, append([]float64{}, mna.MatB.RawVector().Data...))
-	list.Current = append(list.Current, append([]float64{}, X[mna.NumNodes:]...))
+	X := mna.GetX()
+	list.Voltage = append(list.Voltage, append([]float64{}, X[:graph.NumNodes]...))
+	list.Incentive = append(list.Incentive, append([]float64{}, mna.GetB()...))
+	list.Current = append(list.Current, append([]float64{}, X[graph.NumNodes:]...))
 	// 解析元件电流
-	m := len(mna.ElementList)
+	m := len(graph.ElementList)
 	for i := range m {
-		list.Current[n] = append(list.Current[n], mna.ElementList[i].Current.RawVector().Data...)
+		list.Current[n] = append(list.Current[n], graph.ElementList[i].Current.RawVector().Data...)
 	}
 }
 

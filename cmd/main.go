@@ -26,8 +26,9 @@ func main() {
 	}
 	// 开启调试
 	charts := &debug.Charts{}
-	mna.Debug = charts
-	mna.IsTrapezoidal = true
+	graph := mna.GetGraph()
+	graph.Debug = charts
+	graph.IsTrapezoidal = true
 	go func() {
 		// 测试仿真
 		if err := circuit.Simulate(2, mna); err != nil {

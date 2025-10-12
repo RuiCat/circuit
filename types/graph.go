@@ -20,6 +20,12 @@ type ElementGraph struct {
 
 // Zero 初始化
 func (ele *ElementGraph) Zero() {
+	ele.Iter = 0
+	ele.MaxIter = MaxIterations
+	ele.MaxGoodIter = MaxGoodIter
+	ele.ConvergenceTol = Tolerance
+	ele.OscillationCount = 0
+	ele.OscillationCountMax = MaxOscillationCount
 	ele.StampTime.Zero()
 }
 

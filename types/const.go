@@ -16,4 +16,5 @@ var (
 	DefaultTimeStep     = 0.000005  // 默认时间步长
 	MinTimeStep         = 0.0000001 // 最小时间步长
 	MaxTimeStep         = 0.0001    // 最大时间步长
+	MaxSparseMNA        = 1000      // 设置超过节点数量后使用稀疏矩阵
 )

@@ -116,53 +116,60 @@ func (cir *Circuit) Export(filename string) error {
 }
 
 // MNA 得到节点电压计算结构体
-func (c *Circuit) MNA() (*mna.MNA, error) {
+func (c *Circuit) MNA() (m types.Stamp, _ error) {
 	g, err := graph.NewGraph(c.WireLink)
 	if err != nil {
 		return nil, err
 	}
-	mna := mna.NewMNA(g)
-	if mna == nil {
+	if g.NumNodes > types.MaxSparseMNA {
+		m = mna.NewSparseMNA(g)
+	} else {
+		m = mna.NewMNA(g)
+	}
+	if m == nil {
 		return nil, fmt.Errorf("矩阵始化失败")
 	}
-	return mna, nil
+	return m, nil
 }
 
 // Simulate 进行仿真
-func Simulate(endTime float64, mna *mna.MNA) error {
+func Simulate(endTime float64, mna types.Stamp) error {
 	// 初始化调试
-	mna.Debug.Init(mna)
+	graph := mna.GetGraph()
+	if graph.Debug != nil {
+		graph.Debug.Init(mna)
+	}
 	// 主时间循环
 	var goodIterations int
 	var maxGoodIter int
-	mna.Time = 0
-	mna.GoodIterations = 0 // 成功次数
-	for mna.Time <= endTime {
+	graph.Time = 0
+	graph.GoodIterations = 0 // 成功次数
+	for graph.Time <= endTime {
 		// 范围动态调整
 		switch {
-		case mna.TimeStep > mna.MaxTimeStep: // 超出上限
-			mna.TimeStep = math.Max(mna.TimeStep/1.5, mna.MinTimeStep)
-		case mna.TimeStep < mna.MinTimeStep: // 超出下限
-			mna.TimeStep = math.Min(mna.TimeStep*1.2, mna.MaxTimeStep)
-		case goodIterations > 10 && mna.TimeStep < mna.MaxTimeStep: // 尝试增加步进长度
-			oldTimeStep := mna.TimeStep
-			mna.TimeStep = math.Min(mna.TimeStep*1.2, mna.MaxTimeStep)
-			if mna.TimeStep != oldTimeStep {
+		case graph.TimeStep > graph.MaxTimeStep: // 超出上限
+			graph.TimeStep = math.Max(graph.TimeStep/1.5, graph.MinTimeStep)
+		case graph.TimeStep < graph.MinTimeStep: // 超出下限
+			graph.TimeStep = math.Min(graph.TimeStep*1.2, graph.MaxTimeStep)
+		case goodIterations > 10 && graph.TimeStep < graph.MaxTimeStep: // 尝试增加步进长度
+			oldTimeStep := graph.TimeStep
+			graph.TimeStep = math.Min(graph.TimeStep*1.2, graph.MaxTimeStep)
+			if graph.TimeStep != oldTimeStep {
 				mna.StampUP()
 				goodIterations = 0 // 重置计数器
 				maxGoodIter = 0
 			}
-		case goodIterations < -5 && mna.TimeStep > mna.MinTimeStep: // 尝试减少步进长度
-			oldTimeStep := mna.TimeStep
-			mna.TimeStep = math.Max(mna.TimeStep/1.5, mna.MinTimeStep)
-			if mna.TimeStep != oldTimeStep {
+		case goodIterations < -5 && graph.TimeStep > graph.MinTimeStep: // 尝试减少步进长度
+			oldTimeStep := graph.TimeStep
+			graph.TimeStep = math.Max(graph.TimeStep/1.5, graph.MinTimeStep)
+			if graph.TimeStep != oldTimeStep {
 				mna.StampUP()
 				goodIterations = 0 // 重置计数器
 				maxGoodIter = 0
 			}
 		case maxGoodIter > types.MaxIterations: // 达到最大错误数量
 			return fmt.Errorf("到达最大错误数量")
-		case mna.Time > endTime: // 结束位限制
+		case graph.Time > endTime: // 结束位限制
 			return nil
 		}
 		// 计算矩阵
@@ -172,9 +179,9 @@ func Simulate(endTime float64, mna *mna.MNA) error {
 			// 更新步进
 			goodIterations++
 			// 递归次数
-			mna.GoodIterations++
+			graph.GoodIterations++
 			// 推进时间
-			mna.Time += mna.TimeStep
+			graph.Time += graph.TimeStep
 		} else {
 			// 失败不更新
 			goodIterations--

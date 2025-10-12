@@ -20,13 +20,7 @@ func NewGraph(wireLink *types.WireLink) (graph *Graph, err error) {
 				IsDCAnalysis:  false, // DC分析
 				IsTrapezoidal: false, // 梯形法/向后欧拉法
 			}, // 仿真参数
-			MaxIter:             types.MaxIterations,       // 最大迭代次数
-			MaxGoodIter:         types.MaxGoodIter,         // 最大失败数
-			NumNodes:            0,                         // 电路节点数量
-			NumVoltageSources:   0,                         // 独立电压源数量
-			ConvergenceTol:      types.Tolerance,           // 收敛容差
-			OscillationCount:    0,                         // 振荡计数器
-			OscillationCountMax: types.MaxOscillationCount, // 震荡最大值
+
 		},
 	}
 	err = graph.Init(wireLink)
