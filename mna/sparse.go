@@ -23,8 +23,8 @@ type SparseMNA struct {
 	OrigXs []float64         // 未知量向量回退使用
 	OrigB  []float64         // 原始右侧向量备份
 
-	// 增量LU分解
-	Lu *mat.IncrementalLU // 增量LU分解器
+	// LU分解
+	Lu *mat.LU // LU分解器
 
 	// 阻尼Newton-Raphson参数
 	DampingFactor    float64 // 阻尼因子
@@ -51,7 +51,8 @@ func NewSparseMNA(graph *graph.Graph) types.Stamp {
 	mna.MatJ = mat.NewSparseMatrix(n, n)
 	mna.MatB = make([]float64, n)
 	mna.MatX = make([]float64, n)
-
+	// 构建
+	mna.Lu = mat.NewLU(mna.MatJ)
 	// 初始化备份
 	mna.OrigJ = mat.NewSparseMatrix(n, n)
 	mna.OrigB = make([]float64, n)
@@ -211,18 +212,15 @@ func (mna *SparseMNA) Solve() (ok bool, err error) {
 				ele.DoStep(mna)
 			}
 		}
-		// 使用增量LU分解求解
-		if mna.Lu == nil {
-			mna.Lu, _ = mat.NewIncrementalLU(mna.MatJ)
-		}
-		xNew, err := mna.Lu.Solve(mna.MatB)
-		if err != nil {
+		// 重新分解
+		mna.Lu.Decompose(mna.MatJ)
+		// 求解
+		if err := mna.Lu.SolveReuse(mna.MatB, mna.MatX); err != nil {
 			return false, fmt.Errorf("矩阵求解失败: %v", err)
 		}
-
-		// mna.MatX = mna.OrigX + α × (xNew - mna.OrigX) 阻尼实现
+		// mna.MatX = mna.OrigX + α × (mna.MatX  - mna.OrigX) 阻尼实现
 		for i := range mna.MatX {
-			delta := xNew[i] - mna.OrigX[i]
+			delta := mna.MatX[i] - mna.OrigX[i]
 			mna.MatX[i] = mna.OrigX[i] + mna.DampingFactor*delta
 		}
 
@@ -261,7 +259,6 @@ func (mna *SparseMNA) Solve() (ok bool, err error) {
 		}
 		prevResidual = maxResidual
 	}
-
 	// 调用结束
 	for i := range m {
 		if ele, ok := mna.ElementList[i]; ok {

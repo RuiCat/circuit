@@ -121,11 +121,7 @@ func (c *Circuit) MNA() (m types.Stamp, _ error) {
 	if err != nil {
 		return nil, err
 	}
-	if g.NumNodes > types.MaxSparseMNA {
-		m = mna.NewSparseMNA(g)
-	} else {
-		m = mna.NewMNA(g)
-	}
+	m = mna.NewSparseMNA(g)
 	if m == nil {
 		return nil, fmt.Errorf("矩阵始化失败")
 	}

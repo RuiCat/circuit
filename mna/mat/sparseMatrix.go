@@ -30,11 +30,9 @@ func (m *SparseMatrix) Set(row, col int, value float64) {
 	if row < 0 || row >= m.rows || col < 0 || col >= m.cols {
 		panic("index out of range")
 	}
-
 	// 查找插入位置
 	start := m.rowPtr[row]
 	end := m.rowPtr[row+1]
-
 	// 二分查找列索引
 	pos := sort.Search(end-start, func(i int) bool {
 		return m.colInd[start+i] >= col
@@ -53,7 +51,6 @@ func (m *SparseMatrix) Set(row, col int, value float64) {
 		// 插入新元素
 		m.insertElement(row, col, value, pos)
 	}
-	// 如果value为0且元素不存在，什么都不做
 }
 
 // Increment 设置矩阵元素
@@ -84,7 +81,6 @@ func (m *SparseMatrix) Increment(row, col int, value float64) {
 		// 插入新元素
 		m.insertElement(row, col, value, pos)
 	}
-	// 如果value为0且元素不存在，什么都不做
 }
 
 // Get 获取矩阵元素
@@ -92,15 +88,12 @@ func (m *SparseMatrix) Get(row, col int) float64 {
 	if row < 0 || row >= m.rows || col < 0 || col >= m.cols {
 		panic("index out of range")
 	}
-
 	start := m.rowPtr[row]
 	end := m.rowPtr[row+1]
-
 	// 二分查找
 	pos := sort.Search(end-start, func(i int) bool {
 		return m.colInd[start+i] >= col
 	}) + start
-
 	if pos < end && m.colInd[pos] == col {
 		return m.values[pos]
 	}
@@ -112,7 +105,6 @@ func (m *SparseMatrix) deleteElement(row, pos int) {
 	// 删除元素
 	m.colInd = append(m.colInd[:pos], m.colInd[pos+1:]...)
 	m.values = append(m.values[:pos], m.values[pos+1:]...)
-
 	// 更新后续行的指针
 	for i := row + 1; i <= m.rows; i++ {
 		m.rowPtr[i]--
@@ -124,15 +116,12 @@ func (m *SparseMatrix) insertElement(row, col int, value float64, pos int) {
 	// 扩展数组
 	m.colInd = append(m.colInd, 0)
 	m.values = append(m.values, 0)
-
 	// 移动元素
 	copy(m.colInd[pos+1:], m.colInd[pos:])
 	copy(m.values[pos+1:], m.values[pos:])
-
 	// 插入新元素
 	m.colInd[pos] = col
 	m.values[pos] = value
-
 	// 更新后续行的指针
 	for i := row + 1; i <= m.rows; i++ {
 		m.rowPtr[i]++
@@ -169,16 +158,22 @@ func (m *SparseMatrix) NonZeroCount() int {
 // Copy 复制矩阵
 func (m *SparseMatrix) Copy(a *SparseMatrix) {
 	a.rows, a.cols = m.rows, m.cols
-	if len(m.rowPtr) != len(a.rowPtr) {
+	if cap(a.rowPtr) < len(m.rowPtr) {
 		a.rowPtr = make([]int, len(m.rowPtr))
+	} else {
+		a.rowPtr = a.rowPtr[:len(m.rowPtr)]
 	}
 	copy(a.rowPtr, m.rowPtr)
-	if len(m.colInd) != len(a.colInd) {
+	if cap(a.colInd) < len(m.colInd) {
 		a.colInd = make([]int, len(m.colInd))
+	} else {
+		a.colInd = a.colInd[:len(m.colInd)]
 	}
 	copy(a.colInd, m.colInd)
-	if len(m.values) != len(a.values) {
+	if cap(a.values) < len(m.values) {
 		a.values = make([]float64, len(m.values))
+	} else {
+		a.values = a.values[:len(m.values)]
 	}
 	copy(a.values, m.values)
 }
@@ -193,11 +188,16 @@ func (m *SparseMatrix) BuildFromDense(dense [][]float64) {
 	if len(dense) != m.rows || (len(dense) > 0 && len(dense[0]) != m.cols) {
 		panic("dimension mismatch")
 	}
-
 	// 完全重置所有数组
-	m.colInd = make([]int, 0)
-	m.values = make([]float64, 0)
-	m.rowPtr = make([]int, m.rows+1)
+	m.colInd = m.colInd[:0]
+	m.values = m.values[:0]
+
+	// 优化内存分配：只在必要时重新分配
+	if cap(m.rowPtr) < m.rows+1 {
+		m.rowPtr = make([]int, m.rows+1)
+	} else {
+		m.rowPtr = m.rowPtr[:m.rows+1]
+	}
 
 	// 构建CSR格式
 	count := 0
@@ -219,10 +219,8 @@ func (m *SparseMatrix) GetRow(row int) ([]int, []float64) {
 	if row < 0 || row >= m.rows {
 		panic("row index out of range")
 	}
-
 	start := m.rowPtr[row]
 	end := m.rowPtr[row+1]
-
 	return m.colInd[start:end], m.values[start:end]
 }
 
@@ -231,7 +229,6 @@ func (m *SparseMatrix) MatrixVectorMultiply(x []float64) []float64 {
 	if len(x) != m.cols {
 		panic("vector dimension mismatch")
 	}
-
 	result := make([]float64, m.rows)
 	for i := 0; i < m.rows; i++ {
 		start := m.rowPtr[i]
@@ -248,7 +245,6 @@ func (m *SparseMatrix) Clear() {
 	// 清空所有非零元素
 	m.colInd = make([]int, 0)
 	m.values = make([]float64, 0)
-
 	// 重置行指针数组
 	for i := 0; i <= m.rows; i++ {
 		m.rowPtr[i] = 0

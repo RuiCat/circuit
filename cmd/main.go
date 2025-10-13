@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 )
 
 func main() {
@@ -31,10 +32,13 @@ func main() {
 	graph.IsTrapezoidal = true
 	go func() {
 		// 测试仿真
+		start := time.Now() // 获取当前时间
 		if err := circuit.Simulate(2, mna); err != nil {
 			fmt.Println(err)
 			os.Exit(0)
 		}
+		cost := time.Since(start) // 计算此时与start的时间差
+		fmt.Println(cost)
 	}()
 	http.HandleFunc("/", charts.Handler)
 	http.ListenAndServe(":8081", nil)
