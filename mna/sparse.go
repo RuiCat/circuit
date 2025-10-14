@@ -265,7 +265,6 @@ func (mna *SparseMNA) Solve() (ok bool, err error) {
 			ele.StepFinished(mna)
 		}
 	}
-
 	// 迭代失败
 	if mna.Iter == mna.MaxIter && prevResidual > mna.ConvergenceTol {
 		return false, nil

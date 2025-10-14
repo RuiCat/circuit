@@ -123,20 +123,19 @@ func (base *Base) DoStep(stamp types.Stamp) {
 	volts2 := stamp.GetVoltage(base.Nodes[2]) // 输出
 	// 计算电压差
 	vd := volts1 - volts0
-	if math.Abs(base.lastVD-vd) > 0.1 {
+	if math.Abs(base.lastVD-vd) > 0.01 {
 		stamp.SetConverged()
-	} else if volts2 > base.MaxOutput+.1 || volts2 < base.MinOutput-.1 {
+	} else if volts2 > base.MaxOutput+0.01 || volts2 < base.MinOutput-0.1 {
 		stamp.SetConverged()
 	}
 	// 计算
 	var x, dx float64
 	vn := stamp.GetNumNodes() + base.VoltSource[0]
-
 	if vd >= base.MaxOutput/base.Gain && (base.lastVD >= 0) {
-		dx = 1e-4
+		dx = types.Tolerance * 0.1
 		x = base.MaxOutput - dx*base.MaxOutput/base.Gain
 	} else if vd <= base.MinOutput/base.Gain && (base.lastVD <= 0) {
-		dx = 1e-4
+		dx = types.Tolerance * 0.1
 		x = base.MinOutput - dx*base.MinOutput/base.Gain
 	} else {
 		dx = base.Gain

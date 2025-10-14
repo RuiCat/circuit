@@ -37,8 +37,7 @@ func main() {
 			fmt.Println(err)
 			os.Exit(0)
 		}
-		cost := time.Since(start) // 计算此时与start的时间差
-		fmt.Println(cost)
+		fmt.Println("解析运行时间:", time.Since(start))
 	}()
 	http.HandleFunc("/", charts.Handler)
 	http.ListenAndServe(":8081", nil)
