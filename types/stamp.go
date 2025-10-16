@@ -34,24 +34,27 @@ type Element struct {
 	*ElementBase           // 元件基础信息
 }
 
-// Stamp 直流分析矩阵加盖接口
-type Stamp interface {
+// MNA 结构接口
+type MNA interface {
+	Stamp
 	Zero()                                  // 重置
+	Solve() (ok bool, err error)            // 保存
 	StampUP()                               // 更新电路
-	GetGraph() *ElementGraph                // 获取底层
-	GetTime() *StampTime                    // 仿真时间
-	GetConfig() *StampConfig                // 仿真参数
 	GetValue(id ElementID) (value ValueMap) // 获取元件值
 	SetValue(id ElementID, value ValueMap)  // 设置元件值
-	Solve() (ok bool, err error)            // 保存
 	String() string                         // 输出状态
 
 	GetJ() []float64 // 系统导纳矩阵
 	GetX() []float64 // 未知量向量
 	GetB() []float64 // 右侧激励向量
 
-	SetConverged()                                                // 元件无法收敛调用
+}
+
+// Stamp 直流分析矩阵加盖接口
+type Stamp interface {
+	GetGraph() *ElementGraph                                      // 获取底层
 	GetNumNodes() int                                             // 返回电路节点数量,不包含电压数量
+	SetConverged()                                                // 元件无法收敛调用
 	GetDampingFactor() float64                                    // 阻尼
 	GetNumVoltageSources() int                                    // 返回电路电压数量
 	GetVoltage(i NodeID) float64                                  // 返回节点电压

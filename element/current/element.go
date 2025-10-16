@@ -198,11 +198,11 @@ func (base *Base) DoStep(stamp types.Stamp) {
 
 // getCurrent 得到电流值
 func (base *Base) getCurrent(stamp types.Stamp) float64 {
-	if base.Waveform != WfDC && stamp.GetConfig().IsDCAnalysis {
+	graph := stamp.GetGraph()
+	if base.Waveform != WfDC && graph.IsDCAnalysis {
 		return base.Bias
 	}
-	sim := stamp.GetTime()
-	w := (2*math.Pi)*(sim.Time-base.FreqTimeZero)*base.Frequency + base.PhaseShift
+	w := (2*math.Pi)*(graph.Time-base.FreqTimeZero)*base.Frequency + base.PhaseShift
 	switch base.Waveform {
 	case WfDC:
 		return base.MaxCurrent + base.Bias

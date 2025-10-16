@@ -111,7 +111,7 @@ func (base *Base) Reset() {
 func (base *Base) StartIteration(stamp types.Stamp) {
 	voltdiff1 := stamp.GetVoltage(base.Nodes[0]) - stamp.GetVoltage(base.Nodes[1])
 	voltdiff2 := stamp.GetVoltage(base.Nodes[2]) - stamp.GetVoltage(base.Nodes[3])
-	if stamp.GetConfig().IsTrapezoidal {
+	if stamp.GetGraph().IsTrapezoidal {
 		base.curSourceValue1 = voltdiff1*base.a1 + voltdiff2*base.a2 + base.Current.AtVec(0)
 		base.curSourceValue2 = voltdiff1*base.a3 + voltdiff2*base.a4 + base.Current.AtVec(1)
 	} else {
@@ -158,8 +158,9 @@ func (base *Base) Stamp(stamp types.Stamp) {
 	// build inverted matrix
 	deti := 1 / (l1*l2 - m*m)
 	// double deti = 1 / (l1 * l2 - m * m);
-	ts := stamp.GetTime().TimeStep
-	if stamp.GetConfig().IsTrapezoidal {
+	graph := stamp.GetGraph()
+	ts := graph.TimeStep
+	if graph.IsTrapezoidal {
 		ts = ts / 2
 	}
 	// double ts = isTrapezoidal() ? sim.timeStep / 2 : sim.timeStep;

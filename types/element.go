@@ -104,7 +104,6 @@ type ElementFace interface {
 	DoStep(stamp Stamp)                                     // 执行仿真
 	CalculateCurrent(stamp Stamp)                           // 电流计算
 	StepFinished(stamp Stamp)                               // 步长迭代结束
-
 }
 
 // ElementWireBase 连接底层

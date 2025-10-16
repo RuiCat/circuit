@@ -99,8 +99,8 @@ func (base *Base) Reset() {
 
 // StartIteration 迭代开始
 func (base *Base) StartIteration(stamp types.Stamp) {
-	config := stamp.GetConfig()
-	if config.IsTrapezoidal {
+	graph := stamp.GetGraph()
+	if graph.IsTrapezoidal {
 		v1 := stamp.GetVoltage(base.Nodes[0])
 		v2 := stamp.GetVoltage(base.Nodes[1])
 		voltdiff := v1 - v2
@@ -112,12 +112,11 @@ func (base *Base) StartIteration(stamp types.Stamp) {
 
 // Stamp 更新线性贡献
 func (base *Base) Stamp(stamp types.Stamp) {
-	config := stamp.GetConfig()
-	timeStep := stamp.GetTime().TimeStep
-	if config.IsTrapezoidal {
-		base.compResistance = 2 * base.Inductance / timeStep
+	graph := stamp.GetGraph()
+	if graph.IsTrapezoidal {
+		base.compResistance = 2 * base.Inductance / graph.TimeStep
 	} else {
-		base.compResistance = base.Inductance / timeStep
+		base.compResistance = base.Inductance / graph.TimeStep
 	}
 	stamp.StampResistor(base.Nodes[0], base.Nodes[1], base.compResistance)
 }

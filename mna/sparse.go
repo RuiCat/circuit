@@ -33,7 +33,7 @@ type SparseMNA struct {
 }
 
 // NewSparseMNA 创建稀疏矩阵优化的MNA
-func NewSparseMNA(graph *graph.Graph) types.Stamp {
+func NewSparseMNA(graph *graph.Graph) types.MNA {
 	mna := &SparseMNA{
 		Graph:            graph,
 		DampingFactor:    1.0,

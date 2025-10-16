@@ -95,7 +95,7 @@ func (base *Base) Type() types.ElementType { return Type }
 
 // StartIteration 迭代开始
 func (base *Base) StartIteration(stamp types.Stamp) {
-	if stamp.GetConfig().IsTrapezoidal {
+	if stamp.GetGraph().IsTrapezoidal {
 		base.curSourceValue = -base.voltdiff/base.compResistance - base.Current.AtVec(0)
 	} else {
 		base.curSourceValue = -base.voltdiff / base.compResistance
@@ -104,24 +104,23 @@ func (base *Base) StartIteration(stamp types.Stamp) {
 
 // Stamp 更新线性贡献
 func (base *Base) Stamp(stamp types.Stamp) {
-	config := stamp.GetConfig()
-	if config.IsDCAnalysis {
+	graph := stamp.GetGraph()
+	if graph.IsDCAnalysis {
 		stamp.StampResistor(base.Nodes[0], base.Nodes[1], 1e8)
 		base.curSourceValue = 0
 		return
 	}
-	timeStep := stamp.GetTime().TimeStep
-	if config.IsTrapezoidal {
-		base.compResistance = timeStep / (2 * base.Capacitance)
+	if graph.IsTrapezoidal {
+		base.compResistance = graph.TimeStep / (2 * base.Capacitance)
 	} else {
-		base.compResistance = timeStep / (base.Capacitance)
+		base.compResistance = graph.TimeStep / (base.Capacitance)
 	}
 	stamp.StampResistor(base.Nodes[0], base.Nodes[1], base.compResistance)
 }
 
 // DoStep 执行元件仿真
 func (base *Base) DoStep(stamp types.Stamp) {
-	if stamp.GetConfig().IsDCAnalysis {
+	if stamp.GetGraph().IsDCAnalysis {
 		return
 	}
 	stamp.StampCurrentSource(base.Nodes[0], base.Nodes[1], base.curSourceValue)
@@ -132,7 +131,7 @@ func (base *Base) CalculateCurrent(stamp types.Stamp) {
 	v1 := stamp.GetVoltage(base.Nodes[0])
 	v2 := stamp.GetVoltage(base.Nodes[1])
 	base.voltdiff = v1 - v2
-	if stamp.GetConfig().IsDCAnalysis {
+	if stamp.GetGraph().IsDCAnalysis {
 		base.Current.SetVec(0, base.voltdiff/1e8)
 		return
 	}

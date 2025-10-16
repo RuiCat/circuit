@@ -20,7 +20,7 @@ type Record struct {
 }
 
 // Init 初始化
-func (list *Record) Init(mna types.Stamp) {
+func (list *Record) Init(mna types.MNA) {
 	graph := mna.GetGraph()
 	eList := make([]string, 0, len(graph.ElementList))
 	eList = append(eList, "Gnd")
@@ -61,7 +61,7 @@ func (Record) SetDebug(is bool) {}
 func (list *Record) Render(w io.Writer) error { return json.NewEncoder(w).Encode(list) }
 
 // Update 记录数据
-func (list *Record) Update(mna types.Stamp) {
+func (list *Record) Update(mna types.MNA) {
 	graph := mna.GetGraph()
 	n := len(list.Current)
 	// 记录时间

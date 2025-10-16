@@ -116,7 +116,7 @@ func (cir *Circuit) Export(filename string) error {
 }
 
 // MNA 得到节点电压计算结构体
-func (c *Circuit) MNA() (m types.Stamp, _ error) {
+func (c *Circuit) MNA() (m types.MNA, _ error) {
 	g, err := graph.NewGraph(c.WireLink)
 	if err != nil {
 		return nil, err
@@ -129,7 +129,7 @@ func (c *Circuit) MNA() (m types.Stamp, _ error) {
 }
 
 // Simulate 进行仿真
-func Simulate(endTime float64, mna types.Stamp) error {
+func Simulate(endTime float64, mna types.MNA) error {
 	// 初始化调试
 	graph := mna.GetGraph()
 	if graph.Debug != nil {
