@@ -12,7 +12,7 @@ type SeriesMotorValue struct {
 func (vlaue *SeriesMotorValue) Reset() {}
 
 // CirLoad 网表文件写入值
-func (vlaue *SeriesMotorValue) CirLoad(value []string) {}
+func (vlaue *SeriesMotorValue) CirLoad(value types.LoadVlaue) {}
 
 // CirExport 网表文件导出值
 func (vlaue *SeriesMotorValue) CirExport() []string { return []string{} }

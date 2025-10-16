@@ -12,7 +12,7 @@ type ShuntMotorValue struct {
 func (vlaue *ShuntMotorValue) Reset() {}
 
 // CirLoad 网表文件写入值
-func (vlaue *ShuntMotorValue) CirLoad(value []string) {}
+func (vlaue *ShuntMotorValue) CirLoad(value types.LoadVlaue) {}
 
 // CirExport 网表文件导出值
 func (vlaue *ShuntMotorValue) CirExport() []string { return []string{} }

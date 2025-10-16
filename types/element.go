@@ -111,7 +111,7 @@ func (val *ValueBase) GetInternalNodeCount() int { return 0 }
 // Value 元件数据
 type Value interface {
 	Layout(gtx layout.Context) layout.Dimensions // 组件绘制实现
-	CirLoad(value []string)                      // 网表文件写入值
+	CirLoad(value LoadVlaue)                     // 网表文件写入值
 	CirExport() []string                         // 网表文件导出值
 	SetValue(value ValueMap)                     // 设置元件数据
 	SetKeyValue(key string, value any)           // 设置元件数据

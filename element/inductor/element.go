@@ -59,7 +59,7 @@ func (value *Value) Reset() {
 }
 
 // CirLoad 网表文件写入值
-func (value *Value) CirLoad(values []string) {
+func (value *Value) CirLoad(values types.LoadVlaue) {
 	if len(values) >= 1 {
 		// 解析电感值
 		if inductance, err := strconv.ParseFloat(values[0], 64); err == nil {

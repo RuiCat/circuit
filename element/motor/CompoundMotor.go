@@ -12,7 +12,7 @@ type CompoundMotorValue struct {
 func (vlaue *CompoundMotorValue) Reset() {}
 
 // CirLoad 网表文件写入值
-func (vlaue *CompoundMotorValue) CirLoad(value []string) {}
+func (vlaue *CompoundMotorValue) CirLoad(value types.LoadVlaue) {}
 
 // CirExport 网表文件导出值
 func (vlaue *CompoundMotorValue) CirExport() []string { return []string{} }

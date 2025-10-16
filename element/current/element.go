@@ -82,55 +82,55 @@ func (vlaue *Value) Reset() {
 }
 
 // CirLoad 网表文件写入值
-func (vlaue *Value) CirLoad(value []string) {
-	if len(value) == 0 {
+func (vlaue *Value) CirLoad(values types.LoadVlaue) {
+	if len(values) == 0 {
 		return
 	}
-	if waveform, err := strconv.Atoi(value[0]); err == nil {
+	if waveform, err := strconv.Atoi(values[0]); err == nil {
 		switch waveform {
 		case WfDC, WfNOISE: // 直流波形,噪声波
-			if bias, err := strconv.ParseFloat(value[1], 64); err == nil {
+			if bias, err := strconv.ParseFloat(values[1], 64); err == nil {
 				vlaue.SetKeyValue("Bias", bias)
 			}
 		case WfAC, WfTRIANGLE, WfSAWTOOTH: // 交流波形,三角波,锯齿波
-			if len(value) < 5 {
+			if len(values) < 5 {
 				return
 			}
-			if bias, err := strconv.ParseFloat(value[1], 64); err == nil {
+			if bias, err := strconv.ParseFloat(values[1], 64); err == nil {
 				vlaue.SetKeyValue("Bias", bias)
 			}
-			if maxCurrent, err := strconv.ParseFloat(value[2], 64); err == nil {
+			if maxCurrent, err := strconv.ParseFloat(values[2], 64); err == nil {
 				vlaue.SetKeyValue("MaxCurrent", maxCurrent)
 			}
-			if frequency, err := strconv.ParseFloat(value[3], 64); err == nil {
+			if frequency, err := strconv.ParseFloat(values[3], 64); err == nil {
 				vlaue.SetKeyValue("Frequency", frequency)
 			}
-			if phaseShift, err := strconv.ParseFloat(value[4], 64); err == nil {
+			if phaseShift, err := strconv.ParseFloat(values[4], 64); err == nil {
 				vlaue.SetKeyValue("PhaseShift", phaseShift)
 			}
-			if freqTimeZero, err := strconv.ParseFloat(value[5], 64); err == nil {
+			if freqTimeZero, err := strconv.ParseFloat(values[5], 64); err == nil {
 				vlaue.SetKeyValue("FreqTimeZero", freqTimeZero)
 			}
 		case WfSQUARE, WfPULSE:
-			if len(value) < 6 {
+			if len(values) < 6 {
 				return
 			}
-			if bias, err := strconv.ParseFloat(value[1], 64); err == nil {
+			if bias, err := strconv.ParseFloat(values[1], 64); err == nil {
 				vlaue.SetKeyValue("Bias", bias)
 			}
-			if maxCurrent, err := strconv.ParseFloat(value[2], 64); err == nil {
+			if maxCurrent, err := strconv.ParseFloat(values[2], 64); err == nil {
 				vlaue.SetKeyValue("MaxCurrent", maxCurrent)
 			}
-			if frequency, err := strconv.ParseFloat(value[3], 64); err == nil {
+			if frequency, err := strconv.ParseFloat(values[3], 64); err == nil {
 				vlaue.SetKeyValue("Frequency", frequency)
 			}
-			if phaseShift, err := strconv.ParseFloat(value[4], 64); err == nil {
+			if phaseShift, err := strconv.ParseFloat(values[4], 64); err == nil {
 				vlaue.SetKeyValue("PhaseShift", phaseShift)
 			}
-			if dutyCycle, err := strconv.ParseFloat(value[5], 64); err == nil {
+			if dutyCycle, err := strconv.ParseFloat(values[5], 64); err == nil {
 				vlaue.SetKeyValue("DutyCycle", dutyCycle)
 			}
-			if freqTimeZero, err := strconv.ParseFloat(value[6], 64); err == nil {
+			if freqTimeZero, err := strconv.ParseFloat(values[6], 64); err == nil {
 				vlaue.SetKeyValue("FreqTimeZero", freqTimeZero)
 			}
 		default:

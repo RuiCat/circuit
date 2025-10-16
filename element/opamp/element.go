@@ -58,22 +58,22 @@ func (value *Value) Reset() {
 }
 
 // CirLoad 网表文件写入值
-func (value *Value) CirLoad(valueStr []string) {
-	if len(valueStr) >= 1 {
+func (value *Value) CirLoad(values types.LoadVlaue) {
+	if len(values) >= 1 {
 		// 解析最大输出电压
-		if maxOutput, err := strconv.ParseFloat(valueStr[0], 64); err == nil {
+		if maxOutput, err := strconv.ParseFloat(values[0], 64); err == nil {
 			value.SetKeyValue("MaxOutput", maxOutput)
 		}
 	}
-	if len(valueStr) >= 2 {
+	if len(values) >= 2 {
 		// 解析最小输出电压
-		if minOutput, err := strconv.ParseFloat(valueStr[1], 64); err == nil {
+		if minOutput, err := strconv.ParseFloat(values[1], 64); err == nil {
 			value.SetKeyValue("MinOutput", minOutput)
 		}
 	}
-	if len(valueStr) >= 4 {
+	if len(values) >= 4 {
 		// 解析开环增益
-		if gain, err := strconv.ParseFloat(valueStr[3], 64); err == nil {
+		if gain, err := strconv.ParseFloat(values[3], 64); err == nil {
 			value.SetKeyValue("Gain", gain)
 		}
 	}

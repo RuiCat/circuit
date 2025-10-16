@@ -71,7 +71,7 @@ func (v *Value) Reset() {
 }
 
 // CirLoad 网表文件写入值
-func (v *Value) CirLoad(values []string) {
+func (v *Value) CirLoad(values types.LoadVlaue) {
 	if len(values) >= 1 {
 		// 解析反向饱和电流
 		if saturationCurrent, err := strconv.ParseFloat(values[0], 64); err == nil {

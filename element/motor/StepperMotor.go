@@ -12,7 +12,7 @@ type StepperMotorValue struct {
 func (vlaue *StepperMotorValue) Reset() {}
 
 // CirLoad 网表文件写入值
-func (vlaue *StepperMotorValue) CirLoad(value []string) {}
+func (vlaue *StepperMotorValue) CirLoad(value types.LoadVlaue) {}
 
 // CirExport 网表文件导出值
 func (vlaue *StepperMotorValue) CirExport() []string { return []string{} }

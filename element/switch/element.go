@@ -57,19 +57,19 @@ func (vlaue *Value) Reset() {
 }
 
 // CirLoad 网表文件写入值
-func (vlaue *Value) CirLoad(value []string) {
-	if len(value) >= 1 {
-		if state, err := strconv.Atoi(value[0]); err == nil {
+func (vlaue *Value) CirLoad(values types.LoadVlaue) {
+	if len(values) >= 1 {
+		if state, err := strconv.Atoi(values[0]); err == nil {
 			vlaue.SetKeyValue("State", state)
 		}
 	}
-	if len(value) >= 2 {
-		if onResistance, err := strconv.ParseFloat(value[1], 64); err == nil {
+	if len(values) >= 2 {
+		if onResistance, err := strconv.ParseFloat(values[1], 64); err == nil {
 			vlaue.SetKeyValue("OnResistance", onResistance)
 		}
 	}
-	if len(value) >= 3 {
-		if offResistance, err := strconv.ParseFloat(value[2], 64); err == nil {
+	if len(values) >= 3 {
+		if offResistance, err := strconv.ParseFloat(values[2], 64); err == nil {
 			vlaue.SetKeyValue("OffResistance", offResistance)
 		}
 	}

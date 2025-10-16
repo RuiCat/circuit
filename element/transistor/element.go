@@ -81,22 +81,22 @@ func (value *Value) Reset() {
 
 // CirLoad 网表文件写入值
 // 从网表格式加载晶体管参数
-func (v *Value) CirLoad(value []string) {
-	if len(value) >= 1 {
+func (value *Value) CirLoad(values types.LoadVlaue) {
+	if len(values) >= 1 {
 		// 解析PNP标志
-		if pnp, err := strconv.ParseBool(value[0]); err == nil {
-			v.SetKeyValue("PNP", pnp)
+		if pnp, err := strconv.ParseBool(values[0]); err == nil {
+			value.SetKeyValue("PNP", pnp)
 		}
 	}
-	if len(value) >= 2 {
+	if len(values) >= 2 {
 		// 解析电流增益
-		if beta, err := strconv.ParseFloat(value[1], 64); err == nil {
-			v.SetKeyValue("Beta", beta)
+		if beta, err := strconv.ParseFloat(values[1], 64); err == nil {
+			value.SetKeyValue("Beta", beta)
 		}
 	}
-	if len(value) >= 3 {
+	if len(values) >= 3 {
 		// 解析模型名称
-		v.SetKeyValue("ModelName", value[2])
+		value.SetKeyValue("ModelName", values[2])
 	}
 }
 

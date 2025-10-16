@@ -12,7 +12,7 @@ type PMSMValue struct {
 func (vlaue *PMSMValue) Reset() {}
 
 // CirLoad 网表文件写入值
-func (vlaue *PMSMValue) CirLoad(value []string) {}
+func (vlaue *PMSMValue) CirLoad(value types.LoadVlaue) {}
 
 // CirExport 网表文件导出值
 func (vlaue *PMSMValue) CirExport() []string { return []string{} }

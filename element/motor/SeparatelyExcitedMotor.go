@@ -12,7 +12,7 @@ type SeparatelyExcitedMotorValue struct {
 func (vlaue *SeparatelyExcitedMotorValue) Reset() {}
 
 // CirLoad 网表文件写入值
-func (vlaue *SeparatelyExcitedMotorValue) CirLoad(value []string) {}
+func (vlaue *SeparatelyExcitedMotorValue) CirLoad(value types.LoadVlaue) {}
 
 // CirExport 网表文件导出值
 func (vlaue *SeparatelyExcitedMotorValue) CirExport() []string { return []string{} }

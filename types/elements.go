@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"strconv"
 )
 
 func init() {
@@ -55,7 +56,7 @@ func (vlaue *GndValue) GetInternalNodeCount() int { return 0 }
 func (vlaue *GndValue) Reset() {}
 
 // CirLoad 网表文件写入值
-func (vlaue *GndValue) CirLoad(value []string) {}
+func (vlaue *GndValue) CirLoad(value LoadVlaue) {}
 
 // CirExport 网表文件导出值
 func (vlaue *GndValue) CirExport() []string { return []string{} }
@@ -125,10 +126,31 @@ func (vlaue *HeghValue) GetInternalNodeCount() int { return 0 }
 func (vlaue *HeghValue) Reset() {}
 
 // CirLoad 网表文件写入值
-func (vlaue *HeghValue) CirLoad(value []string) {}
+func (vlaue *HeghValue) CirLoad(value LoadVlaue) {}
 
 // CirExport 网表文件导出值
 func (vlaue *HeghValue) CirExport() []string { return []string{} }
+
+// LoadVlaue 加载值
+type LoadVlaue []string
+
+func (vlaue LoadVlaue) ParseFloat(i int, defaultValue float64) float64 {
+	if i < len(vlaue) {
+		if val, err := strconv.ParseFloat(vlaue[i], 64); err == nil {
+			return val
+		}
+	}
+	return defaultValue
+}
+
+func (vlaue LoadVlaue) ParseInt(i int, defaultValue int) int {
+	if i < len(vlaue) {
+		if val, err := strconv.Atoi(vlaue[i]); err == nil {
+			return val
+		}
+	}
+	return defaultValue
+}
 
 // HeghBase 元件实现
 type HeghBase struct {
