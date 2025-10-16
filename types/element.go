@@ -14,19 +14,25 @@ type ValueMap map[string]any
 
 // Init 初始化
 func (value *ValueMap) Init(uesr any) {
-	val := reflect.TypeOf(uesr)
+	val := reflect.ValueOf(uesr)
 	if val.Kind() == reflect.Ptr {
 		val = val.Elem()
 	}
 	if val.Kind() != reflect.Struct {
 		return
 	}
+	f := val.Type()
 	for i := 0; i < val.NumField(); i++ {
-		field := val.Field(i)
-		v, n := reflect.New(field.Type), field.Tag.Get("value")
-		if n != "" {
-			if json.Unmarshal([]byte(n), v.Interface()) == nil {
-				(*value)[field.Name] = v.Elem().Interface()
+		fieldV := val.Field(i)
+		fieldF := f.Field(i)
+		// 获取 Tag
+		tag := fieldF.Tag.Get("value")
+		if tag != "" {
+			if fieldF.Type.Kind() == reflect.String && tag[0] != '"' {
+				tag = "\"" + tag + "\""
+			}
+			if json.Unmarshal([]byte(tag), fieldV.Addr().Interface()) == nil {
+				(*value)[fieldF.Name] = fieldV.Interface()
 			}
 		}
 	}
@@ -46,6 +52,32 @@ func (value *ValueMap) Reset(uesr any) {
 		field := val.Field(i)
 		if v, ok := (*value)[f.Field(i).Name]; ok {
 			field.Set(reflect.ValueOf(v))
+		}
+	}
+}
+
+// SetValue 设置值
+func (value *ValueMap) SetValue(uesr any, vlist []string) {
+	val := reflect.ValueOf(uesr)
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+	if val.Kind() != reflect.Struct {
+		return
+	}
+	f := val.Type()
+	for i, n := 0, min(val.NumField(), len(vlist)); i < n; i++ {
+		field := val.Field(i)
+		tag := vlist[i]
+		if field.Kind() == reflect.String && tag[0] != '"' {
+			tag = "\"" + tag + "\""
+		}
+		if tag != "-" {
+			if json.Unmarshal([]byte(tag), field.Addr().Interface()) != nil {
+				if v, ok := (*value)[f.Field(i).Name]; ok {
+					field.Set(reflect.ValueOf(v))
+				}
+			}
 		}
 	}
 }
