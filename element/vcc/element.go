@@ -106,7 +106,8 @@ func (vlaue *Value) CirLoad(value []string) {
 				vlaue.SetKeyValue("Frequency", frequency)
 			}
 			if phaseShift, err := strconv.ParseFloat(value[4], 64); err == nil {
-				vlaue.SetKeyValue("PhaseShift", phaseShift)
+				phaseShiftRad := phaseShift * math.Pi / 180.0
+				vlaue.SetKeyValue("PhaseShift", phaseShiftRad)
 			}
 			if freqTimeZero, err := strconv.ParseFloat(value[5], 64); err == nil {
 				vlaue.SetKeyValue("FreqTimeZero", freqTimeZero)
@@ -125,7 +126,8 @@ func (vlaue *Value) CirLoad(value []string) {
 				vlaue.SetKeyValue("Frequency", frequency)
 			}
 			if phaseShift, err := strconv.ParseFloat(value[4], 64); err == nil {
-				vlaue.SetKeyValue("PhaseShift", phaseShift)
+				phaseShiftRad := phaseShift * math.Pi / 180.0
+				vlaue.SetKeyValue("PhaseShift", phaseShiftRad)
 			}
 			if dutyCycle, err := strconv.ParseFloat(value[5], 64); err == nil {
 				vlaue.SetKeyValue("DutyCycle", dutyCycle)
