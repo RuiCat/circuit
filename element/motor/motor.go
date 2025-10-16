@@ -5,70 +5,147 @@ import (
 )
 
 // Type 元件类型
-const Type types.ElementType = 0
+const (
+	DCMotorType types.ElementType = iota + 14
+	ACInductionMotorType
+	PMSMType
+	StepperMotorType
+	SeparatelyExcitedMotorType
+	ShuntMotorType
+	SeriesMotorType
+	CompoundMotorType
+)
+
+// MotorType 电机类型
+type MotorType uint
+
+const (
+	DCMotor                MotorType = iota // 直流电机
+	ACInductionMotor                        // 交流感应电机
+	PMSM                                    // 永磁同步电机
+	StepperMotor                            // 步进电机
+	SeparatelyExcitedMotor                  // 他励直流电机
+	ShuntMotor                              // 并励直流电机
+	SeriesMotor                             // 串励直流电机
+	CompoundMotor                           // 复励直流电机
+)
 
 // Config 默认配置
-type Config struct{}
+type Config struct{ Type MotorType }
 
 // Init 初始化
-func (Config) Init(value *types.ElementBase) types.ElementFace {
-	return &Base{
-		ElementBase: value,
-		Value:       value.Value.(*Value),
+func (c Config) Init(value *types.ElementBase) types.ElementFace {
+	switch c.Type {
+	case DCMotor:
+		return &DCMotorBase{
+			ElementBase:  value,
+			DCMotorValue: value.Value.(*DCMotorValue),
+		}
+	case ACInductionMotor:
+		return &ACInductionMotorBase{
+			ElementBase:           value,
+			ACInductionMotorValue: value.Value.(*ACInductionMotorValue),
+		}
+	case PMSM:
+		return &PMSMBase{
+			ElementBase: value,
+			PMSMValue:   value.Value.(*PMSMValue),
+		}
+	case StepperMotor:
+		return &StepperMotorBase{
+			ElementBase:       value,
+			StepperMotorValue: value.Value.(*StepperMotorValue),
+		}
+	case SeparatelyExcitedMotor:
+		return &DCMotorBase{
+			ElementBase:  value,
+			DCMotorValue: value.Value.(*DCMotorValue),
+		}
+	case ShuntMotor:
+		return &ShuntMotorBase{
+			ElementBase:     value,
+			ShuntMotorValue: value.Value.(*ShuntMotorValue),
+		}
+	case SeriesMotor:
+		return &SeriesMotorBase{
+			ElementBase:      value,
+			SeriesMotorValue: value.Value.(*SeriesMotorValue),
+		}
+	case CompoundMotor:
+		return &CompoundMotorBase{
+			ElementBase:        value,
+			CompoundMotorValue: value.Value.(*CompoundMotorValue),
+		}
 	}
+	return nil
 }
 
 // InitValue 元件值
-func (Config) InitValue() types.Value {
-	val := &Value{}
-	val.ValueMap = types.ValueMap{}
-	return val
+func (c Config) InitValue() types.Value {
+	switch c.Type {
+	case DCMotor, SeparatelyExcitedMotor:
+		val := &DCMotorValue{Type: c.Type}
+		val.ValueMap = types.ValueMap{}
+		return val
+	case ACInductionMotor:
+		val := &ACInductionMotorValue{Type: c.Type}
+		val.ValueMap = types.ValueMap{
+			"StatorRes":  0.1,
+			"StatorInd":  0.015,
+			"RotorRes":   0.15,
+			"RotorInd":   0.008,
+			"MutualInd":  0.03,
+			"Slip":       0.03,
+			"Frequency":  50.0,
+			"PolePairs":  4,
+			"Inertia":    0.1,
+			"Damping":    0.01,
+			"LoadTorque": 0.1,
+		}
+		return val
+	case PMSM:
+		val := &PMSMValue{Type: c.Type}
+		val.ValueMap = types.ValueMap{}
+		return val
+	case StepperMotor:
+		val := &StepperMotorValue{Type: c.Type}
+		val.ValueMap = types.ValueMap{}
+		return val
+	case ShuntMotor:
+		val := &ShuntMotorValue{Type: c.Type}
+		val.ValueMap = types.ValueMap{}
+		return val
+	case SeriesMotor:
+		val := &SeriesMotorValue{Type: c.Type}
+		val.ValueMap = types.ValueMap{}
+		return val
+	case CompoundMotor:
+		val := &CompoundMotorValue{Type: c.Type}
+		val.ValueMap = types.ValueMap{}
+		return val
+	}
+	return nil
 }
 
 // GetPostCount 获取引脚数量
-func (Config) GetPostCount() int { return 0 }
-
-// Value 元件值处理结构
-type Value struct{ types.ValueBase }
-
-// GetVoltageSourceCnt 电压源数量
-func (vlaue *Value) GetVoltageSourceCnt() int { return 0 }
-
-// GetInternalNodeCount 内壁引脚数量
-func (vlaue *Value) GetInternalNodeCount() int { return 0 }
-
-// Reset 元件值初始化
-func (vlaue *Value) Reset() {}
-
-// CirLoad 网表文件写入值
-func (vlaue *Value) CirLoad(value []string) {}
-
-// CirExport 网表文件导出值
-func (vlaue *Value) CirExport() []string { return []string{} }
-
-// Base 元件实现
-type Base struct {
-	*types.ElementBase
-	*Value
+func (c Config) GetPostCount() int {
+	switch c.Type {
+	case DCMotor:
+		return 2
+	case ACInductionMotor:
+		return 6
+	case PMSM:
+		return 3
+	case StepperMotor:
+		return 4
+	case SeparatelyExcitedMotor:
+		return 4
+	case ShuntMotor:
+		return 2
+	case SeriesMotor:
+		return 2
+	case CompoundMotor:
+		return 3
+	}
+	return 0
 }
-
-// Type 类型
-func (base *Base) Type() types.ElementType { return Type }
-
-// StartIteration 迭代开始
-func (base *Base) StartIteration(stamp types.Stamp) {}
-
-// Stamp 更新线性贡献
-func (base *Base) Stamp(stamp types.Stamp) {}
-
-// DoStep 执行元件仿真
-func (base *Base) DoStep(stamp types.Stamp) {}
-
-// CalculateCurrent 电流计算
-func (base *Base) CalculateCurrent(stamp types.Stamp) {}
-
-// StepFinished 步长迭代结束
-func (base *Base) StepFinished(stamp types.Stamp) {}
-
-// Debug  调试
-func (base *Base) Debug(stamp types.Stamp) string { return "" }

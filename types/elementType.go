@@ -72,3 +72,13 @@ func ElementRegister(et ElementType, name string, config ElementConfig) error {
 	}
 	return nil
 }
+
+// NewNameType 通过名称获取类型
+func NewNameType(et ElementType) ElementFace {
+	t := slementTypeString[et].ElementConfig
+	ele := &ElementBase{
+		Value: t.InitValue(),
+	}
+	ele.Init(t.GetPostCount())
+	return t.Init(ele)
+}

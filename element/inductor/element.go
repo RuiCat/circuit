@@ -141,5 +141,7 @@ func (base *Base) StepFinished(stamp types.Stamp) {}
 
 // Debug  调试
 func (base *Base) Debug(stamp types.Stamp) string {
-	return fmt.Sprintf("电感电流:%+16f", base.Current.AtVec(0))
+	v1 := stamp.GetVoltage(base.Nodes[0])
+	v2 := stamp.GetVoltage(base.Nodes[1])
+	return fmt.Sprintf("电感电流:%+16f 电感电压:%+16f", base.Current.AtVec(0), v1-v2)
 }

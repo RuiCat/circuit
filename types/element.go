@@ -102,6 +102,12 @@ func (val *ValueBase) SetKeyValue(key string, value any) {
 }
 func (val *ValueBase) GetValue() (value ValueMap) { return val.ValueMap }
 
+// GetVoltageSourceCnt 电压源数量
+func (val *ValueBase) GetVoltageSourceCnt() int { return 0 }
+
+// GetInternalNodeCount 内壁引脚数量
+func (val *ValueBase) GetInternalNodeCount() int { return 0 }
+
 // Value 元件数据
 type Value interface {
 	Layout(gtx layout.Context) layout.Dimensions // 组件绘制实现
@@ -167,6 +173,11 @@ func (base *ElementBase) Init(n int) {
 	for id := range base.Nodes {
 		base.Nodes[id] = ElementHeghNodeID
 		base.Current.SetVec(id, 0)
+	}
+	if fun, ok := base.Value.(interface {
+		Init()
+	}); ok {
+		fun.Init()
 	}
 }
 

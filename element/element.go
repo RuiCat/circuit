@@ -5,6 +5,7 @@ import (
 	"circuit/element/current"
 	"circuit/element/diode"
 	"circuit/element/inductor"
+	"circuit/element/motor"
 	"circuit/element/opamp"
 	"circuit/element/resistor"
 	sw "circuit/element/switch"
@@ -28,6 +29,15 @@ func init() {
 	isError(types.ElementRegister(diode.Type, "D", &diode.Config{}))
 	isError(types.ElementRegister(transistor.Type, "T", &transistor.Config{}))
 	isError(types.ElementRegister(transformer.Type, "Transformer", &transformer.Config{}))
+	// 不同的电机
+	isError(types.ElementRegister(motor.DCMotorType, "DCMotor", &motor.Config{Type: motor.DCMotor}))
+	isError(types.ElementRegister(motor.ACInductionMotorType, "ACInductionMotor", &motor.Config{Type: motor.ACInductionMotor}))
+	isError(types.ElementRegister(motor.PMSMType, "PMSM", &motor.Config{Type: motor.PMSM}))
+	isError(types.ElementRegister(motor.StepperMotorType, "StepperMotor", &motor.Config{Type: motor.StepperMotor}))
+	isError(types.ElementRegister(motor.SeparatelyExcitedMotorType, "SeparatelyExcitedMotor", &motor.Config{Type: motor.SeparatelyExcitedMotor}))
+	isError(types.ElementRegister(motor.ShuntMotorType, "ShuntMotor", &motor.Config{Type: motor.ShuntMotor}))
+	isError(types.ElementRegister(motor.SeriesMotorType, "SeriesMotor", &motor.Config{Type: motor.SeriesMotor}))
+	isError(types.ElementRegister(motor.CompoundMotorType, "CompoundMotor", &motor.Config{Type: motor.CompoundMotor}))
 }
 func isError(err error) {
 	if err != nil {
