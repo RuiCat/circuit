@@ -90,17 +90,8 @@ func (c Config) InitValue() types.Value {
 	case ACInductionMotor:
 		val := &ACInductionMotorValue{Type: c.Type}
 		val.ValueMap = types.ValueMap{
-			"StatorRes":  0.1,
-			"StatorInd":  0.015,
-			"RotorRes":   0.15,
-			"RotorInd":   0.008,
-			"MutualInd":  0.03,
-			"Slip":       0.03,
-			"Frequency":  50.0,
-			"PolePairs":  4,
-			"Inertia":    0.1,
-			"Damping":    0.01,
-			"LoadTorque": 0.1,
+			"StatorRes": 0.1,
+			"PolePairs": 4,
 		}
 		return val
 	case PMSM:
