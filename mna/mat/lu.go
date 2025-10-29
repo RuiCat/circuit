@@ -20,7 +20,20 @@ type LU interface {
 	//   x - 解向量（预分配，结果将存储在此）
 	// 返回：
 	//   error - 如果向量维度不匹配则返回错误
-	SolveReuse(b []float64, x []float64) error
+	SolveReuse(b UpdateVector, x UpdateVector) error
+	// SolveReuseFloat 解线性方程组 Ax = b，重用预分配的向量
+	// 使用LU分解结果求解线性方程组，分为两个步骤：
+	// 1. 前向替换：求解 Ly = Pb
+	// 2. 后向替换：求解 Ux = y
+	// 参数：
+	//
+	//	b - 右侧向量
+	//	x - 解向量（预分配，结果将存储在此）
+	//
+	// 返回：
+	//
+	//	error - 如果向量维度不匹配则返回错误
+	SolveReuseFloat(b, x []float64) error
 }
 
 // lu 稀疏LU分解
@@ -131,7 +144,49 @@ func (lu *lu) Decompose(matrix SparseMatrix) error {
 // 返回：
 //
 //	error - 如果向量维度不匹配则返回错误
-func (lu *lu) SolveReuse(b, x []float64) error {
+func (lu *lu) SolveReuse(b, x UpdateVector) error {
+	if b.Length() != lu.n || x.Length() != lu.n {
+		return fmt.Errorf("vector dimension mismatch")
+	}
+	// 应用置换: Pb = P * b
+	pb := make([]float64, lu.n)
+	for i := 0; i < lu.n; i++ {
+		pb[i] = b.Get(lu.P[i])
+	}
+	// 前向替换: Ly = Pb
+	y := make([]float64, lu.n)
+	for i := 0; i < lu.n; i++ {
+		sum := pb[i]
+		for j := 0; j < i; j++ {
+			sum -= lu.L.Get(i, j) * y[j]
+		}
+		y[i] = sum // L[i,i] = 1
+	}
+	// 后向替换: Ux = y
+	for i := lu.n - 1; i >= 0; i-- {
+		sum := y[i]
+		uRow := lu.P[i]
+		for j := i + 1; j < lu.n; j++ {
+			sum -= lu.U.Get(uRow, j) * x.Get(j)
+		}
+		x.Set(i, sum/lu.U.Get(uRow, i))
+	}
+	return nil
+}
+
+// SolveReuseFloat 解线性方程组 Ax = b，重用预分配的向量
+// 使用LU分解结果求解线性方程组，分为两个步骤：
+// 1. 前向替换：求解 Ly = Pb
+// 2. 后向替换：求解 Ux = y
+// 参数：
+//
+//	b - 右侧向量
+//	x - 解向量（预分配，结果将存储在此）
+//
+// 返回：
+//
+//	error - 如果向量维度不匹配则返回错误
+func (lu *lu) SolveReuseFloat(b, x []float64) error {
 	if len(b) != lu.n || len(x) != lu.n {
 		return fmt.Errorf("vector dimension mismatch")
 	}

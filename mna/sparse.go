@@ -206,10 +206,10 @@ func (mna *SparseMNA) Solve() (ok bool, err error) {
 		mna.Converged = true
 
 		// 线性矩阵还原
-		mna.OrigJ.Copy(mna.MatJ)
 		copy(mna.MatB, mna.OrigB)
 
 		// 计算非线性元件贡献
+		mna.MatJ.Rollback() // 清空非线性贡献
 		for i := range m {
 			if ele, ok := mna.ElementList[i]; ok {
 				ele.DoStep(mna)
@@ -220,7 +220,7 @@ func (mna *SparseMNA) Solve() (ok bool, err error) {
 			return false, fmt.Errorf("矩阵分解失败: %v", err)
 		}
 		// 求解
-		if err := mna.Lu.SolveReuse(mna.MatB, mna.MatX); err != nil {
+		if err := mna.Lu.SolveReuseFloat(mna.MatB, mna.MatX); err != nil {
 			return false, fmt.Errorf("矩阵求解失败: %v", err)
 		}
 		// mna.MatX = mna.OrigX + α × (mna.MatX  - mna.OrigX) 阻尼实现
