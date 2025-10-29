@@ -12,16 +12,16 @@ import (
 type SparseMNA struct {
 	*graph.Graph // 图表信息
 
-	// 稀疏矩阵系统
-	MatJ mat.SparseMatrix // 系统导纳矩阵(N×N维)
-	MatX []float64        // 未知量向量(节点电压+支路电流)
-	MatB []float64        // 右侧激励向量
+	// 稀疏矩阵系统 - 使用 UpdateMatrix 优化
+	MatJ  mat.UpdateMatrix // 动态矩阵（基于位图缓存）
+	OrigJ mat.SparseMatrix // 线性贡献
 
-	// 线性分析备份
-	OrigJ  mat.SparseMatrix // 原始矩阵备份(用于牛顿迭代回滚)
-	OrigX  []float64        // 未知量向量备份
-	OrigXs []float64        // 未知量向量回退使用
-	OrigB  []float64        // 原始右侧向量备份
+	// 备份实现
+	MatX   []float64 // 未知量向量(节点电压+支路电流)
+	OrigX  []float64 // 未知量向量备份
+	OrigXs []float64 // 未知量向量回退使用
+	MatB   []float64 // 右侧激励向量
+	OrigB  []float64 // 原始右侧向量备份
 
 	// LU分解
 	Lu mat.LU // LU分解器
@@ -47,17 +47,20 @@ func NewSparseMNA(graph *graph.Graph) types.MNA {
 		return nil
 	}
 
-	// 创建稀疏矩阵
-	mna.MatJ = mat.NewSparseMatrix(n, n)
+	// 创建稀疏矩阵 - 使用 UpdateMatrix 优化
+	mna.OrigJ = mat.NewSparseMatrix(n, n)
+	mna.MatJ = mat.NewUpdateMatrix(mna.OrigJ)
+	mna.MatB = make([]float64, n)
+
+	// 备份
 	mna.MatB = make([]float64, n)
 	mna.MatX = make([]float64, n)
-	// 构建
-	mna.Lu = mat.NewLU(mna.MatJ)
-	// 初始化备份
-	mna.OrigJ = mat.NewSparseMatrix(n, n)
 	mna.OrigB = make([]float64, n)
 	mna.OrigX = make([]float64, n)
 	mna.OrigXs = make([]float64, n)
+
+	// 构建LU分解器
+	mna.Lu = mat.NewLU(n)
 
 	// 重置
 	mna.Zero()
@@ -65,7 +68,7 @@ func NewSparseMNA(graph *graph.Graph) types.MNA {
 }
 
 func (mna *SparseMNA) GetJ() []float64 {
-	// 返回稠密格式的矩阵数据（用于兼容性）
+	// 返回稠密格式的矩阵数据
 	dense := make([]float64, mna.MatJ.Rows()*mna.MatJ.Cols())
 	for i := 0; i < mna.MatJ.Rows(); i++ {
 		for j := 0; j < mna.MatJ.Cols(); j++ {
@@ -151,7 +154,7 @@ func (mna *SparseMNA) StampUP() {
 	}
 
 	// 备份矩阵和向量
-	mna.MatJ.Copy(mna.OrigJ)
+	mna.MatJ.Update()
 	copy(mna.OrigB, mna.MatB)
 	copy(mna.OrigX, mna.MatX)
 
@@ -213,7 +216,9 @@ func (mna *SparseMNA) Solve() (ok bool, err error) {
 			}
 		}
 		// 重新分解
-		mna.Lu.Decompose(mna.MatJ)
+		if err := mna.Lu.Decompose(mna.MatJ); err != nil {
+			return false, fmt.Errorf("矩阵分解失败: %v", err)
+		}
 		// 求解
 		if err := mna.Lu.SolveReuse(mna.MatB, mna.MatX); err != nil {
 			return false, fmt.Errorf("矩阵求解失败: %v", err)

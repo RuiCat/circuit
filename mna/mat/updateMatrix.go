@@ -133,15 +133,12 @@ func (m *updateMatrix) Increment(row, col int, value float64) {
 	if row < 0 || row >= m.rows || col < 0 || col >= m.cols {
 		panic("index out of range")
 	}
-
 	blockIndex, position := m.getBlockIndexAndPosition(row, col)
-
 	if m.isBitSet(blockIndex, position) {
 		// 在缓存中累加
-		if block, exists := m.cache[blockIndex]; exists {
-			block[position] += value
-			m.cache[blockIndex] = block
-		}
+		block := m.cache[blockIndex]
+		block[position] += value
+		m.cache[blockIndex] = block
 	} else {
 		// 不在缓存中，创建新的缓存项
 		block, exists := m.cache[blockIndex]

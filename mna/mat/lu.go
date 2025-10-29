@@ -36,13 +36,12 @@ type lu struct {
 // NewLU 创建稀疏LU分解，U矩阵直接引用原始矩阵
 // 参数：
 //
-//	matrix - 待分解的稀疏矩阵
+//	n - 矩阵大小
 //
 // 返回：
 //
 //	LU - 初始化后的LU分解实例
-func NewLU(matrix SparseMatrix) LU {
-	n := matrix.Rows()
+func NewLU(n int) LU {
 	lu := &lu{
 		n:        n,
 		L:        NewSparseMatrix(n, n),
@@ -90,7 +89,7 @@ func (lu *lu) Decompose(matrix SparseMatrix) error {
 			}
 		}
 		// 检查矩阵是否奇异
-		if maxVal < 1e-12 {
+		if maxVal < 1e-16 {
 			return fmt.Errorf("matrix is singular or nearly singular")
 		}
 		// 交换行：将主元所在行交换到当前位置
