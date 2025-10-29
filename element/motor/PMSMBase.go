@@ -5,7 +5,6 @@ import "circuit/types"
 // PMSMValue 元件值处理结构
 type PMSMValue struct {
 	types.ValueBase
-	Type MotorType
 }
 
 // Reset 元件值初始化

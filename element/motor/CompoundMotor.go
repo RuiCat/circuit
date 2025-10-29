@@ -5,7 +5,6 @@ import "circuit/types"
 // CompoundMotorValue 元件值处理结构
 type CompoundMotorValue struct {
 	types.ValueBase
-	Type MotorType
 }
 
 // Reset 元件值初始化

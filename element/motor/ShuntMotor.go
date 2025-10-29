@@ -5,7 +5,6 @@ import "circuit/types"
 // ShuntMotorValue 元件值处理结构
 type ShuntMotorValue struct {
 	types.ValueBase
-	Type MotorType
 }
 
 // Reset 元件值初始化

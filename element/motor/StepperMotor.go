@@ -5,7 +5,6 @@ import "circuit/types"
 // StepperMotorValue 元件值处理结构
 type StepperMotorValue struct {
 	types.ValueBase
-	Type MotorType
 }
 
 // Reset 元件值初始化

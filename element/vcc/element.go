@@ -268,5 +268,5 @@ var waveformMap = map[int]string{
 
 // Debug  调试
 func (base *Base) Debug(stamp types.Stamp) string {
-	return fmt.Sprintf("类型:%s 电压:%+16f", waveformMap[base.Waveform], base.Bias)
+	return fmt.Sprintf("类型:%s 偏置电压:%+16f 节点电压:%+16f", waveformMap[base.Waveform], base.Bias, stamp.GetVoltage(base.Nodes[0])-stamp.GetVoltage(base.Nodes[1]))
 }

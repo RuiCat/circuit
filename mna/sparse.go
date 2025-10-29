@@ -13,18 +13,18 @@ type SparseMNA struct {
 	*graph.Graph // 图表信息
 
 	// 稀疏矩阵系统
-	MatJ *mat.SparseMatrix // 系统导纳矩阵(N×N维)
-	MatX []float64         // 未知量向量(节点电压+支路电流)
-	MatB []float64         // 右侧激励向量
+	MatJ mat.SparseMatrix // 系统导纳矩阵(N×N维)
+	MatX []float64        // 未知量向量(节点电压+支路电流)
+	MatB []float64        // 右侧激励向量
 
 	// 线性分析备份
-	OrigJ  *mat.SparseMatrix // 原始矩阵备份(用于牛顿迭代回滚)
-	OrigX  []float64         // 未知量向量备份
-	OrigXs []float64         // 未知量向量回退使用
-	OrigB  []float64         // 原始右侧向量备份
+	OrigJ  mat.SparseMatrix // 原始矩阵备份(用于牛顿迭代回滚)
+	OrigX  []float64        // 未知量向量备份
+	OrigXs []float64        // 未知量向量回退使用
+	OrigB  []float64        // 原始右侧向量备份
 
 	// LU分解
-	Lu *mat.LU // LU分解器
+	Lu mat.LU // LU分解器
 
 	// 阻尼Newton-Raphson参数
 	DampingFactor    float64 // 阻尼因子
@@ -394,23 +394,25 @@ func (mna *SparseMNA) StampCCCS(n1, n2 types.NodeID, vs types.VoltageID, gain fl
 func (mna *SparseMNA) String() string {
 	var str string
 	// 初始化输出
-	str += fmt.Sprintln("节点ID: [元件列表]")
-	for id, v := range mna.NodeList {
-		str += fmt.Sprintf(" %d: %v\n", id, v)
-	}
-	str += fmt.Sprintln("元件ID: 元件类型 [元件数据] {引脚索引}")
 	m := types.ElementID(len(mna.ElementList))
-	for id := range m {
-		v := mna.ElementList[id]
-		str += fmt.Sprintf(" %d: %s [\n", id, v.Type())
-		for k, kv := range v.Value.GetValue() {
-			str += fmt.Sprintf("     %v:%v\n", k, kv)
+	if mna.GoodIterations == 0 {
+		str += fmt.Sprintln("节点ID: [元件列表]")
+		for id, v := range mna.NodeList {
+			str += fmt.Sprintf(" %d: %v\n", id, v)
 		}
-		str += " ] Pin: {\n"
-		for k, kv := range v.Nodes {
-			str += fmt.Sprintf("     %v->%v\n", k, kv)
+		str += fmt.Sprintln("元件ID: 元件类型 [元件数据] {引脚索引}")
+		for id := range m {
+			v := mna.ElementList[id]
+			str += fmt.Sprintf(" %d: %s [\n", id, v.Type())
+			for k, kv := range v.Value.GetValue() {
+				str += fmt.Sprintf("     %v:%v\n", k, kv)
+			}
+			str += " ] Pin: {\n"
+			for k, kv := range v.Nodes {
+				str += fmt.Sprintf("     %v->%v\n", k, kv)
+			}
+			str += " }\n"
 		}
-		str += " }\n"
 	}
 	// 周期输出
 	str += fmt.Sprintf("------------------------------------------ 时间: %f 步进: %f 步数: %d 迭代: %d 阻尼: %f ----------------------------------------\n", mna.Time, mna.TimeStep, mna.GoodIterations, mna.Iter, mna.DampingFactor)

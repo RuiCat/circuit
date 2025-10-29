@@ -5,7 +5,6 @@ import "circuit/types"
 // DCMotorValue 元件值处理结构
 type DCMotorValue struct {
 	types.ValueBase
-	Type MotorType
 }
 
 // Reset 元件值初始化

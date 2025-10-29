@@ -84,34 +84,40 @@ func (c Config) Init(value *types.ElementBase) types.ElementFace {
 func (c Config) InitValue() types.Value {
 	switch c.Type {
 	case DCMotor, SeparatelyExcitedMotor:
-		val := &DCMotorValue{Type: c.Type}
+		val := &DCMotorValue{}
 		val.ValueMap = types.ValueMap{}
 		return val
 	case ACInductionMotor:
-		val := &ACInductionMotorValue{Type: c.Type}
+		val := &ACInductionMotorValue{}
 		val.ValueMap = types.ValueMap{
-			"StatorRes": 0.1,
-			"PolePairs": 4,
+			"Rs": 0.435,
+			"Rr": 0.816,
+			"Ls": 0.002,
+			"Lr": 0.002,
+			"Lm": 0.0015,
+			"P":  4,
+			"J":  0.01,
+			"B":  0.001,
 		}
 		return val
 	case PMSM:
-		val := &PMSMValue{Type: c.Type}
+		val := &PMSMValue{}
 		val.ValueMap = types.ValueMap{}
 		return val
 	case StepperMotor:
-		val := &StepperMotorValue{Type: c.Type}
+		val := &StepperMotorValue{}
 		val.ValueMap = types.ValueMap{}
 		return val
 	case ShuntMotor:
-		val := &ShuntMotorValue{Type: c.Type}
+		val := &ShuntMotorValue{}
 		val.ValueMap = types.ValueMap{}
 		return val
 	case SeriesMotor:
-		val := &SeriesMotorValue{Type: c.Type}
+		val := &SeriesMotorValue{}
 		val.ValueMap = types.ValueMap{}
 		return val
 	case CompoundMotor:
-		val := &CompoundMotorValue{Type: c.Type}
+		val := &CompoundMotorValue{}
 		val.ValueMap = types.ValueMap{}
 		return val
 	}
