@@ -3,9 +3,9 @@ package mat
 import "fmt"
 
 // UpdateVector 更新向量接口
-// 扩展SparseVector接口，提供基于uint16分块位图的缓存机制
+// 扩展 Vector接口，提供基于uint16分块位图的缓存机制
 type UpdateVector interface {
-	SparseVector // 继承SparseVector接口的所有方法
+	Vector // 继承sVector接口的所有方法
 
 	// Update 更新操作
 	// 将位图为1的值写入底层以后将位图设置为0
@@ -14,13 +14,18 @@ type UpdateVector interface {
 	// Rollback 回溯操作
 	// 将位图标记置0，清空缓存
 	Rollback()
+
+	// ApplyDamping 应用阻尼计算
+	// 实现公式: result = base + α × (current - base)
+	// 其中 base 是底层数据，current 是当前更新数据，α 是阻尼因子
+	ApplyDamping(alpha float64)
 }
 
 // updateVector 更新向量实现
 // 实现UpdateVector接口，提供基于uint16分块位图的缓存机制
 type updateVector struct {
-	base   SparseVector // 底层稀疏向量
-	length int          // 向量长度
+	base   Vector // 底层稀疏向量
+	length int    // 向量长度
 
 	// 位图缓存系统
 	bitmap    []uint16            // 分块位图，每个uint16表示16个元素的缓存状态
@@ -36,7 +41,7 @@ type updateVector struct {
 // 返回：
 //
 //	UpdateVector - 新的更新向量实例
-func NewUpdateVector(base SparseVector) UpdateVector {
+func NewUpdateVector(base Vector) UpdateVector {
 	length := base.Length()
 	blockSize := 16
 
@@ -169,15 +174,12 @@ func (v *updateVector) Update() {
 		}
 	}
 
-	// 清空缓存
-	v.cache = make(map[int][16]float64)
 }
 
 // Rollback 回溯操作
 // 将位图标记置0，清空缓存
 func (v *updateVector) Rollback() {
 	v.clearAllBits()
-	v.cache = make(map[int][16]float64)
 }
 
 // BuildFromDense 从稠密向量构建稀疏向量
@@ -198,7 +200,7 @@ func (v *updateVector) Length() int {
 }
 
 // Copy 复制向量内容到另一个向量
-func (v *updateVector) Copy(a SparseVector) {
+func (v *updateVector) Copy(a Vector) {
 	switch target := a.(type) {
 	case *updateVector:
 		// 复制底层向量
@@ -233,7 +235,7 @@ func (v *updateVector) ToDense() []float64 {
 }
 
 // DotProduct 计算与另一个向量的点积
-func (v *updateVector) DotProduct(other SparseVector) float64 {
+func (v *updateVector) DotProduct(other Vector) float64 {
 	if other.Length() != v.length {
 		panic("vector dimension mismatch")
 	}
@@ -258,7 +260,7 @@ func (v *updateVector) Scale(scalar float64) {
 }
 
 // Add 向量加法
-func (v *updateVector) Add(other SparseVector) {
+func (v *updateVector) Add(other Vector) {
 	if other.Length() != v.length {
 		panic("vector dimension mismatch")
 	}
@@ -308,6 +310,19 @@ func (v *updateVector) NonZeroCount() int {
 	}
 
 	return count
+}
+
+// ApplyDamping 应用阻尼计算
+// 实现公式: result = base + α × (current - base)
+// 其中 base 是底层数据，current 是当前更新数据，α 是阻尼因子
+func (v *updateVector) ApplyDamping(alpha float64) {
+	for i := 0; i < v.length; i++ {
+		baseValue := v.base.Get(i)             // 底层数据 (OrigX)
+		currentValue := v.Get(i)               // 当前更新数据 (MatX)
+		delta := currentValue - baseValue      // 差值
+		dampedValue := baseValue + alpha*delta // 阻尼计算结果
+		v.Set(i, dampedValue)                  // 设置回缓存
+	}
 }
 
 // String 返回向量的字符串表示

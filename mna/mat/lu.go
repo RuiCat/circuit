@@ -13,7 +13,7 @@ type LU interface {
 	//   matrix - 待分解的稀疏矩阵
 	// 返回：
 	//   error - 如果矩阵奇异或接近奇异则返回错误
-	Decompose(matrix SparseMatrix) error
+	Decompose(matrix Matrix) error
 	// SolveReuse 解线性方程组 Ax = b，重用预分配的向量
 	// 参数：
 	//   b - 右侧向量
@@ -39,11 +39,11 @@ type LU interface {
 // lu 稀疏LU分解
 // 实现LU分解的数据结构，使用部分主元法提高数值稳定性
 type lu struct {
-	n        int          // 矩阵维度
-	L        SparseMatrix // 下三角矩阵，对角线元素为1
-	U        SparseMatrix // 上三角矩阵，存储分解后的上三角部分
-	P        []int        // 置换向量，P[i]表示第i行原始位置
-	Pinverse []int        // 逆置换向量，用于快速查找置换关系
+	n        int    // 矩阵维度
+	L        Matrix // 下三角矩阵，对角线元素为1
+	U        Matrix // 上三角矩阵，存储分解后的上三角部分
+	P        []int  // 置换向量，P[i]表示第i行原始位置
+	Pinverse []int  // 逆置换向量，用于快速查找置换关系
 }
 
 // NewLU 创建稀疏LU分解，U矩阵直接引用原始矩阵
@@ -79,7 +79,7 @@ func NewLU(n int) LU {
 // 返回：
 //
 //	error - 如果矩阵奇异或接近奇异则返回错误
-func (lu *lu) Decompose(matrix SparseMatrix) error {
+func (lu *lu) Decompose(matrix Matrix) error {
 	n := lu.n
 	// 复制矩阵到U
 	matrix.Copy(lu.U)

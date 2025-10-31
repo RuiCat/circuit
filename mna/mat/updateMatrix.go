@@ -3,9 +3,9 @@ package mat
 import "fmt"
 
 // UpdateMatrix 更新矩阵接口
-// 扩展SparseMatrix接口，提供基于uint16分块位图的缓存机制
+// 扩展Matrix接口，提供基于uint16分块位图的缓存机制
 type UpdateMatrix interface {
-	SparseMatrix // 继承SparseMatrix接口的所有方法
+	Matrix // 继承Matrix接口的所有方法
 
 	// Update 更新操作
 	// 将位图为1的值写入底层以后将位图设置为0
@@ -19,8 +19,8 @@ type UpdateMatrix interface {
 // updateMatrix 更新矩阵实现
 // 实现UpdateMatrix接口，提供基于uint16分块位图的缓存机制
 type updateMatrix struct {
-	base       SparseMatrix // 底层稀疏矩阵
-	rows, cols int          // 矩阵维度
+	base       Matrix // 底层稀疏矩阵
+	rows, cols int    // 矩阵维度
 
 	// 位图缓存系统
 	bitmap    []uint16            // 分块位图，每个uint16表示16个元素的缓存状态
@@ -36,7 +36,7 @@ type updateMatrix struct {
 // 返回：
 //
 //	UpdateMatrix - 新的更新矩阵实例
-func NewUpdateMatrix(base SparseMatrix) UpdateMatrix {
+func NewUpdateMatrix(base Matrix) UpdateMatrix {
 	rows := base.Rows()
 	cols := base.Cols()
 	blockSize := 16
@@ -173,16 +173,12 @@ func (m *updateMatrix) Update() {
 			}
 		}
 	}
-
-	// 清空缓存
-	m.cache = make(map[int][16]float64)
 }
 
 // Rollback 回溯操作
 // 将位图标记置0，清空缓存
 func (m *updateMatrix) Rollback() {
 	m.clearAllBits()
-	m.cache = make(map[int][16]float64)
 }
 
 // BuildFromDense 从稠密矩阵构建稀疏矩阵
@@ -203,7 +199,7 @@ func (m *updateMatrix) Cols() int {
 }
 
 // Copy 复制矩阵内容到另一个矩阵
-func (m *updateMatrix) Copy(a SparseMatrix) {
+func (m *updateMatrix) Copy(a Matrix) {
 	switch target := a.(type) {
 	case *updateMatrix:
 		// 复制底层矩阵
@@ -217,7 +213,7 @@ func (m *updateMatrix) Copy(a SparseMatrix) {
 			target.cache[k] = v
 		}
 	default:
-		// 对于其他类型的稀疏矩阵，只复制当前可见的数据（底层+缓存）
+		// 对于其他类型的矩阵，只复制当前可见的数据（底层+缓存）
 		// 不调用Update()，保持缓存状态不变
 		for i := 0; i < m.rows; i++ {
 			for j := 0; j < m.cols; j++ {

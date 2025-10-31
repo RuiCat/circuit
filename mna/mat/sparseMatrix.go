@@ -5,37 +5,6 @@ import (
 	"sort"
 )
 
-// SparseMatrix 稀疏矩阵接口
-// 定义稀疏矩阵的基本操作，支持CSR格式存储
-type SparseMatrix interface {
-	// BuildFromDense 从稠密矩阵构建稀疏矩阵
-	BuildFromDense(dense [][]float64)
-	// Clear 清空矩阵，重置为零矩阵
-	Clear()
-	// Cols 返回矩阵列数
-	Cols() int
-	// Copy 复制矩阵内容到另一个矩阵
-	Copy(a SparseMatrix)
-	// Get 获取指定位置的元素值
-	Get(row int, col int) float64
-	// GetRow 获取指定行的所有非零元素（列索引和值）
-	GetRow(row int) ([]int, []float64)
-	// Increment 增量设置矩阵元素（累加值）
-	Increment(row int, col int, value float64)
-	// IsSquare 检查矩阵是否为方阵
-	IsSquare() bool
-	// MatrixVectorMultiply 执行矩阵向量乘法
-	MatrixVectorMultiply(x []float64) []float64
-	// NonZeroCount 返回非零元素数量
-	NonZeroCount() int
-	// Rows 返回矩阵行数
-	Rows() int
-	// Set 设置矩阵元素值
-	Set(row int, col int, value float64)
-	// String 返回矩阵的字符串表示
-	String() string
-}
-
 // sparseMatrix 稀疏矩阵数据结构
 type sparseMatrix struct {
 	rows, cols int
@@ -46,7 +15,7 @@ type sparseMatrix struct {
 }
 
 // NewsparseMatrix 创建新的优化稀疏矩阵
-func NewSparseMatrix(rows, cols int) SparseMatrix {
+func NewSparseMatrix(rows, cols int) Matrix {
 	return &sparseMatrix{
 		rows:   rows,
 		cols:   cols,
@@ -187,35 +156,35 @@ func (m *sparseMatrix) NonZeroCount() int {
 }
 
 // Copy 复制矩阵
-func (m *sparseMatrix) Copy(sm SparseMatrix) {
-	switch a := sm.(type) {
+func (m *sparseMatrix) Copy(a Matrix) {
+	switch sm := a.(type) {
 	case *sparseMatrix:
-		a.rows, a.cols = m.rows, m.cols
-		if cap(a.rowPtr) < len(m.rowPtr) {
-			a.rowPtr = make([]int, len(m.rowPtr))
+		sm.rows, sm.cols = m.rows, m.cols
+		if cap(sm.rowPtr) < len(m.rowPtr) {
+			sm.rowPtr = make([]int, len(m.rowPtr))
 		} else {
-			a.rowPtr = a.rowPtr[:len(m.rowPtr)]
+			sm.rowPtr = sm.rowPtr[:len(m.rowPtr)]
 		}
-		copy(a.rowPtr, m.rowPtr)
-		if cap(a.colInd) < len(m.colInd) {
-			a.colInd = make([]int, len(m.colInd))
+		copy(sm.rowPtr, m.rowPtr)
+		if cap(sm.colInd) < len(m.colInd) {
+			sm.colInd = make([]int, len(m.colInd))
 		} else {
-			a.colInd = a.colInd[:len(m.colInd)]
+			sm.colInd = sm.colInd[:len(m.colInd)]
 		}
-		copy(a.colInd, m.colInd)
-		if cap(a.values) < len(m.values) {
-			a.values = make([]float64, len(m.values))
+		copy(sm.colInd, m.colInd)
+		if cap(sm.values) < len(m.values) {
+			sm.values = make([]float64, len(m.values))
 		} else {
-			a.values = a.values[:len(m.values)]
+			sm.values = sm.values[:len(m.values)]
 		}
-		copy(a.values, m.values)
+		copy(sm.values, m.values)
 	default:
-		// 对于其他类型的稀疏矩阵实现，逐个元素复制
+		// 对于其他类型的矩阵实现，逐个元素复制
 		for i := 0; i < m.rows; i++ {
 			for j := 0; j < m.cols; j++ {
 				value := m.Get(i, j)
 				if value != 0 {
-					a.Set(i, j, value)
+					sm.Set(i, j, value)
 				}
 			}
 		}
