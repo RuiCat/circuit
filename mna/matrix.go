@@ -12,8 +12,8 @@ type Matrix struct {
 	// 图表信息
 	*graph.Graph
 	// 稀疏矩阵系统
-	MatJ  mat.UpdateMatrix // 动态矩阵（基于位图缓存）
-	OrigJ mat.Matrix       // 线性贡献
+	MatJ  mat.UpdateMatrix
+	OrigJ mat.Matrix // 线性贡献
 	// 备份实现
 	VecX mat.UpdateVector // 未知量向量(节点电压+支路电流)
 	VecB mat.UpdateVector // 右侧激励向量

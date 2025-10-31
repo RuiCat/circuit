@@ -74,13 +74,6 @@ func (m *updateMatrix) clearBit(blockIndex, position int) {
 	m.bitmap[blockIndex] &^= (1 << position)
 }
 
-// clearAllBits 清除所有位图（设置为0）
-func (m *updateMatrix) clearAllBits() {
-	for i := range m.bitmap {
-		m.bitmap[i] = 0
-	}
-}
-
 // Get 获取矩阵元素
 // 先检查位图，如果位图为1则从cache中获取值，如果为0则从底层数据里面获取值
 func (m *updateMatrix) Get(row, col int) float64 {
@@ -175,7 +168,16 @@ func (m *updateMatrix) Update() {
 // Rollback 回溯操作
 // 将位图标记置0，清空缓存
 func (m *updateMatrix) Rollback() {
-	m.clearAllBits()
+	for i := range m.bitmap {
+		m.bitmap[i] = 0
+	}
+	for key := range m.cache {
+		arr := m.cache[key]
+		for i := range 16 {
+			arr[i] = 0
+		}
+		m.cache[key] = arr
+	}
 }
 
 // BuildFromDense 从稠密矩阵构建稀疏矩阵

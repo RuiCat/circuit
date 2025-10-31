@@ -73,13 +73,6 @@ func (v *updateVector) clearBit(blockIndex, position int) {
 	v.bitmap[blockIndex] &^= (1 << position)
 }
 
-// clearAllBits 清除所有位图（设置为0）
-func (v *updateVector) clearAllBits() {
-	for i := range v.bitmap {
-		v.bitmap[i] = 0
-	}
-}
-
 // Get 获取向量元素
 // 先检查位图，如果位图为1则从cache中获取值，如果为0则从底层数据里面获取值
 func (v *updateVector) Get(index int) float64 {
@@ -165,7 +158,16 @@ func (v *updateVector) Update() {
 // Rollback 回溯操作
 // 将位图标记置0，清空缓存
 func (v *updateVector) Rollback() {
-	v.clearAllBits()
+	for i := range v.bitmap {
+		v.bitmap[i] = 0
+	}
+	for key := range v.cache {
+		arr := v.cache[key]
+		for i := range 16 {
+			arr[i] = 0
+		}
+		v.cache[key] = arr
+	}
 }
 
 // BuildFromDense 从稠密向量构建稀疏向量

@@ -30,7 +30,6 @@ func (soluv *Soluv) Zero() {
 	soluv.Current.Clear()
 	// 重置矩阵
 	soluv.MatJ.Clear()
-	soluv.OrigJ.Clear()
 	// 节点重置
 	soluv.ElementGraph.Zero()
 	soluv.Reset()
@@ -41,13 +40,13 @@ func (soluv *Soluv) Zero() {
 // StampUP 更新电路
 func (soluv *Soluv) StampUP() {
 	// 重置矩阵和向量
-	soluv.MatJ.Clear()
-	soluv.VecB.Clear()
+	soluv.MatJ.Clear() // 会清空底层 OrigJ 的值
+	soluv.VecB.Clear() // 会清空底层 Base 的值
 	// 加盖矩阵
 	soluv.MnaStamp()
 	// 备份矩阵和向量
 	soluv.MatJ.Update()
-	soluv.VecB.Update()
+	soluv.VecB.Update() // 记录到底层
 }
 
 func (soluv *Soluv) GetCurrent(pin int) float64 {
@@ -156,9 +155,9 @@ func (soluv *Soluv) Solve() (ok bool, err error) {
 		soluv.Converged = true
 		// 线性矩阵还原
 		soluv.VecB.Rollback()
-		// 计算非线性元件贡献
-		soluv.MatJ.Rollback() // 清空非线性贡献
-		soluv.MnaDoStep()     // 非线性元件迭代
+		soluv.MatJ.Rollback()
+		// 非线性元件迭代
+		soluv.MnaDoStep()
 		// 重新分解
 		if err := soluv.Lu.Decompose(soluv.MatJ); err != nil {
 			return false, fmt.Errorf("矩阵分解失败: %v", err)
