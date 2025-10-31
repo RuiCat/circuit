@@ -121,7 +121,7 @@ func (c *Circuit) MNA() (m types.MNA, _ error) {
 	if err != nil {
 		return nil, err
 	}
-	m = mna.NewSparseMNA(g)
+	m = mna.NewMNA(g)
 	if m == nil {
 		return nil, fmt.Errorf("矩阵始化失败")
 	}

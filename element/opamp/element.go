@@ -111,7 +111,7 @@ func (base *Base) StartIteration(stamp types.Stamp) {}
 func (base *Base) Stamp(stamp types.Stamp) {
 	// 根据Java参考实现，运放约束应该在Stamp阶段建立
 	// sim.stampMatrix(nodes[2], vn, 1);
-	vn := stamp.GetNumNodes() + base.VoltSource[0]
+	vn := stamp.GetGraph().NumNodes + base.VoltSource[0]
 	stamp.StampMatrix(base.Nodes[2], vn, 1)
 }
 
@@ -130,7 +130,7 @@ func (base *Base) DoStep(stamp types.Stamp) {
 	}
 	// 计算
 	var x, dx float64
-	vn := stamp.GetNumNodes() + base.VoltSource[0]
+	vn := stamp.GetGraph().NumNodes + base.VoltSource[0]
 	if vd >= base.MaxOutput/base.Gain && (base.lastVD >= 0) {
 		dx = types.Tolerance * 0.1
 		x = base.MaxOutput - dx*base.MaxOutput/base.Gain
@@ -150,9 +150,9 @@ func (base *Base) DoStep(stamp types.Stamp) {
 
 // CalculateCurrent 电流计算
 func (base *Base) CalculateCurrent(stamp types.Stamp) {
-	base.Current.SetVec(0, 0) // V+端电流
-	base.Current.SetVec(1, 0) // V-端电流
-	base.Current.SetVec(2, 0)
+	stamp.SetCurrent(0, 0) // V+端电流
+	stamp.SetCurrent(1, 0) // V-端电流
+	stamp.SetCurrent(2, 0)
 }
 
 // StepFinished 步长迭代结束

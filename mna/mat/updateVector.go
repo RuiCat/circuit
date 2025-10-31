@@ -6,15 +6,12 @@ import "fmt"
 // 扩展 Vector接口，提供基于uint16分块位图的缓存机制
 type UpdateVector interface {
 	Vector // 继承sVector接口的所有方法
-
 	// Update 更新操作
 	// 将位图为1的值写入底层以后将位图设置为0
 	Update()
-
 	// Rollback 回溯操作
 	// 将位图标记置0，清空缓存
 	Rollback()
-
 	// ApplyDamping 应用阻尼计算
 	// 实现公式: result = base + α × (current - base)
 	// 其中 base 是底层数据，current 是当前更新数据，α 是阻尼因子
@@ -26,7 +23,6 @@ type UpdateVector interface {
 type updateVector struct {
 	base   Vector // 底层稀疏向量
 	length int    // 向量长度
-
 	// 位图缓存系统
 	bitmap    []uint16            // 分块位图，每个uint16表示16个元素的缓存状态
 	cache     map[int][16]float64 // 缓存块，key为块索引，value为16个float64值
@@ -44,10 +40,8 @@ type updateVector struct {
 func NewUpdateVector(base Vector) UpdateVector {
 	length := base.Length()
 	blockSize := 16
-
 	// 计算需要的位图数量
 	bitmapSize := (length + blockSize - 1) / blockSize
-
 	return &updateVector{
 		base:      base,
 		length:    length,
@@ -92,16 +86,13 @@ func (v *updateVector) Get(index int) float64 {
 	if index < 0 || index >= v.length {
 		panic("index out of range")
 	}
-
 	blockIndex, position := v.getBlockIndexAndPosition(index)
-
 	if v.isBitSet(blockIndex, position) {
 		// 从缓存中获取值
 		if block, exists := v.cache[blockIndex]; exists {
 			return block[position]
 		}
 	}
-
 	// 从底层向量获取值
 	return v.base.Get(index)
 }
@@ -112,20 +103,16 @@ func (v *updateVector) Set(index int, value float64) {
 	if index < 0 || index >= v.length {
 		panic("index out of range")
 	}
-
 	blockIndex, position := v.getBlockIndexAndPosition(index)
-
 	// 获取或创建缓存块
 	block, exists := v.cache[blockIndex]
 	if !exists {
 		// 初始化新的缓存块
 		block = [16]float64{}
 	}
-
 	// 设置缓存值
 	block[position] = value
 	v.cache[blockIndex] = block
-
 	// 设置位图标记
 	v.setBit(blockIndex, position)
 }
@@ -162,7 +149,6 @@ func (v *updateVector) Update() {
 			if v.isBitSet(blockIndex, position) {
 				// 计算原始索引位置
 				index := blockIndex*v.blockSize + position
-
 				// 检查索引是否有效
 				if index < v.length {
 					// 将缓存值写入底层向量
@@ -264,7 +250,6 @@ func (v *updateVector) Add(other Vector) {
 	if other.Length() != v.length {
 		panic("vector dimension mismatch")
 	}
-
 	// 遍历另一个向量的所有元素
 	for i := 0; i < other.Length(); i++ {
 		value := other.Get(i)
@@ -277,10 +262,8 @@ func (v *updateVector) Add(other Vector) {
 // NonZeroCount 返回非零元素数量
 func (v *updateVector) NonZeroCount() int {
 	count := 0
-
 	// 使用一个集合来跟踪已经处理过的索引
 	processed := make(map[int]bool)
-
 	// 首先处理缓存中的修改
 	for blockIndex, block := range v.cache {
 		for position := 0; position < v.blockSize; position++ {
@@ -298,7 +281,6 @@ func (v *updateVector) NonZeroCount() int {
 			}
 		}
 	}
-
 	// 然后处理底层向量中未被缓存修改的元素
 	for i := 0; i < v.length; i++ {
 		if !processed[i] {
@@ -308,7 +290,6 @@ func (v *updateVector) NonZeroCount() int {
 			}
 		}
 	}
-
 	return count
 }
 

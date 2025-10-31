@@ -351,9 +351,9 @@ func (base *Base) DoStep(stamp types.Stamp) {
 func (base *Base) CalculateCurrent(stamp types.Stamp) {
 	// 计算电流
 	// 存储所有三个端子(基极、集电极、发射极)的电流
-	base.Current.SetVec(0, -base.ib) // 基极电流(负号因为电流流入)
-	base.Current.SetVec(1, -base.ic) // 集电极电流(负号因为电流流入)
-	base.Current.SetVec(2, -base.ie) // 发射极电流(负号因为电流流入)
+	stamp.SetCurrent(0, -base.ib) // 基极电流(负号因为电流流入)
+	stamp.SetCurrent(1, -base.ic) // 集电极电流(负号因为电流流入)
+	stamp.SetCurrent(2, -base.ie) // 发射极电流(负号因为电流流入)
 }
 
 // StepFinished 步长迭代结束

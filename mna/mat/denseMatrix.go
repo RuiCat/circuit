@@ -17,7 +17,6 @@ func NewDenseMatrix(rows, cols int) Matrix {
 	for i := range data {
 		data[i] = make([]float64, cols)
 	}
-
 	return &denseMatrix{
 		rows: rows,
 		cols: cols,
@@ -130,7 +129,6 @@ func (m *denseMatrix) GetRow(row int) ([]int, []float64) {
 	if row < 0 || row >= m.rows {
 		panic("row index out of range")
 	}
-
 	// 对于稠密矩阵，返回所有列索引和对应的值
 	cols := make([]int, m.cols)
 	values := make([]float64, m.cols)
@@ -146,7 +144,6 @@ func (m *denseMatrix) MatrixVectorMultiply(x []float64) []float64 {
 	if len(x) != m.cols {
 		panic("vector dimension mismatch")
 	}
-
 	result := make([]float64, m.rows)
 	for i := 0; i < m.rows; i++ {
 		for j := 0; j < m.cols; j++ {

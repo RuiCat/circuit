@@ -327,7 +327,7 @@ func (base *Base) CalculateCurrent(stamp types.Stamp) {
 	v2 := stamp.GetVoltage(base.Nodes[1])
 	voltdiff := v1 - v2
 	current := base.calculateCurrent(voltdiff)
-	base.Current.SetVec(0, current)
+	stamp.SetCurrent(0, current)
 }
 
 // StepFinished 步长迭代结束

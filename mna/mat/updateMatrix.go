@@ -6,11 +6,9 @@ import "fmt"
 // 扩展Matrix接口，提供基于uint16分块位图的缓存机制
 type UpdateMatrix interface {
 	Matrix // 继承Matrix接口的所有方法
-
 	// Update 更新操作
 	// 将位图为1的值写入底层以后将位图设置为0
 	Update()
-
 	// Rollback 回溯操作
 	// 将位图标记置0，清空缓存
 	Rollback()
@@ -21,7 +19,6 @@ type UpdateMatrix interface {
 type updateMatrix struct {
 	base       Matrix // 底层稀疏矩阵
 	rows, cols int    // 矩阵维度
-
 	// 位图缓存系统
 	bitmap    []uint16            // 分块位图，每个uint16表示16个元素的缓存状态
 	cache     map[int][16]float64 // 缓存块，key为块索引，value为16个float64值

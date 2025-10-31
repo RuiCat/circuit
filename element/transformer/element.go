@@ -100,23 +100,16 @@ type Base struct {
 // Type 类型
 func (base *Base) Type() types.ElementType { return Type }
 
-// Reset 元件值初始化
-func (base *Base) Reset() {
-	base.Value.Reset()
-	base.Current.SetVec(0, 0) // 初级电流
-	base.Current.SetVec(1, 0) // 次级电流
-}
-
 // StartIteration 迭代开始
 func (base *Base) StartIteration(stamp types.Stamp) {
 	voltdiff1 := stamp.GetVoltage(base.Nodes[0]) - stamp.GetVoltage(base.Nodes[1])
 	voltdiff2 := stamp.GetVoltage(base.Nodes[2]) - stamp.GetVoltage(base.Nodes[3])
 	if stamp.GetGraph().IsTrapezoidal {
-		base.curSourceValue1 = voltdiff1*base.a1 + voltdiff2*base.a2 + base.Current.AtVec(0)
-		base.curSourceValue2 = voltdiff1*base.a3 + voltdiff2*base.a4 + base.Current.AtVec(1)
+		base.curSourceValue1 = voltdiff1*base.a1 + voltdiff2*base.a2 + stamp.GetCurrent(0)
+		base.curSourceValue2 = voltdiff1*base.a3 + voltdiff2*base.a4 + stamp.GetCurrent(1)
 	} else {
-		base.curSourceValue1 = base.Current.AtVec(0)
-		base.curSourceValue2 = base.Current.AtVec(1)
+		base.curSourceValue1 = stamp.GetCurrent(0)
+		base.curSourceValue2 = stamp.GetCurrent(1)
 	}
 }
 
@@ -190,8 +183,8 @@ func (base *Base) DoStep(stamp types.Stamp) {
 func (base *Base) CalculateCurrent(stamp types.Stamp) {
 	voltdiff1 := stamp.GetVoltage(base.Nodes[0]) - stamp.GetVoltage(base.Nodes[1])
 	voltdiff2 := stamp.GetVoltage(base.Nodes[2]) - stamp.GetVoltage(base.Nodes[3])
-	base.Current.SetVec(0, voltdiff1*base.a1+voltdiff2*base.a2+base.curSourceValue1)
-	base.Current.SetVec(1, voltdiff1*base.a3+voltdiff2*base.a4+base.curSourceValue2)
+	stamp.SetCurrent(0, voltdiff1*base.a1+voltdiff2*base.a2+base.curSourceValue1)
+	stamp.SetCurrent(1, voltdiff1*base.a3+voltdiff2*base.a4+base.curSourceValue2)
 }
 
 // StepFinished 步长迭代结束
@@ -202,5 +195,5 @@ func (base *Base) Debug(stamp types.Stamp) string {
 	primaryVoltage := stamp.GetVoltage(base.Nodes[0]) - stamp.GetVoltage(base.Nodes[1])
 	secondaryVoltage := stamp.GetVoltage(base.Nodes[2]) - stamp.GetVoltage(base.Nodes[3])
 	return fmt.Sprintf("变压器 电流1:%+16f 电流2:%+16f 初级压差:%+16f 次级压差:%+16f",
-		base.Current.AtVec(0), base.Current.AtVec(1), primaryVoltage, secondaryVoltage)
+		stamp.GetCurrent(0), stamp.GetCurrent(1), primaryVoltage, secondaryVoltage)
 }

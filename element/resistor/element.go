@@ -92,7 +92,7 @@ func (base *Base) CalculateCurrent(stamp types.Stamp) {
 	v2 := stamp.GetVoltage(base.Nodes[1])
 	current := (v1 - v2) / base.Resistance
 	// 储电流值
-	base.Current.SetVec(0, current)
+	stamp.SetCurrent(0, current)
 }
 
 // StepFinished 步长迭代结束
@@ -100,5 +100,5 @@ func (base *Base) StepFinished(stamp types.Stamp) {}
 
 // Debug  调试
 func (base *Base) Debug(stamp types.Stamp) string {
-	return fmt.Sprintf("电阻:%+16f 电流:%+16f", base.Resistance, base.Current.AtVec(0))
+	return fmt.Sprintf("电阻:%+16f 电流:%+16f", base.Resistance, stamp.GetCurrent(0))
 }

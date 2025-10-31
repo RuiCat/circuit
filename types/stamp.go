@@ -47,18 +47,22 @@ type MNA interface {
 	GetJ() []float64 // 系统导纳矩阵
 	GetX() []float64 // 未知量向量
 	GetB() []float64 // 右侧激励向量
-
+	GetC() []float64 // 元件引脚电流
 }
 
 // Stamp 直流分析矩阵加盖接口
 type Stamp interface {
 	GetGraph() *ElementGraph                                      // 获取底层
-	GetNumNodes() int                                             // 返回电路节点数量,不包含电压数量
 	SetConverged()                                                // 元件无法收敛调用
 	GetDampingFactor() float64                                    // 阻尼
-	GetNumVoltageSources() int                                    // 返回电路电压数量
+	GetNumPin() int                                               // 所有元件引脚数量
+	GetNumVoltage() int                                           // 返回电路电压数量
 	GetVoltage(i NodeID) float64                                  // 返回节点电压
 	SetVoltage(i NodeID, v float64)                               // 设置节点电压
+	GetPinCurrent(id ElementID, pin int) float64                  // 返回引脚电流
+	SetPinCurrent(id ElementID, pin int, i float64)               // 设置引脚电流
+	GetCurrent(pin int) float64                                   // 返回引脚电流
+	SetCurrent(pin int, i float64)                                // 设置引脚电流
 	StampMatrix(i, j NodeID, value float64)                       // 在矩阵A的(i,j)位置叠加值
 	StampRightSide(i NodeID, value float64)                       // 在右侧向量B的i位置叠加值
 	StampResistor(n1, n2 NodeID, r float64)                       // 加盖电阻元件

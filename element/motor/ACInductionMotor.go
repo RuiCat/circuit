@@ -227,9 +227,9 @@ func (base *ACInductionMotorBase) DoStep(stamp types.Stamp) {
 // CalculateCurrent 电流计算
 func (base *ACInductionMotorBase) CalculateCurrent(stamp types.Stamp) {
 	// 设置三相电流
-	base.Current.SetVec(0, base.I_u)
-	base.Current.SetVec(1, base.I_v)
-	base.Current.SetVec(2, base.I_w)
+	stamp.SetCurrent(0, base.I_u)
+	stamp.SetCurrent(1, base.I_v)
+	stamp.SetCurrent(2, base.I_w)
 }
 
 // StepFinished 步长迭代结束

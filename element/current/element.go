@@ -242,7 +242,7 @@ func triangleFunc(x float64) float64 {
 // CalculateCurrent 电流计算
 func (base *Base) CalculateCurrent(stamp types.Stamp) {
 	// 电流源的电流是已知的，直接设置
-	base.Current.SetVec(0, base.getCurrent(stamp))
+	stamp.SetCurrent(0, base.getCurrent(stamp))
 }
 
 // StepFinished 步长迭代结束

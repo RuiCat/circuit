@@ -98,7 +98,7 @@ func (base *Base) DoStep(stamp types.Stamp) {
 func (base *Base) CalculateCurrent(stamp types.Stamp) {
 	// 对于VCVS，电流计算需要从矩阵求解结果中获取
 	// 这里暂时设置为0，实际电流会在MNA求解过程中计算
-	base.Current.SetVec(0, 0)
+	stamp.SetCurrent(0, 0)
 }
 
 // StepFinished 步长迭代结束
@@ -108,7 +108,7 @@ func (base *Base) StepFinished(stamp types.Stamp) {}
 func (base *Base) Debug(stamp types.Stamp) string {
 	inputVoltage := stamp.GetVoltage(base.Nodes[0]) - stamp.GetVoltage(base.Nodes[1])
 	outputVoltage := stamp.GetVoltage(base.Nodes[2]) - stamp.GetVoltage(base.Nodes[3])
-	current := base.Current.AtVec(0)
+	current := stamp.GetCurrent(0)
 	return fmt.Sprintf("增益:%.3f 输入电压:%+16f 输出电压:%+16f 电流:%+16f",
 		base.Gain, inputVoltage, outputVoltage, current)
 }

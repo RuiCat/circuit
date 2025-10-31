@@ -6,7 +6,6 @@ import (
 	"reflect"
 
 	"gioui.org/layout"
-	"gonum.org/v1/gonum/mat"
 )
 
 // ValueMap 元件值列表
@@ -137,11 +136,12 @@ type ElementFace interface {
 	GetPinNodeList() (node PinList)                         // 得到引脚的节点ID了列表
 	SetInternalNode(internalNodeIndex PinID, nodeID NodeID) // 设置内部引脚ID,扩展使用
 	GetInternalNode(internalNodeIndex PinID) NodeID         // 得到内部引脚ID,扩展使用
-	StartIteration(stamp Stamp)                             // 步长迭代开始
-	Stamp(stamp Stamp)                                      // 加盖线性贡献
-	DoStep(stamp Stamp)                                     // 执行仿真
-	CalculateCurrent(stamp Stamp)                           // 电流计算
-	StepFinished(stamp Stamp)                               // 步长迭代结束
+	// 元件迭代
+	StartIteration(stamp Stamp)   // 步长迭代开始
+	Stamp(stamp Stamp)            // 加盖线性贡献
+	DoStep(stamp Stamp)           // 执行仿真
+	CalculateCurrent(stamp Stamp) // 电流计算
+	StepFinished(stamp Stamp)     // 步长迭代结束
 }
 
 // ElementWireBase 连接底层
@@ -157,22 +157,19 @@ func (base *ElementWireBase) GetPinWireList() (wireID WireList) {
 
 // ElementBase 元件基础配置
 type ElementBase struct {
-	Value                       // 基础记录值
-	Nodes         PinList       // 节点ID列表
-	VoltSource    VoltageList   // 电压源索引
-	InternalNodes PinList       // 内部节点ID列表
-	Current       *mat.VecDense // 节点电流数组，存储各引脚的电流值
+	Value                     // 基础记录值
+	Nodes         PinList     // 节点ID列表
+	VoltSource    VoltageList // 电压源索引
+	InternalNodes PinList     // 内部节点ID列表
 }
 
 // Init 初始化
 func (base *ElementBase) Init(n int) {
 	base.Nodes = make(PinList, n)
-	base.Current = mat.NewVecDense(n, nil)
 	base.VoltSource = make(VoltageList, base.Value.GetVoltageSourceCnt())
 	base.InternalNodes = make(PinList, base.Value.GetInternalNodeCount())
 	for id := range base.Nodes {
 		base.Nodes[id] = ElementHeghNodeID
-		base.Current.SetVec(id, 0)
 	}
 	if fun, ok := base.Value.(interface {
 		Init()

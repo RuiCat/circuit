@@ -37,7 +37,6 @@ func (m *sparseMatrix) Set(row, col int, value float64) {
 	pos := sort.Search(end-start, func(i int) bool {
 		return m.colInd[start+i] >= col
 	}) + start
-
 	if pos < end && m.colInd[pos] == col {
 		// 元素已存在
 		if value == 0 {
@@ -58,11 +57,9 @@ func (m *sparseMatrix) Increment(row, col int, value float64) {
 	if row < 0 || row >= m.rows || col < 0 || col >= m.cols {
 		panic("index out of range")
 	}
-
 	// 查找插入位置
 	start := m.rowPtr[row]
 	end := m.rowPtr[row+1]
-
 	// 二分查找列索引
 	pos := sort.Search(end-start, func(i int) bool {
 		return m.colInd[start+i] >= col
@@ -204,14 +201,12 @@ func (m *sparseMatrix) BuildFromDense(dense [][]float64) {
 	// 完全重置所有数组
 	m.colInd = m.colInd[:0]
 	m.values = m.values[:0]
-
 	// 优化内存分配：只在必要时重新分配
 	if cap(m.rowPtr) < m.rows+1 {
 		m.rowPtr = make([]int, m.rows+1)
 	} else {
 		m.rowPtr = m.rowPtr[:m.rows+1]
 	}
-
 	// 构建CSR格式
 	count := 0
 	for i := 0; i < m.rows; i++ {

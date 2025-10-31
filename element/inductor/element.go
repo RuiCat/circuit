@@ -91,12 +91,6 @@ type Base struct {
 // Type 类型
 func (base *Base) Type() types.ElementType { return Type }
 
-// Reset 元件值初始化
-func (base *Base) Reset() {
-	base.Value.Reset()
-	base.Current.SetVec(0, base.InitialCurrent)
-}
-
 // StartIteration 迭代开始
 func (base *Base) StartIteration(stamp types.Stamp) {
 	graph := stamp.GetGraph()
@@ -104,9 +98,9 @@ func (base *Base) StartIteration(stamp types.Stamp) {
 		v1 := stamp.GetVoltage(base.Nodes[0])
 		v2 := stamp.GetVoltage(base.Nodes[1])
 		voltdiff := v1 - v2
-		base.curSourceValue = voltdiff/base.compResistance + base.Current.AtVec(0)
+		base.curSourceValue = voltdiff/base.compResistance + stamp.GetCurrent(0)
 	} else {
-		base.curSourceValue = base.Current.AtVec(0)
+		base.curSourceValue = stamp.GetCurrent(0)
 	}
 }
 
@@ -132,7 +126,7 @@ func (base *Base) CalculateCurrent(stamp types.Stamp) {
 		v1 := stamp.GetVoltage(base.Nodes[0])
 		v2 := stamp.GetVoltage(base.Nodes[1])
 		voltdiff := v1 - v2
-		base.Current.SetVec(0, voltdiff/base.compResistance+base.curSourceValue)
+		stamp.SetCurrent(0, voltdiff/base.compResistance+base.curSourceValue)
 	}
 }
 
@@ -143,12 +137,5 @@ func (base *Base) StepFinished(stamp types.Stamp) {}
 func (base *Base) Debug(stamp types.Stamp) string {
 	v1 := stamp.GetVoltage(base.Nodes[0])
 	v2 := stamp.GetVoltage(base.Nodes[1])
-	return fmt.Sprintf("电感电流:%+16f 电感电压:%+16f", base.Current.AtVec(0), v1-v2)
-}
-
-// GetMagneticFieldEnergy 获取当前电感的磁场能量(J)
-// 磁场能量计算公式: W = 1/2 * L * I²
-func (base *Base) GetMagneticFieldEnergy() float64 {
-	current := base.Current.AtVec(0)
-	return 0.5 * base.Inductance * current * current
+	return fmt.Sprintf("电感电流:%+16f 电感电压:%+16f", stamp.GetCurrent(0), v1-v2)
 }

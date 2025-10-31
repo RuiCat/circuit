@@ -107,7 +107,6 @@ func (v *denseVector) DotProduct(other Vector) float64 {
 	if other.Length() != v.length {
 		panic("vector dimension mismatch")
 	}
-
 	result := 0.0
 	for i := 0; i < v.length; i++ {
 		result += v.data[i] * other.Get(i)
@@ -127,7 +126,6 @@ func (v *denseVector) Add(other Vector) {
 	if other.Length() != v.length {
 		panic("vector dimension mismatch")
 	}
-
 	for i := 0; i < v.length; i++ {
 		v.data[i] += other.Get(i)
 	}

@@ -27,12 +27,10 @@ func (v *sparseVector) Set(index int, value float64) {
 	if index < 0 || index >= v.length {
 		panic("index out of range")
 	}
-
 	// 二分查找插入位置
 	pos := sort.Search(len(v.indices), func(i int) bool {
 		return v.indices[i] >= index
 	})
-
 	if pos < len(v.indices) && v.indices[pos] == index {
 		// 元素已存在
 		if value == 0 {
@@ -53,12 +51,10 @@ func (v *sparseVector) Increment(index int, value float64) {
 	if index < 0 || index >= v.length {
 		panic("index out of range")
 	}
-
 	// 二分查找插入位置
 	pos := sort.Search(len(v.indices), func(i int) bool {
 		return v.indices[i] >= index
 	})
-
 	if pos < len(v.indices) && v.indices[pos] == index {
 		// 元素已存在
 		if value == 0 {
@@ -79,12 +75,10 @@ func (v *sparseVector) Get(index int) float64 {
 	if index < 0 || index >= v.length {
 		panic("index out of range")
 	}
-
 	// 二分查找
 	pos := sort.Search(len(v.indices), func(i int) bool {
 		return v.indices[i] >= index
 	})
-
 	if pos < len(v.indices) && v.indices[pos] == index {
 		return v.values[pos]
 	}
@@ -167,7 +161,6 @@ func (v *sparseVector) BuildFromDense(dense []float64) {
 	// 完全重置所有数组
 	v.indices = v.indices[:0]
 	v.values = v.values[:0]
-
 	// 构建稀疏格式
 	for i := 0; i < v.length; i++ {
 		if dense[i] != 0 {
@@ -191,7 +184,6 @@ func (v *sparseVector) DotProduct(other Vector) float64 {
 	if other.Length() != v.length {
 		panic("vector dimension mismatch")
 	}
-
 	result := 0.0
 	// 遍历当前向量的非零元素
 	for i := 0; i < len(v.indices); i++ {
@@ -213,7 +205,6 @@ func (v *sparseVector) Add(other Vector) {
 	if other.Length() != v.length {
 		panic("vector dimension mismatch")
 	}
-
 	// 遍历另一个向量的所有元素
 	for i := 0; i < other.Length(); i++ {
 		value := other.Get(i)

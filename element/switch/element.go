@@ -124,9 +124,9 @@ func (base *Base) CalculateCurrent(stamp types.Stamp) {
 	v2 := stamp.GetVoltage(base.Nodes[1])
 	if resistance > 0 {
 		current := (v1 - v2) / resistance
-		base.Current.SetVec(0, current)
+		stamp.SetCurrent(0, current)
 	} else {
-		base.Current.SetVec(0, 0)
+		stamp.SetCurrent(0, 0)
 	}
 }
 
@@ -139,6 +139,6 @@ func (base *Base) Debug(stamp types.Stamp) string {
 	if base.State == 1 {
 		state = "开"
 	}
-	current := base.Current.AtVec(0)
+	current := stamp.GetCurrent(0)
 	return fmt.Sprintf("状态:%s 电流:%+16f", state, current)
 }

@@ -96,7 +96,7 @@ func (base *Base) Type() types.ElementType { return Type }
 // StartIteration 迭代开始
 func (base *Base) StartIteration(stamp types.Stamp) {
 	if stamp.GetGraph().IsTrapezoidal {
-		base.curSourceValue = -base.voltdiff/base.compResistance - base.Current.AtVec(0)
+		base.curSourceValue = -base.voltdiff/base.compResistance - stamp.GetCurrent(0)
 	} else {
 		base.curSourceValue = -base.voltdiff / base.compResistance
 	}
@@ -132,11 +132,11 @@ func (base *Base) CalculateCurrent(stamp types.Stamp) {
 	v2 := stamp.GetVoltage(base.Nodes[1])
 	base.voltdiff = v1 - v2
 	if stamp.GetGraph().IsDCAnalysis {
-		base.Current.SetVec(0, base.voltdiff/1e8)
+		stamp.SetCurrent(0, base.voltdiff/1e8)
 		return
 	}
 	if base.compResistance > 0 {
-		base.Current.SetVec(0, base.voltdiff/base.compResistance+base.curSourceValue)
+		stamp.SetCurrent(0, base.voltdiff/base.compResistance+base.curSourceValue)
 	}
 }
 
@@ -145,5 +145,5 @@ func (base *Base) StepFinished(stamp types.Stamp) {}
 
 // Debug  调试
 func (base *Base) Debug(stamp types.Stamp) string {
-	return fmt.Sprintf("容压:%+16f 电流:%+16f", base.voltdiff, base.Current.AtVec(0))
+	return fmt.Sprintf("容压:%+16f 电流:%+16f", base.voltdiff, stamp.GetCurrent(0))
 }
