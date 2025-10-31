@@ -8,7 +8,7 @@ type CompoundMotorValue struct {
 }
 
 // Reset 元件值初始化
-func (vlaue *CompoundMotorValue) Reset() {}
+func (vlaue *CompoundMotorValue) Reset(stamp types.Stamp) {}
 
 // CirLoad 网表文件写入值
 func (vlaue *CompoundMotorValue) CirLoad(value types.LoadVlaue) {}

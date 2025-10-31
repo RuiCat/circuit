@@ -8,7 +8,7 @@ type StepperMotorValue struct {
 }
 
 // Reset 元件值初始化
-func (vlaue *StepperMotorValue) Reset() {}
+func (vlaue *StepperMotorValue) Reset(stamp types.Stamp) {}
 
 // CirLoad 网表文件写入值
 func (vlaue *StepperMotorValue) CirLoad(value types.LoadVlaue) {}

@@ -8,7 +8,7 @@ type PMSMValue struct {
 }
 
 // Reset 元件值初始化
-func (vlaue *PMSMValue) Reset() {}
+func (vlaue *PMSMValue) Reset(stamp types.Stamp) {}
 
 // CirLoad 网表文件写入值
 func (vlaue *PMSMValue) CirLoad(value types.LoadVlaue) {}

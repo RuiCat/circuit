@@ -217,6 +217,6 @@ func (v *sparseVector) Add(other Vector) {
 // Clear 将向量重置为零向量
 func (v *sparseVector) Clear() {
 	// 清空所有非零元素
-	v.indices = make([]int, 0)
-	v.values = make([]float64, 0)
+	v.indices = v.indices[:0]
+	v.values = v.values[:0]
 }

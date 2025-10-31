@@ -8,7 +8,7 @@ type ShuntMotorValue struct {
 }
 
 // Reset 元件值初始化
-func (vlaue *ShuntMotorValue) Reset() {}
+func (vlaue *ShuntMotorValue) Reset(stamp types.Stamp) {}
 
 // CirLoad 网表文件写入值
 func (vlaue *ShuntMotorValue) CirLoad(value types.LoadVlaue) {}

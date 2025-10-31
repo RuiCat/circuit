@@ -20,7 +20,6 @@ func NewGraph(wireLink *types.WireLink) (graph *Graph, err error) {
 				IsDCAnalysis:  false, // DC分析
 				IsTrapezoidal: false, // 梯形法/向后欧拉法
 			}, // 仿真参数
-
 		},
 	}
 	err = graph.Init(wireLink)

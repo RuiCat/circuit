@@ -50,7 +50,7 @@ func (value *Value) GetVoltageSourceCnt() int { return 1 }
 func (value *Value) GetInternalNodeCount() int { return 0 }
 
 // Reset 元件值初始化
-func (value *Value) Reset() {
+func (value *Value) Reset(stamp types.Stamp) {
 	val := value.GetValue()
 	value.MaxOutput = val["MaxOutput"].(float64)
 	value.MinOutput = val["MinOutput"].(float64)
@@ -99,23 +99,21 @@ type Base struct {
 func (base *Base) Type() types.ElementType { return Type }
 
 // Reset 数据重置
-func (base *Base) Reset() {
-	base.Value.Reset()
+func (base *Base) Reset(stamp types.Stamp) {
+	base.Value.Reset(stamp)
 	base.lastVD = 0
 }
 
 // StartIteration 迭代开始
 func (base *Base) StartIteration(stamp types.Stamp) {}
 
-// Stamp 更新线性贡献 - 实现运放约束建模
+// Stamp 更新线性贡献
 func (base *Base) Stamp(stamp types.Stamp) {
-	// 根据Java参考实现，运放约束应该在Stamp阶段建立
-	// sim.stampMatrix(nodes[2], vn, 1);
 	vn := stamp.GetGraph().NumNodes + base.VoltSource[0]
 	stamp.StampMatrix(base.Nodes[2], vn, 1)
 }
 
-// DoStep 执行元件仿真 - 实现完整的非线性求解
+// DoStep 执行元件仿真
 func (base *Base) DoStep(stamp types.Stamp) {
 	// 获取输入电压
 	volts0 := stamp.GetVoltage(base.Nodes[0]) // 负输入

@@ -45,7 +45,7 @@ func (value *Value) GetVoltageSourceCnt() int { return 0 }
 func (value *Value) GetInternalNodeCount() int { return 0 }
 
 // Reset 元件值初始化
-func (value *Value) Reset() {
+func (value *Value) Reset(stamp types.Stamp) {
 	val := value.GetValue()
 	value.Resistance = val["Resistance"].(float64)
 }

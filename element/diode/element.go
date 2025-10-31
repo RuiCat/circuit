@@ -61,7 +61,7 @@ func (v *Value) GetVoltageSourceCnt() int { return 0 }
 func (v *Value) GetInternalNodeCount() int { return 0 }
 
 // Reset 元件值初始化
-func (v *Value) Reset() {
+func (v *Value) Reset(stamp types.Stamp) {
 	val := v.GetValue()
 	v.SaturationCurrent = val["SaturationCurrent"].(float64)
 	v.BreakdownVoltage = val["BreakdownVoltage"].(float64)
@@ -134,8 +134,8 @@ type Base struct {
 }
 
 // Reset 元件值初始化
-func (base *Base) Reset() {
-	base.Value.Reset()
+func (base *Base) Reset(stamp types.Stamp) {
+	base.Value.Reset(stamp)
 	base.lastvoltdiff = 0
 	// 计算温度相关的热电压
 	base.vt = ThermalVoltage * (base.Temperature / 300.15)

@@ -251,8 +251,8 @@ func (m *sparseMatrix) MatrixVectorMultiply(x []float64) []float64 {
 // Clear 将矩阵重置为零矩阵
 func (m *sparseMatrix) Clear() {
 	// 清空所有非零元素
-	m.colInd = make([]int, 0)
-	m.values = make([]float64, 0)
+	m.colInd = m.colInd[:0]
+	m.values = m.values[:0]
 	// 重置行指针数组
 	for i := 0; i <= m.rows; i++ {
 		m.rowPtr[i] = 0

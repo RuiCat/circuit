@@ -70,7 +70,7 @@ func (vlaue *Value) GetVoltageSourceCnt() int { return 0 }
 func (vlaue *Value) GetInternalNodeCount() int { return 0 }
 
 // Reset 元件值初始化
-func (vlaue *Value) Reset() {
+func (vlaue *Value) Reset(stamp types.Stamp) {
 	val := vlaue.GetValue()
 	vlaue.Waveform = val["Waveform"].(int)
 	vlaue.Bias = val["Bias"].(float64)

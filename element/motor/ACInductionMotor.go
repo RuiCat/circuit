@@ -33,7 +33,7 @@ func (value *ACInductionMotorValue) Init() {
 }
 
 // Reset 元件值初始化
-func (value *ACInductionMotorValue) Reset() {
+func (value *ACInductionMotorValue) Reset(stamp types.Stamp) {
 	// 从ValueMap中获取参数值
 	val := value.GetValue()
 	value.Rs = val["Rs"].(float64)
@@ -109,8 +109,8 @@ type ACInductionMotorBase struct {
 }
 
 // Reset 重置
-func (base *ACInductionMotorBase) Reset() {
-	base.ElementBase.Reset()
+func (base *ACInductionMotorBase) Reset(stamp types.Stamp) {
+	base.ElementBase.Reset(stamp)
 	// 初始条件
 	base.Theta = 0 // 转子初始角度
 	base.Omega = 0 // 转子初始速度

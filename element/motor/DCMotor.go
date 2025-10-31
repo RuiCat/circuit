@@ -8,7 +8,7 @@ type DCMotorValue struct {
 }
 
 // Reset 元件值初始化
-func (vlaue *DCMotorValue) Reset() {}
+func (vlaue *DCMotorValue) Reset(stamp types.Stamp) {}
 
 // CirLoad 网表文件写入值
 func (vlaue *DCMotorValue) CirLoad(value types.LoadVlaue) {}

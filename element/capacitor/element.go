@@ -51,7 +51,7 @@ func (value *Value) GetVoltageSourceCnt() int { return 0 }
 func (value *Value) GetInternalNodeCount() int { return 0 }
 
 // Reset 元件值初始化
-func (value *Value) Reset() {
+func (value *Value) Reset(stamp types.Stamp) {
 	val := value.GetValue()
 	value.Capacitance = val["Capacitance"].(float64)
 	value.InitialVoltage = val["InitialVoltage"].(float64)

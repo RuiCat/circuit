@@ -93,7 +93,7 @@ func (mna *Matrix) StampCCCS(n1, n2 types.NodeID, vs types.VoltageID, gain float
 }
 
 // SetValue 设置元件的值
-func (mna *Matrix) SetValue(id types.ElementID, value types.ValueMap) {
+func (mna *Matrix) SetValueMap(id types.ElementID, value types.ValueMap) {
 	if v, ok := mna.ElementList[id]; ok {
 		v.Value.SetValue(value)
 	}
@@ -109,8 +109,8 @@ func (mna *Matrix) GetGraph() *types.ElementGraph {
 	return &mna.ElementGraph
 }
 
-// GetValue 得到元件的值
-func (mna *Matrix) GetValue(id types.ElementID) (value types.ValueMap) {
+// GetValueMap 得到元件的值
+func (mna *Matrix) GetValueMap(id types.ElementID) (value types.ValueMap) {
 	if v, ok := mna.ElementList[id]; ok {
 		value = v.Value.GetValue()
 	}

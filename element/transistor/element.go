@@ -72,7 +72,7 @@ func (value *Value) GetInternalNodeCount() int { return 0 }
 
 // Reset 元件值初始化
 // 从值映射中重置晶体管参数
-func (value *Value) Reset() {
+func (value *Value) Reset(stamp types.Stamp) {
 	val := value.GetValue()
 	value.PNP = val["PNP"].(bool)
 	value.Beta = val["Beta"].(float64)
@@ -143,8 +143,8 @@ func (base *Base) Type() types.ElementType { return Type }
 
 // Reset 元件值初始化
 // 初始化晶体管状态变量
-func (base *Base) Reset() {
-	base.Value.Reset()
+func (base *Base) Reset(stamp types.Stamp) {
+	base.Value.Reset(stamp)
 	base.pnp = 1
 	if base.PNP {
 		base.pnp = -1

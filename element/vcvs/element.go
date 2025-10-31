@@ -45,7 +45,7 @@ func (vlaue *Value) GetVoltageSourceCnt() int { return 1 }
 func (vlaue *Value) GetInternalNodeCount() int { return 0 }
 
 // Reset 元件值初始化
-func (vlaue *Value) Reset() {
+func (vlaue *Value) Reset(stamp types.Stamp) {
 	val := vlaue.GetValue()
 	vlaue.Gain = val["Gain"].(float64)
 }
@@ -90,9 +90,7 @@ func (base *Base) Stamp(stamp types.Stamp) {
 }
 
 // DoStep 执行元件仿真
-func (base *Base) DoStep(stamp types.Stamp) {
-	// VCVS在Stamp阶段已经完成贡献，这里不需要额外操作
-}
+func (base *Base) DoStep(stamp types.Stamp) {}
 
 // CalculateCurrent 电流计算
 func (base *Base) CalculateCurrent(stamp types.Stamp) {

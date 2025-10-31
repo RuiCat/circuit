@@ -33,12 +33,7 @@ func (soluv *Soluv) Zero() {
 	soluv.OrigJ.Clear()
 	// 节点重置
 	soluv.ElementGraph.Zero()
-	m := len(soluv.ElementList)
-	for soluv.ID = range m {
-		if ele, ok := soluv.ElementList[soluv.ID]; ok {
-			ele.Reset()
-		}
-	}
+	soluv.Reset()
 	// 更新电路
 	soluv.StampUP()
 }
@@ -61,11 +56,29 @@ func (soluv *Soluv) GetCurrent(pin int) float64 {
 func (soluv *Soluv) SetCurrent(pin int, i float64) {
 	soluv.Value.SetPinCurrent(soluv.ID, pin, i)
 }
+func (soluv *Soluv) GetValue(n int) float64 {
+	return soluv.Value.GetValue(soluv.ID, n)
+}
+func (soluv *Soluv) SetValue(n int, v float64) {
+	soluv.Value.SetValue(soluv.ID, n, v)
+}
+func (soluv *Soluv) SetValueBase(n int, v float64) {
+	soluv.Value.SetValueBase(soluv.ID, n, v)
+}
 func (soluv *Soluv) MnaStartIteration() {
 	m := len(soluv.ElementList)
 	for soluv.ID = range m {
 		if ele, ok := soluv.ElementList[soluv.ID]; ok {
 			ele.StartIteration(soluv)
+		}
+	}
+}
+func (soluv *Soluv) Reset() {
+	soluv.Value.Reset()
+	m := len(soluv.ElementList)
+	for soluv.ID = range m {
+		if ele, ok := soluv.ElementList[soluv.ID]; ok {
+			ele.Reset(soluv)
 		}
 	}
 }
@@ -167,19 +180,26 @@ func (soluv *Soluv) Solve() (ok bool, err error) {
 		} else if maxResidual < prevResidual*0.5 {
 			// 残差快速减小，可以增加阻尼因子
 			soluv.DampingFactor = math.Min(soluv.DampingFactor*1.2, 1.0)
-		}
-		if maxResidual < soluv.ConvergenceTol && soluv.Converged {
-			break // 已经收敛
-		}
-		// 振荡检测逻辑保持不变
-		if soluv.Iter > 0 {
-			if maxResidual > prevResidual*1.5 {
-				soluv.OscillationCount++
-			} else if maxResidual < prevResidual*0.5 {
-				soluv.OscillationCount = 0
+		} else {
+			if soluv.Iter > 5 && math.Abs(maxResidual-prevResidual) < types.Tolerance {
+				soluv.DampingFactor = math.Max(soluv.DampingFactor*0.95, soluv.MinDampingFactor)
 			}
-			if soluv.OscillationCount > soluv.OscillationCountMax {
-				return false, fmt.Errorf("发散振荡 at iter=%d, res=%.3e", soluv.Iter, maxResidual)
+		}
+		// 检查是否收敛
+		if soluv.Converged {
+			if maxResidual <= soluv.ConvergenceTol {
+				break // 已经收敛
+			}
+			// 振荡检测逻辑保持不变
+			if soluv.Iter > 0 {
+				if maxResidual > prevResidual*1.5 {
+					soluv.OscillationCount++
+				} else if maxResidual < prevResidual*0.5 {
+					soluv.OscillationCount = 0
+				}
+				if soluv.OscillationCount > soluv.OscillationCountMax {
+					return false, fmt.Errorf("发散振荡 at iter=%d, res=%.3e", soluv.Iter, maxResidual)
+				}
 			}
 		}
 		prevResidual = maxResidual
@@ -193,7 +213,7 @@ func (soluv *Soluv) Solve() (ok bool, err error) {
 	return true, nil
 }
 
-// 辅助方法：计算残差
+// calculateResidual 计算残差
 func (soluv *Soluv) calculateResidual() float64 {
 	maxResidual := 0.0
 	for i := 0; i < soluv.VecB.Length(); i++ {

@@ -107,6 +107,9 @@ func (val *ValueBase) GetVoltageSourceCnt() int { return 0 }
 // GetInternalNodeCount 内壁引脚数量
 func (val *ValueBase) GetInternalNodeCount() int { return 0 }
 
+// GetInternalValueCount 内部数据数量
+func (val *ValueBase) GetInternalValueCount() int { return 0 }
+
 // Value 元件数据
 type Value interface {
 	Layout(gtx layout.Context) layout.Dimensions // 组件绘制实现
@@ -117,7 +120,8 @@ type Value interface {
 	GetValue() (value ValueMap)                  // 获取元件数据
 	GetVoltageSourceCnt() int                    // 电压源数量
 	GetInternalNodeCount() int                   // 内部引脚数量
-	Reset()                                      // 元件值初始化
+	GetInternalValueCount() int                  // 内部数据数量
+	Reset(stamp Stamp)                           // 元件值初始化
 }
 
 // ElementConfig 组件配置
@@ -130,9 +134,9 @@ type ElementConfig interface {
 // ElementFace 组件底层接口
 type ElementFace interface {
 	Type() ElementType                                      // 元件类型
-	Reset()                                                 // 数据重置
-	GetValue() Value                                        // 获取元件自身数据
+	Reset(stamp Stamp)                                      // 数据重置
 	Debug(stamp Stamp) string                               // 调试输出
+	GetValue() Value                                        // 获取元件自身数据
 	GetPinNodeList() (node PinList)                         // 得到引脚的节点ID了列表
 	SetInternalNode(internalNodeIndex PinID, nodeID NodeID) // 设置内部引脚ID,扩展使用
 	GetInternalNode(internalNodeIndex PinID) NodeID         // 得到内部引脚ID,扩展使用

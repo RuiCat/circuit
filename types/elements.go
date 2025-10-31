@@ -52,8 +52,11 @@ func (vlaue *GndValue) GetVoltageSourceCnt() int { return 0 }
 // GetInternalNodeCount 内壁引脚数量
 func (vlaue *GndValue) GetInternalNodeCount() int { return 0 }
 
+// GetInternalValueCount 内部数据数量
+func (vlaue *GndValue) GetInternalValueCount() int { return 0 }
+
 // Reset 元件值初始化
-func (vlaue *GndValue) Reset() {}
+func (vlaue *GndValue) Reset(stamp Stamp) {}
 
 // CirLoad 网表文件写入值
 func (vlaue *GndValue) CirLoad(value LoadVlaue) {}
@@ -71,7 +74,7 @@ type GndBase struct {
 func (base *GndBase) Type() ElementType { return GndType }
 
 // Reset 重置
-func (base *GndBase) Reset() {}
+func (base *GndBase) Reset(stamp Stamp) {}
 
 // StartIteration 迭代开始
 func (base *GndBase) StartIteration(stamp Stamp) {}
@@ -122,8 +125,11 @@ func (vlaue *HeghValue) GetVoltageSourceCnt() int { return 0 }
 // GetInternalNodeCount 内壁引脚数量
 func (vlaue *HeghValue) GetInternalNodeCount() int { return 0 }
 
+// GetInternalValueCount 内部数据数量
+func (vlaue *HeghValue) GetInternalValueCount() int { return 0 }
+
 // Reset 元件值初始化
-func (vlaue *HeghValue) Reset() {}
+func (vlaue *HeghValue) Reset(stamp Stamp) {}
 
 // CirLoad 网表文件写入值
 func (vlaue *HeghValue) CirLoad(value LoadVlaue) {}

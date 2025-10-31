@@ -37,12 +37,12 @@ type Element struct {
 // MNA 结构接口
 type MNA interface {
 	Stamp
-	Zero()                                  // 重置
-	Solve() (ok bool, err error)            // 保存
-	StampUP()                               // 更新电路
-	GetValue(id ElementID) (value ValueMap) // 获取元件值
-	SetValue(id ElementID, value ValueMap)  // 设置元件值
-	String() string                         // 输出状态
+	Zero()                                     // 重置
+	Solve() (ok bool, err error)               // 保存
+	StampUP()                                  // 更新电路
+	GetValueMap(id ElementID) (value ValueMap) // 获取元件值
+	SetValueMap(id ElementID, value ValueMap)  // 设置元件值
+	String() string                            // 输出状态
 
 	GetJ() []float64 // 系统导纳矩阵
 	GetX() []float64 // 未知量向量
@@ -63,6 +63,9 @@ type Stamp interface {
 	SetPinCurrent(id ElementID, pin int, i float64)               // 设置引脚电流
 	GetCurrent(pin int) float64                                   // 返回引脚电流
 	SetCurrent(pin int, i float64)                                // 设置引脚电流
+	GetValue(n int) float64                                       // 返回内部数据
+	SetValue(n int, v float64)                                    // 设置内部数据
+	SetValueBase(n int, v float64)                                // 设置内部底层数据
 	StampMatrix(i, j NodeID, value float64)                       // 在矩阵A的(i,j)位置叠加值
 	StampRightSide(i NodeID, value float64)                       // 在右侧向量B的i位置叠加值
 	StampResistor(n1, n2 NodeID, r float64)                       // 加盖电阻元件
