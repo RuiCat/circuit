@@ -20,7 +20,7 @@ type LU interface {
 	//   x - 解向量（预分配，结果将存储在此）
 	// 返回：
 	//   error - 如果向量维度不匹配则返回错误
-	SolveReuse(b UpdateVector, x UpdateVector) error
+	SolveReuse(b, x Vector) error
 	// SolveReuseFloat 解线性方程组 Ax = b，重用预分配的向量
 	// 使用LU分解结果求解线性方程组，分为两个步骤：
 	// 1. 前向替换：求解 Ly = Pb
@@ -144,7 +144,7 @@ func (lu *lu) Decompose(matrix Matrix) error {
 // 返回：
 //
 //	error - 如果向量维度不匹配则返回错误
-func (lu *lu) SolveReuse(b, x UpdateVector) error {
+func (lu *lu) SolveReuse(b, x Vector) error {
 	if b.Length() != lu.n || x.Length() != lu.n {
 		return fmt.Errorf("vector dimension mismatch")
 	}

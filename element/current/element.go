@@ -192,9 +192,7 @@ func (base *Base) Stamp(stamp types.Stamp) {
 }
 
 // DoStep 执行元件仿真
-func (base *Base) DoStep(stamp types.Stamp) {
-	// 电流源在Stamp阶段已经完成贡献，这里不需要额外操作
-}
+func (base *Base) DoStep(stamp types.Stamp) {}
 
 // getCurrent 得到电流值
 func (base *Base) getCurrent(stamp types.Stamp) float64 {

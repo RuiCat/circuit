@@ -15,7 +15,7 @@ type Matrix struct {
 	MatJ  mat.UpdateMatrix
 	OrigJ mat.Matrix // 线性贡献
 	// 备份实现
-	VecX mat.UpdateVector // 未知量向量(节点电压+支路电流)
+	VecX [3]mat.Vector    // 未知量向量
 	VecB mat.UpdateVector // 右侧激励向量
 	// LU分解
 	Lu mat.LU // LU分解器
@@ -23,21 +23,23 @@ type Matrix struct {
 
 // 在矩阵A的(i,j)位置叠加值
 func (mna *Matrix) StampMatrix(i, j types.NodeID, v float64) {
-	if i > types.ElementGndNodeID && j > types.ElementGndNodeID {
+	if i > types.ElementGndNodeID && j > types.ElementGndNodeID && !math.IsNaN(v) {
 		mna.MatJ.Increment(i, j, v)
 	}
 }
 
 // 在右侧向量B的i位置叠加值
 func (mna *Matrix) StampRightSide(i types.NodeID, v float64) {
-	if i > types.ElementGndNodeID {
+	if i > types.ElementGndNodeID && !math.IsNaN(v) {
 		mna.VecB.Increment(i, v)
 	}
 }
 
 // 加盖电阻元件
 func (mna *Matrix) StampResistor(n1, n2 types.NodeID, r float64) {
-	mna.StampConductance(n1, n2, 1.0/math.Max(r, 1e-12))
+	if !math.IsNaN(r) && r != 0 {
+		mna.StampConductance(n1, n2, 1.0/r)
+	}
 }
 
 // 加盖电导元件
@@ -133,14 +135,14 @@ func (mna *Matrix) GetVoltage(i types.NodeID) float64 {
 	case i == types.ElementGndNodeID:
 		return 0
 	case i >= 0 && i < mna.NumNodes:
-		return mna.VecX.Get(i)
+		return mna.VecX[0].Get(i)
 	}
 	return 0
 }
 
 // 设置节点电压
 func (mna *Matrix) SetVoltage(i types.NodeID, v float64) {
-	if i > types.ElementGndNodeID && i < mna.NumNodes {
-		mna.VecX.Increment(i, v)
+	if i > types.ElementGndNodeID && i < mna.NumNodes && !math.IsNaN(v) {
+		mna.VecX[0].Increment(i, v)
 	}
 }

@@ -25,7 +25,9 @@ func (soluv *Soluv) GetDampingFactor() float64 {
 // Zero 重置
 func (soluv *Soluv) Zero() {
 	// 重置向量
-	soluv.VecX.Clear()
+	soluv.VecX[0].Clear()
+	soluv.VecX[1].Clear()
+	soluv.VecX[2].Clear()
 	soluv.VecB.Clear()
 	soluv.Current.Clear()
 	// 重置矩阵
@@ -35,6 +37,8 @@ func (soluv *Soluv) Zero() {
 	soluv.Reset()
 	// 更新电路
 	soluv.StampUP()
+	// 拷贝求解值
+	soluv.VecX[0].Copy(soluv.VecX[2])
 }
 
 // StampUP 更新电路
@@ -46,7 +50,7 @@ func (soluv *Soluv) StampUP() {
 	soluv.MnaStamp()
 	// 备份矩阵和向量
 	soluv.MatJ.Update()
-	soluv.VecB.Update() // 记录到底层
+	soluv.VecB.Update()
 }
 
 func (soluv *Soluv) GetCurrent(pin int) float64 {
@@ -61,9 +65,7 @@ func (soluv *Soluv) GetValue(n int) float64 {
 func (soluv *Soluv) SetValue(n int, v float64) {
 	soluv.Value.SetValue(soluv.ID, n, v)
 }
-func (soluv *Soluv) SetValueBase(n int, v float64) {
-	soluv.Value.SetValueBase(soluv.ID, n, v)
-}
+
 func (soluv *Soluv) MnaStartIteration() {
 	m := len(soluv.ElementList)
 	for soluv.ID = range m {
@@ -78,6 +80,7 @@ func (soluv *Soluv) Reset() {
 	for soluv.ID = range m {
 		if ele, ok := soluv.ElementList[soluv.ID]; ok {
 			ele.Reset(soluv)
+			ele.Update()
 		}
 	}
 }
@@ -86,6 +89,7 @@ func (soluv *Soluv) MnaStamp() {
 	for soluv.ID = range m {
 		if ele, ok := soluv.ElementList[soluv.ID]; ok {
 			ele.Stamp(soluv)
+			ele.Update()
 		}
 	}
 }
@@ -105,33 +109,39 @@ func (soluv *Soluv) MnaCalculateCurrent() {
 		}
 	}
 }
-func (soluv *Soluv) MnaStepFinished() {
+func (soluv *Soluv) MnaStepFinished(is bool) {
 	m := len(soluv.ElementList)
-	for soluv.ID = range m {
-		if ele, ok := soluv.ElementList[soluv.ID]; ok {
-			ele.StepFinished(soluv)
+	// 检查状态
+	if is {
+		for soluv.ID = range m {
+			if ele, ok := soluv.ElementList[soluv.ID]; ok {
+				ele.StepFinished(soluv)
+				ele.Update()
+			}
 		}
+		soluv.VecX[0].Copy(soluv.VecX[2])
+		soluv.Current.Update()
+	} else {
+		for soluv.ID = range m {
+			if ele, ok := soluv.ElementList[soluv.ID]; ok {
+				ele.StepFinished(soluv)
+				ele.Rollback()
+			}
+		}
+		soluv.VecX[2].Copy(soluv.VecX[0])
+		soluv.Current.Rollback()
 	}
+
 }
 
 // Solve 求解线性系统
 func (soluv *Soluv) Solve() (ok bool, err error) {
 	// 处理备份
 	defer func() {
-		// 检查状态
-		if !ok {
-			soluv.VecX.Rollback()
-			soluv.Current.Rollback()
-			// 迭代失败回退
-			if err == nil {
-				return
-			}
-		} else {
-			soluv.VecX.Update()
-			soluv.Current.Update()
-		}
+		// 调用结束
+		soluv.MnaStepFinished(ok)
 		// 检查矩阵
-		if soluv.Debug != nil && soluv.Debug.IsDebug() {
+		if soluv.Debug != nil && soluv.Debug.IsDebug() && ok {
 			// 更新调试信息
 			if math.Mod(soluv.MaxTimeStep, soluv.Time) == soluv.MaxTimeStep {
 				soluv.Debug.Update(soluv)
@@ -147,9 +157,10 @@ func (soluv *Soluv) Solve() (ok bool, err error) {
 	}()
 	// 开始迭代
 	soluv.MnaStartIteration()
-	soluv.Iter = 0            // 迭代次数
-	soluv.DampingFactor = 1.0 // 重置阻尼因子
-	prevResidual := 0.0       // 残差
+	soluv.Iter = 0                        // 迭代次数
+	soluv.DampingFactor = 1.0             // 重置阻尼因子
+	soluv.OscillationCount = 0            // 重置震荡次数
+	prevResidual, maxResidual := 0.0, 0.0 // 残差
 	for ; soluv.Iter < soluv.MaxIter; soluv.Iter++ {
 		// 设置为收敛状态
 		soluv.Converged = true
@@ -163,48 +174,54 @@ func (soluv *Soluv) Solve() (ok bool, err error) {
 			return false, fmt.Errorf("矩阵分解失败: %v", err)
 		}
 		// 求解
-		if err := soluv.Lu.SolveReuse(soluv.VecB, soluv.VecX); err != nil {
+		soluv.VecX[0].Copy(soluv.VecX[1])
+		if err := soluv.Lu.SolveReuse(soluv.VecB, soluv.VecX[0]); err != nil {
 			return false, fmt.Errorf("矩阵求解失败: %v", err)
 		}
-		// mna.MatX = mna.OrigX + α × (mna.MatX  - mna.OrigX) 阻尼实现
-		soluv.VecX.ApplyDamping(soluv.DampingFactor)
+		// soluv.MatX = soluv.OrigX + α × (soluv.MatX  - soluv.OrigX) 阻尼实现
+		for i := 0; i < soluv.VecX[1].Length(); i++ {
+			orig := soluv.VecX[1].Get(i)
+			delta := soluv.VecX[0].Get(i) - orig
+			dampedValue := orig + soluv.DampingFactor*delta
+			soluv.VecX[0].Set(i, dampedValue)
+		}
 		// 计算电流
 		soluv.MnaCalculateCurrent()
 		// 计算残差
-		maxResidual := soluv.calculateResidual()
+		maxResidual = soluv.calculateResidual()
 		// 阻尼自适应调整
-		if soluv.Iter > 0 && maxResidual > prevResidual {
-			// 残差增大，减少阻尼因子
+		switch {
+		case soluv.Iter == 0: // 首次检测
+		case maxResidual > prevResidual*2.0:
+			// 残差显著增大，大幅减少阻尼因子
+			soluv.DampingFactor = math.Max(soluv.DampingFactor*0.5, 0.01)
+			soluv.OscillationCount++
+		case maxResidual > prevResidual*1.5:
+			soluv.OscillationCount++
 			soluv.DampingFactor = math.Max(soluv.DampingFactor*soluv.DampingReduction, soluv.MinDampingFactor)
-		} else if maxResidual < prevResidual*0.5 {
-			// 残差快速减小，可以增加阻尼因子
+		case maxResidual > prevResidual:
+			soluv.OscillationCount++
+			soluv.DampingFactor = math.Max(soluv.DampingFactor*0.8, 0.1)
+			soluv.DampingFactor = math.Max(soluv.DampingFactor*soluv.DampingReduction, soluv.MinDampingFactor)
+		case maxResidual < prevResidual*0.5:
+			soluv.OscillationCount = 0
 			soluv.DampingFactor = math.Min(soluv.DampingFactor*1.2, 1.0)
-		} else {
-			if soluv.Iter > 5 && math.Abs(maxResidual-prevResidual) < types.Tolerance {
-				soluv.DampingFactor = math.Max(soluv.DampingFactor*0.95, soluv.MinDampingFactor)
-			}
+		case maxResidual < prevResidual:
+			soluv.OscillationCount = 0
+			soluv.DampingFactor = math.Min(soluv.DampingFactor*1.1, 1.0)
 		}
-		// 检查是否收敛
-		if soluv.Converged {
-			if maxResidual <= soluv.ConvergenceTol {
-				break // 已经收敛
-			}
-			// 振荡检测逻辑保持不变
-			if soluv.Iter > 0 {
-				if maxResidual > prevResidual*1.5 {
-					soluv.OscillationCount++
-				} else if maxResidual < prevResidual*0.5 {
-					soluv.OscillationCount = 0
-				}
-				if soluv.OscillationCount > soluv.OscillationCountMax {
-					return false, fmt.Errorf("发散振荡 at iter=%d, res=%.3e", soluv.Iter, maxResidual)
-				}
-			}
+		// 收敛检查
+		if soluv.Converged && maxResidual < soluv.ConvergenceTol {
+			break
+		} else if soluv.OscillationCount > soluv.OscillationCountMax {
+			return false, fmt.Errorf("发散振荡 at iter=%d, res=%.3e", soluv.Iter, maxResidual)
 		}
 		prevResidual = maxResidual
+		// 调试输出状态
+		// fmt.Println(soluv.Iter, soluv.GoodIterations, soluv.Graph.TimeStep, maxResidual, prevResidual)
+		// fmt.Println("VecB:", soluv.VecB, "VecX:", soluv.VecX[0], "OrigX:", soluv.VecX[2], "历史X", soluv.VecX[1])
+		// fmt.Println(soluv.MatJ)
 	}
-	// 调用结束
-	soluv.MnaStepFinished()
 	// 迭代失败
 	if soluv.Iter == soluv.MaxIter && prevResidual > soluv.ConvergenceTol {
 		return false, nil
@@ -219,7 +236,7 @@ func (soluv *Soluv) calculateResidual() float64 {
 		sum := 0.0
 		cols, vals := soluv.MatJ.GetRow(i)
 		for j, col := range cols {
-			sum += vals[j] * soluv.VecX.Get(col)
+			sum += vals[j] * soluv.VecX[0].Get(col)
 		}
 		res := math.Abs(sum - soluv.VecB.Get(i))
 		if res > maxResidual {
@@ -242,7 +259,7 @@ func (soluv *Soluv) GetJ() []float64 {
 	return dense
 }
 func (soluv *Soluv) GetC() []float64 { return soluv.Current.ToDense() }
-func (soluv *Soluv) GetX() []float64 { return soluv.VecX.ToDense() }
+func (soluv *Soluv) GetX() []float64 { return soluv.VecX[0].ToDense() }
 func (soluv *Soluv) GetB() []float64 { return soluv.VecB.ToDense() }
 
 // String 输出结构

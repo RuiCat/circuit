@@ -23,7 +23,9 @@ func NewMNA(graph *graph.Graph) types.MNA {
 	// 创建稀疏矩阵
 	mna.OrigJ = mat.NewSparseMatrix(n, n)
 	mna.MatJ = mat.NewUpdateMatrix(mna.OrigJ)
-	mna.VecX = mat.NewUpdateVector(mat.NewDenseVector(n))
+	mna.VecX[0] = mat.NewDenseVector(n)
+	mna.VecX[1] = mat.NewDenseVector(n)
+	mna.VecX[2] = mat.NewDenseVector(n)
 	mna.VecB = mat.NewUpdateVector(mat.NewDenseVector(n))
 	// 构建LU分解器
 	mna.Lu = mat.NewLU(n)

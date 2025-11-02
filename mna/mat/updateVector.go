@@ -1,6 +1,8 @@
 package mat
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // UpdateVector 更新向量接口
 // 扩展 Vector接口，提供基于uint16分块位图的缓存机制
@@ -12,10 +14,6 @@ type UpdateVector interface {
 	// Rollback 回溯操作
 	// 将位图标记置0，清空缓存
 	Rollback()
-	// ApplyDamping 应用阻尼计算
-	// 实现公式: result = base + α × (current - base)
-	// 其中 base 是底层数据，current 是当前更新数据，α 是阻尼因子
-	ApplyDamping(alpha float64)
 }
 
 // updateVector 更新向量实现
@@ -293,19 +291,6 @@ func (v *updateVector) NonZeroCount() int {
 		}
 	}
 	return count
-}
-
-// ApplyDamping 应用阻尼计算
-// 实现公式: result = base + α × (current - base)
-// 其中 base 是底层数据，current 是当前更新数据，α 是阻尼因子
-func (v *updateVector) ApplyDamping(alpha float64) {
-	for i := 0; i < v.length; i++ {
-		baseValue := v.base.Get(i)             // 底层数据 (OrigX)
-		currentValue := v.Get(i)               // 当前更新数据 (MatX)
-		delta := currentValue - baseValue      // 差值
-		dampedValue := baseValue + alpha*delta // 阻尼计算结果
-		v.Set(i, dampedValue)                  // 设置回缓存
-	}
 }
 
 // String 返回向量的字符串表示

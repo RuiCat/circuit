@@ -38,10 +38,6 @@ type Value struct {
 	types.ValueBase         // 基础创建
 	Capacitance     float64 // 电容值(F)
 	InitialVoltage  float64 // 初始电压(V)
-
-	compResistance float64
-	curSourceValue float64
-	voltdiff       float64
 }
 
 // GetVoltageSourceCnt 电压源数量
@@ -55,9 +51,6 @@ func (value *Value) Reset(stamp types.Stamp) {
 	val := value.GetValue()
 	value.Capacitance = val["Capacitance"].(float64)
 	value.InitialVoltage = val["InitialVoltage"].(float64)
-	value.voltdiff = value.InitialVoltage
-	value.curSourceValue = 0
-	value.compResistance = 0
 }
 
 // CirLoad 网表文件写入值
@@ -88,6 +81,28 @@ func (value *Value) CirExport() []string {
 type Base struct {
 	*types.ElementBase
 	*Value
+	// 内部值
+	compResistance float64
+	curSourceValue float64
+	voltdiff       float64
+	Orig           [3]float64
+}
+
+func (base *Base) Reset(stamp types.Stamp) {
+	base.Value.Reset(stamp)
+	base.voltdiff = base.InitialVoltage
+	base.curSourceValue = 0
+	base.compResistance = 0
+}
+
+// Update 更新元件值
+func (base *Base) Update() {
+	base.Orig[0], base.Orig[1], base.Orig[2] = base.voltdiff, base.curSourceValue, base.compResistance
+}
+
+// Rollback 回溯
+func (base *Base) Rollback() {
+	base.voltdiff, base.curSourceValue, base.compResistance = base.Orig[0], base.Orig[1], base.Orig[2]
 }
 
 // Type 类型

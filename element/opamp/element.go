@@ -55,6 +55,8 @@ func (value *Value) Reset(stamp types.Stamp) {
 	value.MaxOutput = val["MaxOutput"].(float64)
 	value.MinOutput = val["MinOutput"].(float64)
 	value.Gain = val["Gain"].(float64)
+	value.MaxOutput = max(value.MaxOutput, value.MinOutput)
+	value.MinOutput = min(value.MaxOutput, value.MinOutput)
 }
 
 // CirLoad 网表文件写入值
@@ -93,6 +95,17 @@ type Base struct {
 	*types.ElementBase
 	*Value
 	lastVD float64 // 上一次的电压差
+	Orig   float64
+}
+
+// Update 更新元件值
+func (base *Base) Update() {
+	base.Orig = base.lastVD
+}
+
+// Rollback 回溯
+func (base *Base) Rollback() {
+	base.lastVD = base.Orig
 }
 
 // Type 类型
@@ -121,28 +134,36 @@ func (base *Base) DoStep(stamp types.Stamp) {
 	volts2 := stamp.GetVoltage(base.Nodes[2]) // 输出
 	// 计算电压差
 	vd := volts1 - volts0
-	if math.Abs(base.lastVD-vd) > 0.01 {
+	switch {
+	case math.Abs(base.lastVD-vd) > types.Tolerance:
 		stamp.SetConverged()
-	} else if volts2 > base.MaxOutput+0.01 || volts2 < base.MinOutput-0.1 {
+	case volts2 > base.MaxOutput+types.Tolerance || volts2 < base.MinOutput-types.Tolerance:
+		stamp.SetConverged()
+	case math.IsNaN(volts2) || math.Abs(volts2) > 1e6: // 添加数值稳定性检查
 		stamp.SetConverged()
 	}
 	// 计算
 	var x, dx float64
-	vn := stamp.GetGraph().NumNodes + base.VoltSource[0]
-	if vd >= base.MaxOutput/base.Gain && (base.lastVD >= 0) {
-		dx = types.Tolerance * 0.1
-		x = base.MaxOutput - dx*base.MaxOutput/base.Gain
-	} else if vd <= base.MinOutput/base.Gain && (base.lastVD <= 0) {
-		dx = types.Tolerance * 0.1
-		x = base.MinOutput - dx*base.MinOutput/base.Gain
+	// 混合检测
+	if (vd >= base.MaxOutput/base.Gain && base.lastVD >= 0) || volts2 >= base.MaxOutput {
+		// 正饱和
+		dx = 1.0
+		x = base.MaxOutput
+	} else if (vd <= base.MinOutput/base.Gain && base.lastVD <= 0) || volts2 <= base.MinOutput {
+		// 负饱和
+		dx = 1.0
+		x = base.MinOutput
 	} else {
+		// 线性工作区
 		dx = base.Gain
+		x = -dx * vd
 	}
 	// 通过设置电压源右侧向量来实现约束
+	vn := stamp.GetGraph().NumNodes + base.VoltSource[0]
 	stamp.StampMatrix(vn, base.Nodes[0], dx)
 	stamp.StampMatrix(vn, base.Nodes[1], -dx)
 	stamp.StampMatrix(vn, base.Nodes[2], 1)
-	stamp.StampRightSide(vn, x) // 设置电压源值为运放输出电压
+	stamp.StampRightSide(vn, x)
 	base.lastVD = vd
 }
 

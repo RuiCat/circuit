@@ -93,11 +93,7 @@ func (base *Base) Stamp(stamp types.Stamp) {
 func (base *Base) DoStep(stamp types.Stamp) {}
 
 // CalculateCurrent 电流计算
-func (base *Base) CalculateCurrent(stamp types.Stamp) {
-	// 对于VCVS，电流计算需要从矩阵求解结果中获取
-	// 这里暂时设置为0，实际电流会在MNA求解过程中计算
-	stamp.SetCurrent(0, 0)
-}
+func (base *Base) CalculateCurrent(stamp types.Stamp) {}
 
 // StepFinished 步长迭代结束
 func (base *Base) StepFinished(stamp types.Stamp) {}

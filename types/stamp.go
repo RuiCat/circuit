@@ -65,7 +65,6 @@ type Stamp interface {
 	SetCurrent(pin int, i float64)                                // 设置引脚电流
 	GetValue(n int) float64                                       // 返回内部数据
 	SetValue(n int, v float64)                                    // 设置内部数据
-	SetValueBase(n int, v float64)                                // 设置内部底层数据
 	StampMatrix(i, j NodeID, value float64)                       // 在矩阵A的(i,j)位置叠加值
 	StampRightSide(i NodeID, value float64)                       // 在右侧向量B的i位置叠加值
 	StampResistor(n1, n2 NodeID, r float64)                       // 加盖电阻元件

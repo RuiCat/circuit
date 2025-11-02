@@ -87,6 +87,12 @@ type ValueBase struct {
 	Size     image.Point // 元件大小
 }
 
+// Update 更新元件值
+func (val *ValueBase) Update() {}
+
+// Rollback 回溯
+func (val *ValueBase) Rollback() {}
+
 // Layout 用于UI界面绘制元件
 func (val *ValueBase) Layout(gtx layout.Context) layout.Dimensions {
 	return layout.Dimensions{Size: val.Size}
@@ -141,6 +147,8 @@ type ElementFace interface {
 	SetInternalNode(internalNodeIndex PinID, nodeID NodeID) // 设置内部引脚ID,扩展使用
 	GetInternalNode(internalNodeIndex PinID) NodeID         // 得到内部引脚ID,扩展使用
 	// 元件迭代
+	Update()                      // 更新操作
+	Rollback()                    // 回溯操作
 	StartIteration(stamp Stamp)   // 步长迭代开始
 	Stamp(stamp Stamp)            // 加盖线性贡献
 	DoStep(stamp Stamp)           // 执行仿真
