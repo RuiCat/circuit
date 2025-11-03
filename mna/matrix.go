@@ -74,13 +74,15 @@ func (mna *Matrix) UpdateVoltageSource(vs types.VoltageID, v float64) {
 // StampVCVS 加盖电压控制电压源
 func (mna *Matrix) StampVCVS(n1, n2 types.NodeID, vs types.VoltageID, coef float64) {
 	vn := mna.NumNodes + vs
+	// 控制关系: V_out = coef * (V_n1 - V_n2)
 	mna.StampMatrix(vn, n1, coef)
 	mna.StampMatrix(vn, n2, -coef)
 }
 
 // StampVCCurrentSource 加盖电压控制电流源
 func (mna *Matrix) StampVCCurrentSource(cn1, cn2, vn1, vn2 types.NodeID, gain float64) {
-	// 控制电压差
+	// 电压控制电流源: I = gain * (V_vn1 - V_vn2)
+	// 电流注入到控制节点cn1和cn2
 	mna.StampMatrix(cn1, vn1, gain)
 	mna.StampMatrix(cn2, vn2, gain)
 	mna.StampMatrix(cn1, vn2, -gain)
@@ -90,6 +92,8 @@ func (mna *Matrix) StampVCCurrentSource(cn1, cn2, vn1, vn2 types.NodeID, gain fl
 // StampCCCS 加盖电流控制电流源
 func (mna *Matrix) StampCCCS(n1, n2 types.NodeID, vs types.VoltageID, gain float64) {
 	vn := mna.NumNodes + vs
+	// 电流控制电流源: I_out = gain * I_vs
+	// 其中I_vs是电压源vs的电流
 	mna.StampMatrix(n1, vn, gain)
 	mna.StampMatrix(n2, vn, -gain)
 }

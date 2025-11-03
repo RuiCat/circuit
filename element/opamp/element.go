@@ -134,30 +134,25 @@ func (base *Base) DoStep(stamp types.Stamp) {
 	volts2 := stamp.GetVoltage(base.Nodes[2]) // 输出
 	// 计算电压差
 	vd := volts1 - volts0
-	switch {
-	case math.Abs(base.lastVD-vd) > types.Tolerance:
+	if math.Abs(base.lastVD-vd) > 0.01 {
 		stamp.SetConverged()
-	case volts2 > base.MaxOutput+types.Tolerance || volts2 < base.MinOutput-types.Tolerance:
-		stamp.SetConverged()
-	case math.IsNaN(volts2) || math.Abs(volts2) > 1e6: // 添加数值稳定性检查
+	} else if volts2 > base.MaxOutput+0.01 || volts2 < base.MinOutput-0.1 {
 		stamp.SetConverged()
 	}
 	// 计算
 	var x, dx float64
-	// 混合检测
-	if (vd >= base.MaxOutput/base.Gain && base.lastVD >= 0) || volts2 >= base.MaxOutput {
-		// 正饱和
-		dx = 1.0
-		x = base.MaxOutput
-	} else if (vd <= base.MinOutput/base.Gain && base.lastVD <= 0) || volts2 <= base.MinOutput {
-		// 负饱和
-		dx = 1.0
-		x = base.MinOutput
+
+	if vd >= base.MaxOutput/base.Gain && (base.lastVD >= 0) {
+		dx = types.Tolerance * 0.1
+		x = base.MaxOutput - dx*base.MaxOutput/base.Gain
+	} else if vd <= base.MinOutput/base.Gain && (base.lastVD <= 0) {
+		dx = types.Tolerance * 0.1
+		x = base.MinOutput - dx*base.MinOutput/base.Gain
 	} else {
-		// 线性工作区
 		dx = base.Gain
-		x = -dx * vd
+		x = dx * vd
 	}
+
 	// 通过设置电压源右侧向量来实现约束
 	vn := stamp.GetGraph().NumNodes + base.VoltSource[0]
 	stamp.StampMatrix(vn, base.Nodes[0], dx)
