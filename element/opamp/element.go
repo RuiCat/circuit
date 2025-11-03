@@ -141,22 +141,23 @@ func (base *Base) DoStep(stamp types.Stamp) {
 	}
 	// 计算
 	var x, dx float64
-
 	if vd >= base.MaxOutput/base.Gain && (base.lastVD >= 0) {
-		dx = types.Tolerance * 0.1
-		x = base.MaxOutput - dx*base.MaxOutput/base.Gain
+		// 正饱和
+		dx = 1.0
+		x = base.MaxOutput
 	} else if vd <= base.MinOutput/base.Gain && (base.lastVD <= 0) {
-		dx = types.Tolerance * 0.1
-		x = base.MinOutput - dx*base.MinOutput/base.Gain
+		// 负饱和
+		dx = 1.0
+		x = base.MinOutput
 	} else {
+		// 线性工作区
 		dx = base.Gain
 		x = dx * vd
 	}
-
 	// 通过设置电压源右侧向量来实现约束
 	vn := stamp.GetGraph().NumNodes + base.VoltSource[0]
-	stamp.StampMatrix(vn, base.Nodes[0], dx)
-	stamp.StampMatrix(vn, base.Nodes[1], -dx)
+	stamp.StampMatrix(vn, base.Nodes[0], -dx)
+	stamp.StampMatrix(vn, base.Nodes[1], dx)
 	stamp.StampMatrix(vn, base.Nodes[2], 1)
 	stamp.StampRightSide(vn, x)
 	base.lastVD = vd
