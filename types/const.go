@@ -9,7 +9,7 @@ const (
 
 // 默认参数常量定义
 var (
-	Tolerance           = 1e-6  // 收敛容差
+	Tolerance           = 0.01  // 收敛容差
 	MaxIterations       = 50    // 最大迭代错误次数
 	MaxOscillationCount = 25    // 最大震荡次数
 	MaxGoodIter         = 10    // 最大失败数

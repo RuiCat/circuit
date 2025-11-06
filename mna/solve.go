@@ -163,62 +163,56 @@ func (soluv *Soluv) Solve() (ok bool, err error) {
 	soluv.OscillationCount = 0            // 重置震荡次数
 	prevResidual, maxResidual := 0.0, 0.0 // 残差
 	for ; soluv.Iter < soluv.MaxIter; soluv.Iter++ {
-		// 设置为收敛状态
+		// 重置
 		soluv.Converged = true
-		// 线性矩阵还原
 		soluv.VecB.Rollback()
 		soluv.MatJ.Rollback()
-		// 非线性元件迭代
+		soluv.VecX[0].Copy(soluv.VecX[1])
 		soluv.MnaDoStep()
-		// 重新分解
+		// 求解
 		if err := soluv.Lu.Decompose(soluv.MatJ); err != nil {
 			return false, fmt.Errorf("矩阵分解失败: %v", err)
 		}
-		// 求解
-		soluv.VecX[0].Copy(soluv.VecX[1])
 		if err := soluv.Lu.SolveReuse(soluv.VecB, soluv.VecX[0]); err != nil {
 			return false, fmt.Errorf("矩阵求解失败: %v", err)
 		}
-		// 首次不需要计算阻尼
+		// 计算残差
+		maxResidual = soluv.calculateResidual()
+		// 误差收敛
+		if soluv.Converged && maxResidual < soluv.ConvergenceTol {
+			return true, nil
+		}
+		// 计算阻尼
 		if soluv.Iter != 0 {
-			// 计算残差
-			maxResidual = soluv.calculateResidual()
-			// 阻尼自适应调整
 			switch {
-			case maxResidual-prevResidual < soluv.ConvergenceTol: // 相对差值
+			case maxResidual-prevResidual < soluv.ConvergenceTol:
 				return true, nil
-			case maxResidual > prevResidual*2.0:
-				// 残差显著增大，大幅减少阻尼因子
-				soluv.DampingFactor = soluv.DampingFactor * 0.5
-				soluv.OscillationCount++
-			case maxResidual > prevResidual*1.5:
-				soluv.OscillationCount++
-				soluv.DampingFactor = soluv.DampingFactor * 0.1
+			case maxResidual > prevResidual*1.2:
+				soluv.DampingFactor = math.Max(soluv.DampingFactor*0.1, soluv.MinDampingFactor)
+				soluv.OscillationCount += 3
 			case maxResidual > prevResidual:
+				soluv.DampingFactor = math.Max(soluv.DampingFactor*0.2, soluv.MinDampingFactor)
 				soluv.OscillationCount++
-				soluv.DampingFactor = soluv.DampingFactor * 0.05
-			case maxResidual < prevResidual*0.5:
+			case maxResidual < prevResidual*0.3:
 				soluv.OscillationCount = 0
-				soluv.DampingFactor = soluv.DampingFactor * 1.5
+				soluv.DampingFactor = math.Min(soluv.DampingFactor*1.1, 1.0)
 			case maxResidual < prevResidual:
 				soluv.OscillationCount = 0
-				soluv.DampingFactor = soluv.DampingFactor * 2
-			case soluv.OscillationCount > soluv.OscillationCountMax:
+				soluv.DampingFactor = math.Min(soluv.DampingFactor*1.05, 1.0)
+			}
+			soluv.DampingFactor = math.Max(soluv.DampingFactor, soluv.MinDampingFactor)
+			soluv.DampingFactor = math.Min(soluv.DampingFactor, 1.0)
+			if soluv.OscillationCount > soluv.OscillationCountMax {
 				return false, fmt.Errorf("发散振荡 at iter=%d, res=%.3e", soluv.Iter, maxResidual)
 			}
-			soluv.DampingFactor = math.Min(soluv.DampingFactor, soluv.MinDampingFactor)
-			// VecX = orig + α × (delta  - orig) 阻尼实现
 			for i := 0; i < soluv.VecX[1].Length(); i++ {
 				orig := soluv.VecX[1].Get(i)
 				delta := soluv.VecX[0].Get(i) - orig
+				delta = math.Max(-soluv.ConvergenceTol, math.Min(delta, soluv.ConvergenceTol))
 				soluv.VecX[0].Set(i, orig+soluv.DampingFactor*delta)
 			}
-			prevResidual = maxResidual
 		}
-		// 收敛检查
-		if soluv.Converged && maxResidual < soluv.ConvergenceTol {
-			break
-		}
+		prevResidual = maxResidual
 		// 调试输出状态
 		// fmt.Println(soluv.Iter, soluv.GoodIterations, soluv.Graph.TimeStep, maxResidual, prevResidual)
 		// fmt.Println("VecB:", soluv.VecB, "VecX:", soluv.VecX[0], "OrigX:", soluv.VecX[2], "历史X", soluv.VecX[1])
@@ -234,15 +228,20 @@ func (soluv *Soluv) Solve() (ok bool, err error) {
 // calculateResidual 计算残差
 func (soluv *Soluv) calculateResidual() float64 {
 	maxResidual := 0.0
-	for i := 0; i < soluv.VecB.Length(); i++ {
+	n := soluv.VecB.Length()
+	x := soluv.VecX[0]
+	eps := 1e-12
+	for i := 0; i < n; i++ {
 		sum := 0.0
 		cols, vals := soluv.MatJ.GetRow(i)
-		for j, col := range cols {
-			sum += vals[j] * soluv.VecX[0].Get(col)
+		for j := range cols {
+			sum += vals[j] * x.Get(cols[j])
 		}
-		res := math.Abs(sum - soluv.VecB.Get(i))
-		if res > maxResidual {
-			maxResidual = res
+		absRes := math.Abs(sum - soluv.VecB.Get(i))
+		relRes := absRes / (math.Abs(sum) + math.Abs(soluv.VecB.Get(i)) + eps)
+		combinedRes := math.Max(absRes, relRes*100)
+		if combinedRes > maxResidual {
+			maxResidual = combinedRes
 		}
 	}
 	return maxResidual

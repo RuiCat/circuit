@@ -11,8 +11,8 @@ func NewMNA(graph *graph.Graph) types.MNA {
 	mna := &Soluv{
 		Matrix:           &Matrix{Graph: graph},
 		Value:            NewValue(graph),
-		DampingFactor:    1.0,
-		MinDampingFactor: 0.0001,
+		DampingFactor:    0.1,
+		MinDampingFactor: 1e-8,
 	}
 	// 初始化矩阵
 	n := mna.NumNodes + mna.NumVoltageSources
