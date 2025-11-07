@@ -23,14 +23,14 @@ type Matrix struct {
 
 // 在矩阵A的(i,j)位置叠加值
 func (mna *Matrix) StampMatrix(i, j types.NodeID, v float64) {
-	if i > types.ElementGndNodeID && j > types.ElementGndNodeID && !math.IsNaN(v) {
+	if i > types.ElementGndNodeID && j > types.ElementGndNodeID && !math.IsNaN(v) && v != 0 {
 		mna.MatJ.Increment(i, j, v)
 	}
 }
 
 // 在右侧向量B的i位置叠加值
 func (mna *Matrix) StampRightSide(i types.NodeID, v float64) {
-	if i > types.ElementGndNodeID && !math.IsNaN(v) {
+	if i > types.ElementGndNodeID && !math.IsNaN(v) && v != 0 {
 		mna.VecB.Increment(i, v)
 	}
 }
@@ -43,11 +43,11 @@ func (mna *Matrix) StampResistor(n1, n2 types.NodeID, r float64) {
 }
 
 // 加盖电导元件
-func (mna *Matrix) StampConductance(n1, n2 types.NodeID, g float64) {
-	mna.StampMatrix(n1, n1, g)
-	mna.StampMatrix(n2, n2, g)
-	mna.StampMatrix(n1, n2, -g)
-	mna.StampMatrix(n2, n1, -g)
+func (mna *Matrix) StampConductance(n1, n2 types.NodeID, r0 float64) {
+	mna.StampMatrix(n1, n1, r0)
+	mna.StampMatrix(n2, n2, r0)
+	mna.StampMatrix(n1, n2, -r0)
+	mna.StampMatrix(n2, n1, -r0)
 }
 
 // 加盖电流源

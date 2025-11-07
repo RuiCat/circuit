@@ -132,7 +132,6 @@ func (soluv *Soluv) MnaStepFinished(is bool) {
 		soluv.VecX[2].Copy(soluv.VecX[0])
 		soluv.Current.Rollback()
 	}
-
 }
 
 // Solve 求解线性系统
@@ -165,9 +164,10 @@ func (soluv *Soluv) Solve() (ok bool, err error) {
 	for ; soluv.Iter < soluv.MaxIter; soluv.Iter++ {
 		// 重置
 		soluv.Converged = true
-		soluv.VecB.Rollback()
-		soluv.MatJ.Rollback()
-		soluv.VecX[0].Copy(soluv.VecX[1])
+		soluv.VecB.Rollback()             // 还原非线性加盖值
+		soluv.MatJ.Rollback()             // 还原非线性加盖值
+		soluv.VecX[0].Copy(soluv.VecX[1]) // 备份上一次迭代结果
+		// 非线性迭代
 		soluv.MnaDoStep()
 		// 求解
 		if err := soluv.Lu.Decompose(soluv.MatJ); err != nil {
@@ -179,44 +179,46 @@ func (soluv *Soluv) Solve() (ok bool, err error) {
 		// 计算残差
 		maxResidual = soluv.calculateResidual()
 		// 误差收敛
-		if soluv.Converged && maxResidual < soluv.ConvergenceTol {
-			return true, nil
-		}
-		// 计算阻尼
-		if soluv.Iter != 0 {
-			switch {
-			case maxResidual-prevResidual < soluv.ConvergenceTol:
+		diff := math.Abs(maxResidual - prevResidual)
+		// 处理收敛
+		if soluv.Converged {
+			// 检查收敛条件
+			if maxResidual < soluv.ConvergenceTol {
 				return true, nil
-			case maxResidual > prevResidual*1.2:
-				soluv.DampingFactor = math.Max(soluv.DampingFactor*0.1, soluv.MinDampingFactor)
-				soluv.OscillationCount += 3
-			case maxResidual > prevResidual:
-				soluv.DampingFactor = math.Max(soluv.DampingFactor*0.2, soluv.MinDampingFactor)
-				soluv.OscillationCount++
-			case maxResidual < prevResidual*0.3:
-				soluv.OscillationCount = 0
-				soluv.DampingFactor = math.Min(soluv.DampingFactor*1.1, 1.0)
-			case maxResidual < prevResidual:
-				soluv.OscillationCount = 0
-				soluv.DampingFactor = math.Min(soluv.DampingFactor*1.05, 1.0)
+			} else if diff < soluv.ConvergenceTol {
+				return true, nil
 			}
-			soluv.DampingFactor = math.Max(soluv.DampingFactor, soluv.MinDampingFactor)
-			soluv.DampingFactor = math.Min(soluv.DampingFactor, 1.0)
-			if soluv.OscillationCount > soluv.OscillationCountMax {
-				return false, fmt.Errorf("发散振荡 at iter=%d, res=%.3e", soluv.Iter, maxResidual)
-			}
-			for i := 0; i < soluv.VecX[1].Length(); i++ {
-				orig := soluv.VecX[1].Get(i)
-				delta := soluv.VecX[0].Get(i) - orig
-				delta = math.Max(-soluv.ConvergenceTol, math.Min(delta, soluv.ConvergenceTol))
-				soluv.VecX[0].Set(i, orig+soluv.DampingFactor*delta)
+			// 更新阻尼状态
+			if soluv.Iter != 0 {
+				switch {
+				case diff > soluv.ConvergenceTol*1.2:
+					soluv.DampingFactor = math.Max(soluv.DampingFactor*0.1, soluv.MinDampingFactor)
+					soluv.OscillationCount++
+				case diff > soluv.ConvergenceTol:
+					soluv.DampingFactor = math.Max(soluv.DampingFactor*0.2, soluv.MinDampingFactor)
+					soluv.OscillationCount++
+				case diff < soluv.ConvergenceTol*0.3:
+					soluv.OscillationCount = 0
+					soluv.DampingFactor = math.Min(soluv.DampingFactor*1.1, 1.0)
+				case diff < soluv.ConvergenceTol:
+					soluv.OscillationCount = 0
+					soluv.DampingFactor = math.Min(soluv.DampingFactor*1.05, 1.0)
+				}
+				soluv.DampingFactor = math.Max(soluv.DampingFactor, soluv.MinDampingFactor)
+				soluv.DampingFactor = math.Min(soluv.DampingFactor, 1.0)
+				if soluv.OscillationCount > soluv.OscillationCountMax {
+					return false, fmt.Errorf("发散振荡 at iter=%d, res=%.3e", soluv.Iter, maxResidual)
+				}
+				// 计算阻尼
+				for i := 0; i < soluv.VecX[1].Length(); i++ {
+					orig := soluv.VecX[1].Get(i)
+					delta := soluv.VecX[0].Get(i) - orig
+					delta = math.Max(-soluv.ConvergenceTol, math.Min(delta, soluv.ConvergenceTol))
+					soluv.VecX[0].Set(i, orig+soluv.DampingFactor*delta)
+				}
 			}
 		}
 		prevResidual = maxResidual
-		// 调试输出状态
-		// fmt.Println(soluv.Iter, soluv.GoodIterations, soluv.Graph.TimeStep, maxResidual, prevResidual)
-		// fmt.Println("VecB:", soluv.VecB, "VecX:", soluv.VecX[0], "OrigX:", soluv.VecX[2], "历史X", soluv.VecX[1])
-		// fmt.Println(soluv.MatJ)
 	}
 	// 迭代失败
 	if soluv.Iter == soluv.MaxIter && maxResidual > soluv.ConvergenceTol {

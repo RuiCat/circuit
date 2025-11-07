@@ -4,6 +4,7 @@ import (
 	"circuit/types"
 	"fmt"
 	"math"
+	"math/rand"
 	"strconv"
 )
 
@@ -122,8 +123,10 @@ func (base *Base) StartIteration(stamp types.Stamp) {}
 
 // Stamp 更新线性贡献
 func (base *Base) Stamp(stamp types.Stamp) {
-	vn := stamp.GetGraph().NumNodes + base.VoltSource[0]
-	stamp.StampMatrix(base.Nodes[2], vn, 1)
+	stamp.StampResistor(-1, base.Nodes[0], 1e16)
+	stamp.StampResistor(-1, base.Nodes[1], 1e16)
+	stamp.StampResistor(-1, base.Nodes[2], 1e16)
+	stamp.StampVoltageSource(-1, base.Nodes[2], base.VoltSource[0], 0)
 }
 
 // DoStep 执行元件仿真
@@ -133,31 +136,25 @@ func (base *Base) DoStep(stamp types.Stamp) {
 	volts1 := stamp.GetVoltage(base.Nodes[1]) // 正输入
 	volts2 := stamp.GetVoltage(base.Nodes[2]) // 输出
 	// 计算电压差
-	vd := volts1 - volts0
-	if math.Abs(base.lastVD-vd) > 0.01 {
+	vd, dx, x := volts1-volts0, 0.0, 0.0
+	if math.Abs(base.lastVD-vd) > 0.1 {
 		stamp.SetConverged()
-	} else if volts2 > base.MaxOutput+0.01 || volts2 < base.MinOutput-0.1 {
+	} else if volts2 > base.MaxOutput+0.1 || volts2 < base.MinOutput-.1 {
 		stamp.SetConverged()
 	}
-	// 计算
-	var x, dx float64
-	if vd >= base.MaxOutput/base.Gain && (base.lastVD >= 0) {
-		// 正饱和
-		dx = 1.0
-		x = base.MaxOutput
-	} else if vd <= base.MinOutput/base.Gain && (base.lastVD <= 0) {
-		// 负饱和
-		dx = 1.0
-		x = base.MinOutput
+	if vd >= base.MaxOutput/base.Gain && (base.lastVD >= 0 || rand.Intn(4) == 1) {
+		dx = 1e-4
+		x = base.MaxOutput - dx*base.MaxOutput/base.Gain
+	} else if vd <= base.MinOutput/base.Gain && (base.lastVD <= 0 || rand.Intn(4) == 1) {
+		dx = 1e-4
+		x = base.MinOutput - dx*base.MinOutput/base.Gain
 	} else {
-		// 线性工作区
 		dx = base.Gain
-		x = dx * vd
 	}
 	// 通过设置电压源右侧向量来实现约束
 	vn := stamp.GetGraph().NumNodes + base.VoltSource[0]
-	stamp.StampMatrix(vn, base.Nodes[0], -dx)
-	stamp.StampMatrix(vn, base.Nodes[1], dx)
+	stamp.StampMatrix(vn, base.Nodes[0], dx)
+	stamp.StampMatrix(vn, base.Nodes[1], -dx)
 	stamp.StampMatrix(vn, base.Nodes[2], 1)
 	stamp.StampRightSide(vn, x)
 	base.lastVD = vd
