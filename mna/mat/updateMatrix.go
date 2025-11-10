@@ -1,6 +1,8 @@
 package mat
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // UpdateMatrix 更新矩阵接口
 // 扩展Matrix接口，提供基于uint16分块位图的缓存机制
@@ -12,6 +14,8 @@ type UpdateMatrix interface {
 	// Rollback 回溯操作
 	// 将位图标记置0，清空缓存
 	Rollback()
+	// NoUpdate 标记不更新
+	NoUpdate(i int)
 }
 
 // updateMatrix 更新矩阵实现
@@ -22,6 +26,7 @@ type updateMatrix struct {
 	// 位图缓存系统
 	bitmap    []uint16            // 分块位图，每个uint16表示16个元素的缓存状态
 	cache     map[int][16]float64 // 缓存块，key为块索引，value为16个float64值
+	noUpdate  map[int]bool        // 标记非记录
 	blockSize int                 // 块大小（固定为16）
 }
 
@@ -37,18 +42,22 @@ func NewUpdateMatrix(base Matrix) UpdateMatrix {
 	rows := base.Rows()
 	cols := base.Cols()
 	blockSize := 16
-
 	// 计算需要的位图数量
 	bitmapSize := (rows*cols + blockSize - 1) / blockSize
-
 	return &updateMatrix{
 		base:      base,
 		rows:      rows,
 		cols:      cols,
 		bitmap:    make([]uint16, bitmapSize),
 		cache:     make(map[int][16]float64),
+		noUpdate:  make(map[int]bool),
 		blockSize: blockSize,
 	}
+}
+
+// NoUpdate 标记不更新
+func (m *updateMatrix) NoUpdate(i int) {
+	m.noUpdate[i] = true
 }
 
 // getBlockIndexAndPosition 计算给定行列对应的块索引和块内位置
@@ -80,16 +89,13 @@ func (m *updateMatrix) Get(row, col int) float64 {
 	if row < 0 || row >= m.rows || col < 0 || col >= m.cols {
 		panic("index out of range")
 	}
-
 	blockIndex, position := m.getBlockIndexAndPosition(row, col)
-
 	if m.isBitSet(blockIndex, position) {
 		// 从缓存中获取值
 		if block, exists := m.cache[blockIndex]; exists {
 			return block[position]
 		}
 	}
-
 	// 从底层矩阵获取值
 	return m.base.Get(row, col)
 }
@@ -100,20 +106,21 @@ func (m *updateMatrix) Set(row, col int, value float64) {
 	if row < 0 || row >= m.rows || col < 0 || col >= m.cols {
 		panic("index out of range")
 	}
-
+	// 跳过指定行
+	if _, ok := m.noUpdate[row]; ok {
+		m.base.Set(row, col, value)
+		return
+	}
 	blockIndex, position := m.getBlockIndexAndPosition(row, col)
-
 	// 获取或创建缓存块
 	block, exists := m.cache[blockIndex]
 	if !exists {
 		// 初始化新的缓存块
 		block = [16]float64{}
 	}
-
 	// 设置缓存值
 	block[position] = value
 	m.cache[blockIndex] = block
-
 	// 设置位图标记
 	m.setBit(blockIndex, position)
 }
@@ -122,6 +129,11 @@ func (m *updateMatrix) Set(row, col int, value float64) {
 func (m *updateMatrix) Increment(row, col int, value float64) {
 	if row < 0 || row >= m.rows || col < 0 || col >= m.cols {
 		panic("index out of range")
+	}
+	// 跳过指定行
+	if _, ok := m.noUpdate[row]; ok {
+		m.base.Increment(row, col, value)
+		return
 	}
 	blockIndex, position := m.getBlockIndexAndPosition(row, col)
 	if m.isBitSet(blockIndex, position) {
@@ -168,28 +180,21 @@ func (m *updateMatrix) Update() {
 // Rollback 回溯操作
 // 将位图标记置0，清空缓存
 func (m *updateMatrix) Rollback() {
-	for i := range m.bitmap {
-		m.bitmap[i] = 0
-	}
-	for key := range m.cache {
-		arr := m.cache[key]
-		for i := range 16 {
-			arr[i] = 0
-		}
-		m.cache[key] = arr
-	}
+	clear(m.bitmap)
+	clear(m.cache)
 }
 
 // BuildFromDense 从稠密矩阵构建稀疏矩阵
 func (m *updateMatrix) BuildFromDense(dense [][]float64) {
 	m.base.BuildFromDense(dense)
-	m.Rollback() // 清空缓存
+	m.Rollback()
 }
 
 // Clear 清空矩阵，重置为零矩阵
 func (m *updateMatrix) Clear() {
 	m.base.Clear()
-	m.Rollback() // 清空缓存
+	m.Rollback()
+	clear(m.noUpdate)
 }
 
 // Cols 返回矩阵列数
@@ -230,20 +235,16 @@ func (m *updateMatrix) GetRow(row int) ([]int, []float64) {
 	if row < 0 || row >= m.rows {
 		panic("row index out of range")
 	}
-
 	// 获取底层矩阵的行数据
 	baseCols, baseValues := m.base.GetRow(row)
-
 	// 合并缓存中的修改
 	resultCols := make([]int, 0, len(baseCols))
 	resultValues := make([]float64, 0, len(baseValues))
-
 	// 复制底层数据
 	for i := range baseCols {
 		resultCols = append(resultCols, baseCols[i])
 		resultValues = append(resultValues, baseValues[i])
 	}
-
 	// 处理该行的缓存修改
 	for col := 0; col < m.cols; col++ {
 		blockIndex, position := m.getBlockIndexAndPosition(row, col)
@@ -266,7 +267,6 @@ func (m *updateMatrix) GetRow(row int) ([]int, []float64) {
 			}
 		}
 	}
-
 	return resultCols, resultValues
 }
 
@@ -280,9 +280,7 @@ func (m *updateMatrix) MatrixVectorMultiply(x []float64) []float64 {
 	if len(x) != m.cols {
 		panic("vector dimension mismatch")
 	}
-
 	result := make([]float64, m.rows)
-
 	// 处理每一行
 	for i := 0; i < m.rows; i++ {
 		// 获取该行的所有元素（包括缓存）
@@ -298,13 +296,11 @@ func (m *updateMatrix) MatrixVectorMultiply(x []float64) []float64 {
 // NonZeroCount 返回非零元素数量
 func (m *updateMatrix) NonZeroCount() int {
 	count := 0
-
 	// 统计底层矩阵的非零元素
 	for i := 0; i < m.rows; i++ {
 		cols, _ := m.base.GetRow(i)
 		count += len(cols)
 	}
-
 	// 统计缓存中的修改（只统计不在底层矩阵中的新元素）
 	for blockIndex, block := range m.cache {
 		for position := 0; position < m.blockSize; position++ {
@@ -324,7 +320,6 @@ func (m *updateMatrix) NonZeroCount() int {
 			}
 		}
 	}
-
 	return count
 }
 
@@ -343,4 +338,16 @@ func (m *updateMatrix) String() string {
 		result += "\n"
 	}
 	return result
+}
+
+// ToDense 转换为稠密向量
+func (m *updateMatrix) ToDense() []float64 {
+	// 返回稠密格式的矩阵数据
+	dense := make([]float64, m.Rows()*m.Cols())
+	for i := 0; i < m.Rows(); i++ {
+		for j := 0; j < m.Cols(); j++ {
+			dense[i*m.Cols()+j] = m.Get(i, j)
+		}
+	}
+	return dense
 }

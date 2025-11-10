@@ -133,7 +133,5 @@ func (v *denseVector) Add(other Vector) {
 
 // Clear 将向量重置为零向量
 func (v *denseVector) Clear() {
-	for i := 0; i < v.length; i++ {
-		v.data[i] = 0
-	}
+	clear(v.data)
 }

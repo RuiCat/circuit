@@ -37,6 +37,7 @@ func main() {
 			fmt.Println(err)
 			os.Exit(0)
 		}
+		fmt.Println(mna)
 		fmt.Println("解析运行时间:", time.Since(start))
 	}()
 	http.HandleFunc("/", charts.Handler)

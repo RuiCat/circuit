@@ -59,14 +59,18 @@ type Stamp interface {
 	GetNumVoltage() int                                           // 返回电路电压数量
 	GetVoltage(i NodeID) float64                                  // 返回节点电压
 	SetVoltage(i NodeID, v float64)                               // 设置节点电压
+	IncrementVoltage(i NodeID, v float64)                         // 叠加节点电压
 	GetPinCurrent(id ElementID, pin int) float64                  // 返回引脚电流
 	SetPinCurrent(id ElementID, pin int, i float64)               // 设置引脚电流
 	GetCurrent(pin int) float64                                   // 返回引脚电流
 	SetCurrent(pin int, i float64)                                // 设置引脚电流
 	GetValue(n int) float64                                       // 返回内部数据
 	SetValue(n int, v float64)                                    // 设置内部数据
+	StampNonLinear(i NodeID)                                      // 标记非线性行
 	StampMatrix(i, j NodeID, value float64)                       // 在矩阵A的(i,j)位置叠加值
+	StampMatrixSet(i, j NodeID, v float64)                        // 在矩阵A的(i,j)位置设置值
 	StampRightSide(i NodeID, value float64)                       // 在右侧向量B的i位置叠加值
+	StampRightSideSet(i NodeID, v float64)                        // 在右侧向量B的i位置设置值
 	StampResistor(n1, n2 NodeID, r float64)                       // 加盖电阻元件
 	StampConductance(n1, n2 NodeID, g float64)                    // 加盖电导元件
 	StampCurrentSource(n1, n2 NodeID, i float64)                  // 加盖电流源

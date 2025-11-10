@@ -21,6 +21,13 @@ type Matrix struct {
 	Lu mat.LU // LU分解器
 }
 
+// 标记非线性行
+func (mna *Matrix) StampNonLinear(i types.NodeID) {
+	if i > types.ElementGndNodeID {
+		mna.MatJ.NoUpdate(i)
+	}
+}
+
 // 在矩阵A的(i,j)位置叠加值
 func (mna *Matrix) StampMatrix(i, j types.NodeID, v float64) {
 	if i > types.ElementGndNodeID && j > types.ElementGndNodeID && !math.IsNaN(v) && v != 0 {
@@ -28,10 +35,24 @@ func (mna *Matrix) StampMatrix(i, j types.NodeID, v float64) {
 	}
 }
 
+// 在矩阵A的(i,j)位置设置值
+func (mna *Matrix) StampMatrixSet(i, j types.NodeID, v float64) {
+	if i > types.ElementGndNodeID && j > types.ElementGndNodeID && !math.IsNaN(v) && v != 0 {
+		mna.MatJ.Set(i, j, v)
+	}
+}
+
 // 在右侧向量B的i位置叠加值
 func (mna *Matrix) StampRightSide(i types.NodeID, v float64) {
 	if i > types.ElementGndNodeID && !math.IsNaN(v) && v != 0 {
 		mna.VecB.Increment(i, v)
+	}
+}
+
+// 在右侧向量B的i位置设置值
+func (mna *Matrix) StampRightSideSet(i types.NodeID, v float64) {
+	if i > types.ElementGndNodeID && !math.IsNaN(v) && v != 0 {
+		mna.VecB.Set(i, v)
 	}
 }
 
@@ -71,7 +92,7 @@ func (mna *Matrix) UpdateVoltageSource(vs types.VoltageID, v float64) {
 	mna.StampRightSide(mna.NumNodes+vs, v)
 }
 
-// StampVCVS 加盖电压控制电压源
+// 加盖电压控制电压源
 func (mna *Matrix) StampVCVS(n1, n2 types.NodeID, vs types.VoltageID, coef float64) {
 	vn := mna.NumNodes + vs
 	// 控制关系: V_out = coef * (V_n1 - V_n2)
@@ -79,7 +100,7 @@ func (mna *Matrix) StampVCVS(n1, n2 types.NodeID, vs types.VoltageID, coef float
 	mna.StampMatrix(vn, n2, -coef)
 }
 
-// StampVCCurrentSource 加盖电压控制电流源
+// 加盖电压控制电流源
 func (mna *Matrix) StampVCCurrentSource(cn1, cn2, vn1, vn2 types.NodeID, gain float64) {
 	// 电压控制电流源: I = gain * (V_vn1 - V_vn2)
 	// 电流注入到控制节点cn1和cn2
@@ -89,7 +110,7 @@ func (mna *Matrix) StampVCCurrentSource(cn1, cn2, vn1, vn2 types.NodeID, gain fl
 	mna.StampMatrix(cn2, vn1, -gain)
 }
 
-// StampCCCS 加盖电流控制电流源
+// 加盖电流控制电流源
 func (mna *Matrix) StampCCCS(n1, n2 types.NodeID, vs types.VoltageID, gain float64) {
 	vn := mna.NumNodes + vs
 	// 电流控制电流源: I_out = gain * I_vs
@@ -98,24 +119,24 @@ func (mna *Matrix) StampCCCS(n1, n2 types.NodeID, vs types.VoltageID, gain float
 	mna.StampMatrix(n2, vn, -gain)
 }
 
-// SetValue 设置元件的值
+// 设置元件的值
 func (mna *Matrix) SetValueMap(id types.ElementID, value types.ValueMap) {
 	if v, ok := mna.ElementList[id]; ok {
 		v.Value.SetValue(value)
 	}
 }
 
-// SetConverged 标记元件无法收敛
+// 标记元件无法收敛
 func (mna *Matrix) SetConverged() {
 	mna.Converged = false
 }
 
-// GetGraph 获取底层
+// 获取底层
 func (mna *Matrix) GetGraph() *types.ElementGraph {
 	return &mna.ElementGraph
 }
 
-// GetValueMap 得到元件的值
+// 得到元件的值
 func (mna *Matrix) GetValueMap(id types.ElementID) (value types.ValueMap) {
 	if v, ok := mna.ElementList[id]; ok {
 		value = v.Value.GetValue()
@@ -144,9 +165,16 @@ func (mna *Matrix) GetVoltage(i types.NodeID) float64 {
 	return 0
 }
 
+// 叠加节点电压
+func (mna *Matrix) IncrementVoltage(i types.NodeID, v float64) {
+	if i > types.ElementGndNodeID && i < mna.NumNodes && !math.IsNaN(v) {
+		mna.VecX[0].Increment(i, v)
+	}
+}
+
 // 设置节点电压
 func (mna *Matrix) SetVoltage(i types.NodeID, v float64) {
 	if i > types.ElementGndNodeID && i < mna.NumNodes && !math.IsNaN(v) {
-		mna.VecX[0].Increment(i, v)
+		mna.VecX[0].Set(i, v)
 	}
 }

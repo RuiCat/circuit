@@ -253,8 +253,17 @@ func (m *sparseMatrix) Clear() {
 	// 清空所有非零元素
 	m.colInd = m.colInd[:0]
 	m.values = m.values[:0]
-	// 重置行指针数组
-	for i := 0; i <= m.rows; i++ {
-		m.rowPtr[i] = 0
+	clear(m.rowPtr)
+}
+
+// ToDense 转换为稠密向量
+func (m *sparseMatrix) ToDense() []float64 {
+	// 返回稠密格式的矩阵数据
+	dense := make([]float64, m.Rows()*m.Cols())
+	for i := 0; i < m.Rows(); i++ {
+		for j := 0; j < m.Cols(); j++ {
+			dense[i*m.Cols()+j] = m.Get(i, j)
+		}
 	}
+	return dense
 }

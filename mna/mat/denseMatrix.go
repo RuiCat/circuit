@@ -117,7 +117,6 @@ func (m *denseMatrix) BuildFromDense(dense [][]float64) {
 	if len(dense) != m.rows || (len(dense) > 0 && len(dense[0]) != m.cols) {
 		panic("dimension mismatch")
 	}
-
 	// 直接复制数据
 	for i := 0; i < m.rows; i++ {
 		copy(m.data[i], dense[i])
@@ -155,9 +154,17 @@ func (m *denseMatrix) MatrixVectorMultiply(x []float64) []float64 {
 
 // Clear 将矩阵重置为零矩阵
 func (m *denseMatrix) Clear() {
-	for i := 0; i < m.rows; i++ {
-		for j := 0; j < m.cols; j++ {
-			m.data[i][j] = 0
+	clear(m.data)
+}
+
+// ToDense 转换为稠密向量
+func (m *denseMatrix) ToDense() []float64 {
+	// 返回稠密格式的矩阵数据
+	dense := make([]float64, m.Rows()*m.Cols())
+	for i := 0; i < m.Rows(); i++ {
+		for j := 0; j < m.Cols(); j++ {
+			dense[i*m.Cols()+j] = m.Get(i, j)
 		}
 	}
+	return dense
 }
