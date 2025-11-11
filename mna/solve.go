@@ -165,7 +165,7 @@ func (soluv *Soluv) Solve() (ok bool, err error) {
 		soluv.Converged = true
 		soluv.VecB.Rollback()
 		soluv.MatJ.Rollback()
-		soluv.VecX[0].Copy(soluv.VecX[1])
+		soluv.VecX[0].Copy(soluv.VecX[1]) // 备份结果到VecX1内
 		// 非线性迭代
 		soluv.MnaDoStep()
 		// 求解

@@ -122,9 +122,7 @@ func (base *Base) StartIteration(stamp types.Stamp) {}
 
 // Stamp 更新线性贡献
 func (base *Base) Stamp(stamp types.Stamp) {
-	vn := stamp.GetGraph().NumNodes + base.VoltSource[0]
-	stamp.StampNonLinear(vn)
-	stamp.StampMatrixSet(base.Nodes[2], vn, 1)
+	stamp.StampNonLinear(stamp.GetGraph().NumNodes + base.VoltSource[0])
 }
 
 // DoStep 执行元件仿真
@@ -153,9 +151,17 @@ func (base *Base) DoStep(stamp types.Stamp) {
 	}
 	// 通过设置电压源右侧向量来实现约束
 	vn := stamp.GetGraph().NumNodes + base.VoltSource[0]
+	// 建立完整的运放约束方程
 	stamp.StampMatrixSet(vn, base.Nodes[0], dx)
 	stamp.StampMatrixSet(vn, base.Nodes[1], -dx)
 	stamp.StampMatrixSet(vn, base.Nodes[2], 1)
+	stamp.StampMatrixSet(base.Nodes[2], vn, 1)
+	// 应用饱和限制
+	if x > 0 {
+		x = min(x, base.MaxOutput)
+	} else {
+		x = max(x, base.MinOutput)
+	}
 	stamp.StampRightSideSet(vn, x)
 	base.lastVD = vd
 }

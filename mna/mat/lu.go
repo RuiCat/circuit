@@ -143,26 +143,21 @@ func (lu *lu) Decompose(matrix Matrix) error {
 //
 // 返回：
 //
-//	error - 如果向量维度不匹配则返回错误
+//	error - 如果向量维度不匹配或矩阵奇异则返回错误
 func (lu *lu) SolveReuse(b, x Vector) error {
 	if b.Length() != lu.n || x.Length() != lu.n {
 		return fmt.Errorf("vector dimension mismatch")
 	}
-	// 应用置换: Pb = P * b
-	pb := make([]float64, lu.n)
-	for i := 0; i < lu.n; i++ {
-		pb[i] = b.Get(lu.P[i])
-	}
-	// 前向替换: Ly = Pb
 	y := make([]float64, lu.n)
+	// 求解 Ly = Pb
 	for i := 0; i < lu.n; i++ {
-		sum := pb[i]
+		sum := b.Get(lu.P[i])
 		for j := 0; j < i; j++ {
 			sum -= lu.L.Get(i, j) * y[j]
 		}
-		y[i] = sum // L[i,i] = 1
+		y[i] = sum
 	}
-	// 后向替换: Ux = y
+	// 求解 Ux = y
 	for i := lu.n - 1; i >= 0; i-- {
 		sum := y[i]
 		uRow := lu.P[i]
@@ -185,26 +180,21 @@ func (lu *lu) SolveReuse(b, x Vector) error {
 //
 // 返回：
 //
-//	error - 如果向量维度不匹配则返回错误
+//	error - 如果向量维度不匹配或矩阵奇异则返回错误
 func (lu *lu) SolveReuseFloat(b, x []float64) error {
 	if len(b) != lu.n || len(x) != lu.n {
 		return fmt.Errorf("vector dimension mismatch")
 	}
-	// 应用置换: Pb = P * b
-	pb := make([]float64, lu.n)
-	for i := 0; i < lu.n; i++ {
-		pb[i] = b[lu.P[i]]
-	}
-	// 前向替换: Ly = Pb
 	y := make([]float64, lu.n)
+	// 求解 Ly = Pb
 	for i := 0; i < lu.n; i++ {
-		sum := pb[i]
+		sum := b[lu.P[i]]
 		for j := 0; j < i; j++ {
 			sum -= lu.L.Get(i, j) * y[j]
 		}
-		y[i] = sum // L[i,i] = 1
+		y[i] = sum
 	}
-	// 后向替换: Ux = y
+	// 求解 Ux = y
 	for i := lu.n - 1; i >= 0; i-- {
 		sum := y[i]
 		uRow := lu.P[i]

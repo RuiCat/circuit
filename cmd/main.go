@@ -32,6 +32,7 @@ func main() {
 	graph.IsTrapezoidal = true
 	go func() {
 		// 测试仿真
+		fmt.Println(mna)
 		start := time.Now() // 获取当前时间
 		if err := circuit.Simulate(2, mna); err != nil {
 			fmt.Println(err)

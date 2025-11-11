@@ -12,11 +12,11 @@ type Matrix struct {
 	// 图表信息
 	*graph.Graph
 	// 稀疏矩阵系统
-	MatJ  mat.UpdateMatrix
-	OrigJ mat.Matrix // 线性贡献
+	MatJ  mat.UpdateMatrix // 方程贡献
+	OrigJ mat.Matrix       // 线性方程贡献
 	// 备份实现
-	VecX [3]mat.Vector    // 未知量向量
-	VecB mat.UpdateVector // 右侧激励向量
+	VecX [3]mat.Vector    // 未知解
+	VecB mat.UpdateVector // 已知变量
 	// LU分解
 	Lu mat.LU // LU分解器
 }
@@ -37,21 +37,21 @@ func (mna *Matrix) StampMatrix(i, j types.NodeID, v float64) {
 
 // 在矩阵A的(i,j)位置设置值
 func (mna *Matrix) StampMatrixSet(i, j types.NodeID, v float64) {
-	if i > types.ElementGndNodeID && j > types.ElementGndNodeID && !math.IsNaN(v) && v != 0 {
+	if i > types.ElementGndNodeID && j > types.ElementGndNodeID && !math.IsNaN(v) {
 		mna.MatJ.Set(i, j, v)
 	}
 }
 
 // 在右侧向量B的i位置叠加值
 func (mna *Matrix) StampRightSide(i types.NodeID, v float64) {
-	if i > types.ElementGndNodeID && !math.IsNaN(v) && v != 0 {
+	if i > types.ElementGndNodeID && !math.IsNaN(v) {
 		mna.VecB.Increment(i, v)
 	}
 }
 
 // 在右侧向量B的i位置设置值
 func (mna *Matrix) StampRightSideSet(i types.NodeID, v float64) {
-	if i > types.ElementGndNodeID && !math.IsNaN(v) && v != 0 {
+	if i > types.ElementGndNodeID && !math.IsNaN(v) {
 		mna.VecB.Set(i, v)
 	}
 }
@@ -89,7 +89,7 @@ func (mna *Matrix) StampVoltageSource(n1, n2 types.NodeID, vs types.VoltageID, v
 
 // 更新电压源值
 func (mna *Matrix) UpdateVoltageSource(vs types.VoltageID, v float64) {
-	mna.StampRightSide(mna.NumNodes+vs, v)
+	mna.StampRightSideSet(mna.NumNodes+vs, v)
 }
 
 // 加盖电压控制电压源
@@ -159,7 +159,7 @@ func (mna *Matrix) GetVoltage(i types.NodeID) float64 {
 	switch {
 	case i == types.ElementGndNodeID:
 		return 0
-	case i >= 0 && i < mna.NumNodes:
+	default:
 		return mna.VecX[0].Get(i)
 	}
 	return 0
@@ -167,14 +167,14 @@ func (mna *Matrix) GetVoltage(i types.NodeID) float64 {
 
 // 叠加节点电压
 func (mna *Matrix) IncrementVoltage(i types.NodeID, v float64) {
-	if i > types.ElementGndNodeID && i < mna.NumNodes && !math.IsNaN(v) {
+	if i > types.ElementGndNodeID && !math.IsNaN(v) {
 		mna.VecX[0].Increment(i, v)
 	}
 }
 
 // 设置节点电压
 func (mna *Matrix) SetVoltage(i types.NodeID, v float64) {
-	if i > types.ElementGndNodeID && i < mna.NumNodes && !math.IsNaN(v) {
+	if i > types.ElementGndNodeID && !math.IsNaN(v) {
 		mna.VecX[0].Set(i, v)
 	}
 }
