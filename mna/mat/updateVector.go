@@ -14,8 +14,6 @@ type UpdateVector interface {
 	// Rollback 回溯操作
 	// 将位图标记置0，清空缓存
 	Rollback()
-	// NoUpdate 标记不更新
-	NoUpdate(i int)
 }
 
 // updateVector 更新向量实现
@@ -26,7 +24,6 @@ type updateVector struct {
 	// 位图缓存系统
 	bitmap    []uint16            // 分块位图，每个uint16表示16个元素的缓存状态
 	cache     map[int][16]float64 // 缓存块，key为块索引，value为16个float64值
-	noUpdate  map[int]bool        // 标记非记录
 	blockSize int                 // 块大小（固定为16）
 }
 
@@ -48,14 +45,8 @@ func NewUpdateVector(base Vector) UpdateVector {
 		length:    length,
 		bitmap:    make([]uint16, bitmapSize),
 		cache:     make(map[int][16]float64),
-		noUpdate:  make(map[int]bool),
 		blockSize: blockSize,
 	}
-}
-
-// NoUpdate 标记不更新
-func (v *updateVector) NoUpdate(i int) {
-	v.noUpdate[i] = true
 }
 
 // getBlockIndexAndPosition 计算给定索引对应的块索引和块内位置
@@ -103,11 +94,6 @@ func (v *updateVector) Set(index int, value float64) {
 	if index < 0 || index >= v.length {
 		panic("index out of range")
 	}
-	// 跳过指定元素
-	if _, ok := v.noUpdate[index]; ok {
-		v.base.Set(index, value)
-		return
-	}
 	blockIndex, position := v.getBlockIndexAndPosition(index)
 	// 获取或创建缓存块
 	block, exists := v.cache[blockIndex]
@@ -126,11 +112,6 @@ func (v *updateVector) Set(index int, value float64) {
 func (v *updateVector) Increment(index int, value float64) {
 	if index < 0 || index >= v.length {
 		panic("index out of range")
-	}
-	// 跳过指定元素
-	if _, ok := v.noUpdate[index]; ok {
-		v.base.Increment(index, value)
-		return
 	}
 	blockIndex, position := v.getBlockIndexAndPosition(index)
 	if v.isBitSet(blockIndex, position) {
@@ -189,7 +170,6 @@ func (v *updateVector) BuildFromDense(dense []float64) {
 func (v *updateVector) Clear() {
 	v.base.Clear()
 	v.Rollback()
-	clear(v.noUpdate)
 }
 
 // Length 返回向量长度

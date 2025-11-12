@@ -40,7 +40,8 @@ func (graph *Graph) Init(wireLink *types.WireLink) error {
 	nodeList := map[types.NodeID][]types.ElementID{}
 	graph.ElementList = map[types.ElementID]*types.Element{}
 	graph.NumVoltageSources = 0
-	// 初始化元件列表
+
+	// 阶段1: 初始化元件列表并处理地节点
 	eleList := map[types.ElementID]*types.Element{}
 	m := types.ElementID(len(wireLink.ElementList))
 	for id := range m {
@@ -54,77 +55,115 @@ func (graph *Graph) Init(wireLink *types.WireLink) error {
 		eleList[id] = el
 		// 处理地
 		if el.Type() == types.GndType {
-			for _, id := range ele.WireList {
-				mapWireID[id] = -1
+			for _, wireID := range ele.WireList {
+				mapWireID[wireID] = -1
 			}
 		}
 	}
-	// 处理连接
+
+	// 阶段2: 建立完整的连线到节点映射
 	for id := range m {
 		ele := wireLink.ElementList[id]
-		// 获取节点
 		el := eleList[id]
-		if el.Type() == types.GndType {
-			continue // 跳过地
+		if el == nil || el.Type() == types.GndType {
+			continue // 跳过无效元件和地
 		}
-		// 构建新节点 ID
-		if _, ok := mapEleID[id]; !ok {
+
+		// 处理所有连线，建立映射
+		for _, wireID := range ele.WireList {
+			if wireID != types.ElementHeghWireID {
+				// 如果连线尚未映射，创建新节点
+				if _, exists := mapWireID[wireID]; !exists {
+					mapWireID[wireID] = nid
+					nid++
+				}
+			}
+		}
+
+		// 处理内部节点
+		for range ele.InternalNodes {
+			heghNode = append(heghNode, nid)
+			nid++
+		}
+	}
+
+	// 阶段3: 设置元件引脚和连接关系
+	for id := range m {
+		ele := wireLink.ElementList[id]
+		el := eleList[id]
+		if el == nil || el.Type() == types.GndType {
+			continue // 跳过无效元件和地
+		}
+
+		// 构建新元件 ID
+		if _, exists := mapEleID[id]; !exists {
 			mapEleID[id] = eid
 			eid++
 		}
-		// 设置ID
-		id = mapEleID[id]
-		el.ID = id
-		// 处理连接
-		for i, id := range ele.WireList {
-			if id != types.ElementHeghWireID {
-				// 处理连接的节点
-				if _, ok := mapWireID[id]; !ok {
-					mapWireID[id] = nid
-					nid++
-				}
-				el.Nodes[i] = mapWireID[id]
+
+		// 设置元件ID
+		newID := mapEleID[id]
+		el.ID = newID
+
+		// 设置引脚节点
+		for i, wireID := range ele.WireList {
+			if wireID != types.ElementHeghWireID {
+				// 使用预先建立的映射
+				el.Nodes[i] = mapWireID[wireID]
 			} else {
-				// 未连接节点设置为高阻
+				// 高阻节点处理
 				heghNode = append(heghNode, nid)
 				el.Nodes[i] = nid
 				nid++
 			}
-			// 设置映射
-			nodeList[el.Nodes[i]] = append(nodeList[el.Nodes[i]], el.ID)
 		}
+
 		// 设置内部节点
 		for i := range ele.InternalNodes {
-			heghNode = append(heghNode, nid)
-			nodeList[nid] = append(nodeList[nid], el.ID)
-			el.ElementBase.SetInternalNode(i, nid)
-			nid++
+			el.ElementBase.SetInternalNode(i, heghNode[0])
+			heghNode = heghNode[1:]
 		}
+
 		// 处理电压源
 		for i := range el.GetVoltageSourceCnt() {
 			el.VoltSource[i] = graph.NumVoltageSources
 			graph.NumVoltageSources++
 		}
-		// 记录新元素
-		graph.ElementList[id] = el
+
+		// 记录新元件
+		graph.ElementList[newID] = el
 	}
-	// 处理高组态节点连接
-	for _, v := range heghNode {
-		nele := types.NewElementWire(v, types.HeghType)
-		el := &types.Element{ID: eid, ElementBase: nele.ElementBase}
-		el.ElementFace = nele.ElementType.Init(nele.ElementBase)
-		el.Nodes[0] = v
-		graph.ElementList[eid] = el
-		eid++
-	}
-	// 互相连接
-	graph.NodeList = make([][]types.ElementID, len(nodeList)-1)
-	for i, l := range nodeList {
-		if i != -1 {
-			graph.NodeList[i] = l
+
+	// 阶段4: 建立节点连接关系
+	for _, el := range graph.ElementList {
+		for _, nodeID := range el.Nodes {
+			if nodeID != -1 { // 跳过地节点
+				nodeList[nodeID] = append(nodeList[nodeID], el.ID)
+			}
 		}
 	}
+
+	// 处理高阻态节点连接
+	for _, nodeID := range heghNode {
+		nele := types.NewElementWire(nodeID, types.HeghType)
+		el := &types.Element{ID: eid, ElementBase: nele.ElementBase}
+		el.ElementFace = nele.ElementType.Init(nele.ElementBase)
+		el.Nodes[0] = nodeID
+		graph.ElementList[eid] = el
+		eid++
+		// 添加到节点连接关系
+		nodeList[nodeID] = append(nodeList[nodeID], eid-1)
+	}
+
+	// 建立节点列表
+	graph.NodeList = make([][]types.ElementID, nid)
+	for nodeID, elements := range nodeList {
+		if nodeID >= 0 && nodeID < nid {
+			graph.NodeList[nodeID] = elements
+		}
+	}
+
 	// 设置节点数
-	graph.NumNodes = len(graph.NodeList)
+	graph.NumNodes = nid
 	return nil
 }

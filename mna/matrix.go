@@ -21,13 +21,6 @@ type Matrix struct {
 	Lu mat.LU // LU分解器
 }
 
-// 标记非线性行
-func (mna *Matrix) StampNonLinear(i types.NodeID) {
-	if i > types.ElementGndNodeID {
-		mna.MatJ.NoUpdate(i)
-	}
-}
-
 // 在矩阵A的(i,j)位置叠加值
 func (mna *Matrix) StampMatrix(i, j types.NodeID, v float64) {
 	if i > types.ElementGndNodeID && j > types.ElementGndNodeID && !math.IsNaN(v) && v != 0 {
@@ -162,7 +155,6 @@ func (mna *Matrix) GetVoltage(i types.NodeID) float64 {
 	default:
 		return mna.VecX[0].Get(i)
 	}
-	return 0
 }
 
 // 叠加节点电压

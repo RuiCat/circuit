@@ -66,7 +66,6 @@ type Stamp interface {
 	SetCurrent(pin int, i float64)                                // 设置引脚电流
 	GetValue(n int) float64                                       // 返回内部数据
 	SetValue(n int, v float64)                                    // 设置内部数据
-	StampNonLinear(i NodeID)                                      // 标记非线性行
 	StampMatrix(i, j NodeID, value float64)                       // 在矩阵A的(i,j)位置叠加值
 	StampMatrixSet(i, j NodeID, v float64)                        // 在矩阵A的(i,j)位置设置值
 	StampRightSide(i NodeID, value float64)                       // 在右侧向量B的i位置叠加值

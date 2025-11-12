@@ -14,8 +14,6 @@ type UpdateMatrix interface {
 	// Rollback 回溯操作
 	// 将位图标记置0，清空缓存
 	Rollback()
-	// NoUpdate 标记不更新
-	NoUpdate(i int)
 }
 
 // updateMatrix 更新矩阵实现
@@ -26,7 +24,6 @@ type updateMatrix struct {
 	// 位图缓存系统
 	bitmap    []uint16            // 分块位图，每个uint16表示16个元素的缓存状态
 	cache     map[int][16]float64 // 缓存块，key为块索引，value为16个float64值
-	noUpdate  map[int]bool        // 标记非记录
 	blockSize int                 // 块大小（固定为16）
 }
 
@@ -50,14 +47,8 @@ func NewUpdateMatrix(base Matrix) UpdateMatrix {
 		cols:      cols,
 		bitmap:    make([]uint16, bitmapSize),
 		cache:     make(map[int][16]float64),
-		noUpdate:  make(map[int]bool),
 		blockSize: blockSize,
 	}
-}
-
-// NoUpdate 标记不更新
-func (m *updateMatrix) NoUpdate(i int) {
-	m.noUpdate[i] = true
 }
 
 // getBlockIndexAndPosition 计算给定行列对应的块索引和块内位置
@@ -106,11 +97,6 @@ func (m *updateMatrix) Set(row, col int, value float64) {
 	if row < 0 || row >= m.rows || col < 0 || col >= m.cols {
 		panic("index out of range")
 	}
-	// 跳过指定行
-	if _, ok := m.noUpdate[row]; ok {
-		m.base.Set(row, col, value)
-		return
-	}
 	blockIndex, position := m.getBlockIndexAndPosition(row, col)
 	// 获取或创建缓存块
 	block, exists := m.cache[blockIndex]
@@ -129,11 +115,6 @@ func (m *updateMatrix) Set(row, col int, value float64) {
 func (m *updateMatrix) Increment(row, col int, value float64) {
 	if row < 0 || row >= m.rows || col < 0 || col >= m.cols {
 		panic("index out of range")
-	}
-	// 跳过指定行
-	if _, ok := m.noUpdate[row]; ok {
-		m.base.Increment(row, col, value)
-		return
 	}
 	blockIndex, position := m.getBlockIndexAndPosition(row, col)
 	if m.isBitSet(blockIndex, position) {
@@ -194,7 +175,6 @@ func (m *updateMatrix) BuildFromDense(dense [][]float64) {
 func (m *updateMatrix) Clear() {
 	m.base.Clear()
 	m.Rollback()
-	clear(m.noUpdate)
 }
 
 // Cols 返回矩阵列数
