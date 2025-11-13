@@ -39,11 +39,12 @@ type LU interface {
 // lu 稀疏LU分解
 // 实现LU分解的数据结构，使用部分主元法提高数值稳定性
 type lu struct {
-	n        int    // 矩阵维度
-	L        Matrix // 下三角矩阵，对角线元素为1
-	U        Matrix // 上三角矩阵，存储分解后的上三角部分
-	P        []int  // 置换向量，P[i]表示第i行原始位置
-	Pinverse []int  // 逆置换向量，用于快速查找置换关系
+	n        int       // 矩阵维度
+	L        Matrix    // 下三角矩阵，对角线元素为1
+	U        Matrix    // 上三角矩阵，存储分解后的上三角部分
+	Y        []float64 // 求解时中间使用变量
+	P        []int     // 置换向量，P[i]表示第i行原始位置
+	Pinverse []int     // 逆置换向量，用于快速查找置换关系
 }
 
 // NewLU 创建稀疏LU分解，U矩阵直接引用原始矩阵
@@ -59,6 +60,7 @@ func NewLU(n int) LU {
 		n:        n,
 		L:        NewSparseMatrix(n, n),
 		U:        NewSparseMatrix(n, n), // 直接引用原始矩阵，避免复制
+		Y:        make([]float64, n),
 		P:        make([]int, n),
 		Pinverse: make([]int, n),
 	}
@@ -82,8 +84,8 @@ func NewLU(n int) LU {
 func (lu *lu) Decompose(matrix Matrix) error {
 	n := lu.n
 	// 复制矩阵到U
-	matrix.Copy(lu.U)
 	lu.L.Clear()
+	matrix.Copy(lu.U)
 	// 初始化置换向量
 	for i := 0; i < n; i++ {
 		lu.P[i] = i
@@ -128,6 +130,7 @@ func (lu *lu) Decompose(matrix Matrix) error {
 				lu.U.Set(row, j, current-update)
 			}
 		}
+		lu.Y[k] = 0
 	}
 	return nil
 }
@@ -148,19 +151,19 @@ func (lu *lu) SolveReuse(b, x Vector) error {
 	if b.Length() != lu.n || x.Length() != lu.n {
 		return fmt.Errorf("vector dimension mismatch")
 	}
-	y := make([]float64, lu.n)
 	// 求解 Ly = Pb
 	for i := 0; i < lu.n; i++ {
 		sum := b.Get(lu.P[i])
 		for j := 0; j < i; j++ {
-			sum -= lu.L.Get(i, j) * y[j]
+			sum -= lu.L.Get(i, j) * lu.Y[j]
 		}
-		y[i] = sum
+		lu.Y[i] = sum
 	}
 	// 求解 Ux = y
 	for i := lu.n - 1; i >= 0; i-- {
-		sum := y[i]
+		sum := lu.Y[i]
 		uRow := lu.P[i]
+		lu.Y[i] = 0
 		for j := i + 1; j < lu.n; j++ {
 			sum -= lu.U.Get(uRow, j) * x.Get(j)
 		}
@@ -185,19 +188,19 @@ func (lu *lu) SolveReuseFloat(b, x []float64) error {
 	if len(b) != lu.n || len(x) != lu.n {
 		return fmt.Errorf("vector dimension mismatch")
 	}
-	y := make([]float64, lu.n)
 	// 求解 Ly = Pb
 	for i := 0; i < lu.n; i++ {
 		sum := b[lu.P[i]]
 		for j := 0; j < i; j++ {
-			sum -= lu.L.Get(i, j) * y[j]
+			sum -= lu.L.Get(i, j) * lu.Y[j]
 		}
-		y[i] = sum
+		lu.Y[i] = sum
 	}
 	// 求解 Ux = y
 	for i := lu.n - 1; i >= 0; i-- {
-		sum := y[i]
+		sum := lu.Y[i]
 		uRow := lu.P[i]
+		lu.Y[i] = 0
 		for j := i + 1; j < lu.n; j++ {
 			sum -= lu.U.Get(uRow, j) * x[j]
 		}

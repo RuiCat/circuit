@@ -51,10 +51,23 @@ type SimplifiedLU struct {
 	permute          []int            // 置换向量
 	needsMap         bool             // 是否需要映射
 	simplifier       MatrixSimplifier // 矩阵简化器
+
+	// 预分配的内存，用于优化性能
+	simplifiedB       []float64 // 预分配的简化b向量
+	simplifiedX       []float64 // 预分配的简化x向量
+	simplifiedBVec    Vector    // 预分配的简化b向量对象
+	simplifiedXVec    Vector    // 预分配的简化x向量对象
+	maxSimplifiedSize int       // 最大简化大小
 }
 
 // NewSimplifiedLU 创建简化的LU分解器
 func NewSimplifiedLU(n int) *SimplifiedLU {
+	// 预分配内存，假设简化后的大小最多为原始大小的80%
+	maxSimplifiedSize := int(float64(n) * 0.8)
+	if maxSimplifiedSize < 1 {
+		maxSimplifiedSize = 1
+	}
+
 	return &SimplifiedLU{
 		lu:       NewLU(n),
 		n:        n,
@@ -65,6 +78,12 @@ func NewSimplifiedLU(n int) *SimplifiedLU {
 			n:       n,
 			rowInfo: make([]RowInfo, n),
 		},
+		// 预分配内存
+		simplifiedB:       make([]float64, maxSimplifiedSize),
+		simplifiedX:       make([]float64, maxSimplifiedSize),
+		simplifiedBVec:    NewDenseVector(maxSimplifiedSize),
+		simplifiedXVec:    NewDenseVector(maxSimplifiedSize),
+		maxSimplifiedSize: maxSimplifiedSize,
 	}
 }
 
@@ -258,19 +277,47 @@ func (slu *SimplifiedLU) Decompose(matrix Matrix, simplify bool) error {
 // SolveReuse 求解线性方程组
 func (slu *SimplifiedLU) SolveReuse(b, x Vector) error {
 	if slu.needsMap {
-		// 如果进行了矩阵简化，需要处理映射
-		simplifiedB := make([]float64, slu.simplifier.GetSimplifiedSize())
-		simplifiedX := make([]float64, slu.simplifier.GetSimplifiedSize())
+		simplifiedSize := slu.simplifier.GetSimplifiedSize()
 
-		// 将b映射到简化空间（这里需要更复杂的映射逻辑）
-		// 简化实现：直接使用前n个元素
-		for i := 0; i < len(simplifiedB) && i < b.Length(); i++ {
-			simplifiedB[i] = b.Get(i)
+		// 检查是否需要重新分配内存
+		if simplifiedSize > slu.maxSimplifiedSize {
+			// 需要重新分配更大的内存
+			slu.maxSimplifiedSize = simplifiedSize
+			slu.simplifiedB = make([]float64, simplifiedSize)
+			slu.simplifiedX = make([]float64, simplifiedSize)
+			slu.simplifiedBVec = NewDenseVector(simplifiedSize)
+			slu.simplifiedXVec = NewDenseVector(simplifiedSize)
 		}
 
-		// 创建简化向量
-		simplifiedBVec := NewDenseVector(len(simplifiedB))
-		simplifiedXVec := NewDenseVector(len(simplifiedX))
+		// 使用预分配的内存
+		simplifiedB := slu.simplifiedB[:simplifiedSize]
+		simplifiedX := slu.simplifiedX[:simplifiedSize]
+
+		// 清空预分配的内存
+		clear(simplifiedB)
+		clear(simplifiedX)
+
+		// 将b映射到简化空间
+		// 正确的映射逻辑：考虑行信息中的映射关系
+		simplifiedIndex := 0
+		for i := 0; i < slu.n; i++ {
+			ri := slu.simplifier.GetRowInfo(i)
+			// 只有普通行且未被删除的行才需要映射到简化空间
+			if ri.Type == ROW_NORMAL && !ri.DropRow {
+				if simplifiedIndex < len(simplifiedB) && i < b.Length() {
+					simplifiedB[simplifiedIndex] = b.Get(i)
+					simplifiedIndex++
+				}
+			}
+		}
+		// 检查映射是否完整
+		if simplifiedIndex != len(simplifiedB) {
+			return fmt.Errorf("b vector mapping incomplete: expected %d, got %d", len(simplifiedB), simplifiedIndex)
+		}
+
+		// 使用预分配的向量对象
+		simplifiedBVec := slu.simplifiedBVec
+		simplifiedXVec := slu.simplifiedXVec
 
 		// 使用BuildFromDense方法设置数据
 		simplifiedBVec.BuildFromDense(simplifiedB)
@@ -304,14 +351,42 @@ func (slu *SimplifiedLU) SolveReuse(b, x Vector) error {
 // SolveReuseFloat 求解线性方程组（float数组版本）
 func (slu *SimplifiedLU) SolveReuseFloat(b, x []float64) error {
 	if slu.needsMap {
-		// 如果进行了矩阵简化，需要处理映射
-		simplifiedB := make([]float64, slu.simplifier.GetSimplifiedSize())
-		simplifiedX := make([]float64, slu.simplifier.GetSimplifiedSize())
+		simplifiedSize := slu.simplifier.GetSimplifiedSize()
 
-		// 将b映射到简化空间（这里需要更复杂的映射逻辑）
-		// 简化实现：直接使用前n个元素
-		for i := 0; i < len(simplifiedB) && i < len(b); i++ {
-			simplifiedB[i] = b[i]
+		// 检查是否需要重新分配内存
+		if simplifiedSize > slu.maxSimplifiedSize {
+			// 需要重新分配更大的内存
+			slu.maxSimplifiedSize = simplifiedSize
+			slu.simplifiedB = make([]float64, simplifiedSize)
+			slu.simplifiedX = make([]float64, simplifiedSize)
+			slu.simplifiedBVec = NewDenseVector(simplifiedSize)
+			slu.simplifiedXVec = NewDenseVector(simplifiedSize)
+		}
+
+		// 使用预分配的内存
+		simplifiedB := slu.simplifiedB[:simplifiedSize]
+		simplifiedX := slu.simplifiedX[:simplifiedSize]
+
+		// 清空预分配的内存
+		clear(simplifiedB)
+		clear(simplifiedX)
+
+		// 将b映射到简化空间
+		// 正确的映射逻辑：考虑行信息中的映射关系
+		simplifiedIndex := 0
+		for i := 0; i < slu.n; i++ {
+			ri := slu.simplifier.GetRowInfo(i)
+			// 只有普通行且未被删除的行才需要映射到简化空间
+			if ri.Type == ROW_NORMAL && !ri.DropRow {
+				if simplifiedIndex < len(simplifiedB) && i < len(b) {
+					simplifiedB[simplifiedIndex] = b[i]
+					simplifiedIndex++
+				}
+			}
+		}
+		// 检查映射是否完整
+		if simplifiedIndex != len(simplifiedB) {
+			return fmt.Errorf("b vector mapping incomplete: expected %d, got %d", len(simplifiedB), simplifiedIndex)
 		}
 
 		// 在简化空间求解

@@ -132,7 +132,7 @@ func (base *Base) DoStep(stamp types.Stamp) {
 	volts2 := stamp.GetVoltage(base.Nodes[2]) // 输出
 	// 计算电压差
 	var x float64
-	vd, dx := volts1-volts0, 1e-4
+	vd, dx := volts1-volts0, types.Tolerance
 	// 收敛判断
 	switch {
 	case math.Abs(base.lastVD-vd) > types.Tolerance:
