@@ -66,6 +66,103 @@ func (dm *DataManager) Clear() {
 	clear(dm.data)
 }
 
+// ResizeInPlace 调整数据管理器的大小
+func (dm *DataManager) ResizeInPlace(newLength int) {
+	if newLength < 0 {
+		panic("invalid length")
+	}
+	if newLength == dm.length {
+		return
+	}
+	newData := make([]float64, newLength)
+	// 复制现有数据
+	copyLength := min(dm.length, newLength)
+	copy(newData, dm.data[:copyLength])
+	dm.data = newData
+	dm.length = newLength
+}
+
+// AppendInPlace 追加数据
+// 扩展数据存储
+func (dm *DataManager) AppendInPlace(values ...float64) {
+	if len(values) == 0 {
+		return
+	}
+	newLength := dm.length + len(values)
+	newData := make([]float64, newLength)
+	// 复制现有数据
+	copy(newData, dm.data)
+	// 追加新数据
+	copy(newData[dm.length:], values)
+	dm.data = newData
+	dm.length = newLength
+}
+
+// InsertInPlace 插入数据
+// 在特定位置插入数据
+func (dm *DataManager) InsertInPlace(index int, values ...float64) {
+	if index < 0 || index > dm.length {
+		panic("index out of range")
+	}
+	if len(values) == 0 {
+		return
+	}
+	newLength := dm.length + len(values)
+	newData := make([]float64, newLength)
+	// 复制插入点之前的数据
+	copy(newData, dm.data[:index])
+	// 插入新数据
+	copy(newData[index:], values)
+	// 复制插入点之后的数据
+	copy(newData[index+len(values):], dm.data[index:])
+	dm.data = newData
+	dm.length = newLength
+}
+
+// RemoveInPlace 移除数据
+// 删除特定位置的数据
+func (dm *DataManager) RemoveInPlace(index int, count int) {
+	if index < 0 || index+count > dm.length {
+		panic("index out of range")
+	}
+	if count <= 0 {
+		panic("invalid count")
+	}
+	if count == 0 {
+		return
+	}
+	newLength := dm.length - count
+	newData := make([]float64, newLength)
+	// 复制移除点之前的数据
+	copy(newData, dm.data[:index])
+	// 复制移除点之后的数据
+	copy(newData[index:], dm.data[index+count:])
+	dm.data = newData
+	dm.length = newLength
+}
+
+// ReplaceInPlace 替换数据
+// 替换特定位置的数据
+func (dm *DataManager) ReplaceInPlace(index int, values ...float64) {
+	if index < 0 || index+len(values) > dm.length {
+		panic("index out of range")
+	}
+	copy(dm.data[index:], values)
+}
+
+// FillInPlace 填充数据
+func (dm *DataManager) FillInPlace(value float64) {
+	for i := range dm.data {
+		dm.data[i] = value
+	}
+}
+
+// ZeroInPlace 清零数据
+// 将所有数据设置为0
+func (dm *DataManager) ZeroInPlace() {
+	clear(dm.data)
+}
+
 // Copy 复制数据到另一个数据管理器
 func (dm *DataManager) Copy(target *DataManager) {
 	if target.length != dm.length {

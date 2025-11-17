@@ -5,9 +5,8 @@ import (
 	"math"
 )
 
-// luDecomposition LU分解实现
-// 基于部分主元法的稀疏LU分解，专注于数学实现
-type luDecomposition struct {
+// lu LU分解实现
+type lu struct {
 	n        int    // 矩阵维度
 	L        Matrix // 下三角矩阵，对角线元素为1
 	U        Matrix // 上三角矩阵，存储分解后的上三角部分
@@ -16,9 +15,9 @@ type luDecomposition struct {
 	Pinverse []int  // 逆置换向量，用于快速查找置换关系
 }
 
-// NewLUDecomposition 创建稀疏LU分解器
-func NewLUDecomposition(n int) LU {
-	return &luDecomposition{
+// NewDenseLU 创建稠密LU分解器
+func NewDenseLU(n int) LU {
+	return &lu{
 		n:        n,
 		L:        NewDenseMatrix(n, n),
 		U:        NewDenseMatrix(n, n),
@@ -28,9 +27,21 @@ func NewLUDecomposition(n int) LU {
 	}
 }
 
-// Decompose 执行稀疏LU分解（原地分解，直接修改U矩阵）
+// NewSparseLU 创建稀疏LU分解器
+func NewSparseLU(n int) LU {
+	return &lu{
+		n:        n,
+		L:        NewSparseMatrix(n, n),
+		U:        NewSparseMatrix(n, n),
+		Y:        NewDenseVector(n),
+		P:        make([]int, n),
+		Pinverse: make([]int, n),
+	}
+}
+
+// Decompose 执行LU分解
 // 使用部分主元法进行LU分解，提高数值稳定性
-func (lu *luDecomposition) Decompose(matrix Matrix) error {
+func (lu *lu) Decompose(matrix Matrix) error {
 	if !matrix.IsSquare() {
 		return errors.New("matrix must be square for LU decomposition")
 	}
@@ -99,7 +110,7 @@ func (lu *luDecomposition) Decompose(matrix Matrix) error {
 // 使用LU分解结果求解线性方程组，分为两个步骤：
 // 1. 前向替换：求解 Ly = Pb
 // 2. 后向替换：求解 Ux = y
-func (lu *luDecomposition) SolveReuse(b, x Vector) error {
+func (lu *lu) SolveReuse(b, x Vector) error {
 	if b.Length() != lu.n || x.Length() != lu.n {
 		return errors.New("vector dimension mismatch")
 	}

@@ -46,7 +46,7 @@ type UpdateMatrix interface {
 }
 
 // Vector 通用向量接口
-// 定向量的基本操作，支持稀疏和密集两种实现
+// 定义向量的基本操作
 type Vector interface {
 	// BuildFromDense 从稠密向量构建向量
 	BuildFromDense(dense []float64)
