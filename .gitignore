@@ -33,3 +33,4 @@ go.work.sum
 cmd/*.txt
 cmd/client
 v1
+test

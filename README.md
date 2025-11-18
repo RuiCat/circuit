@@ -3,6 +3,7 @@ Go实现的电路仿真,参考开源 [circuitjs](https://github.com/sharpie7/cir
 ## 当前Bug列表
 
 ## 开发日志
+  根据 [参考资料](https://lpsa.swarthmore.edu/Systems/Electrical/mna/MNA1.html) 实现MNA的处理
   * [2025-11-17] 准备重写
     > 重构想法通过创建全局上下文来管理整个仿真过程.  
     > 通过函数工程模式对上下文进行加工同时让上下文保存整个仿真的数据与状态,通过事件来注册与获取指定的接口.
@@ -11,3 +12,11 @@ Go实现的电路仿真,参考开源 [circuitjs](https://github.com/sharpie7/cir
       2. Event 事件管理
       3. Flag 事件标记管理
     * maths 矩阵实现
+  * [2025-11-18] 实现矩阵相关内容
+    1. 基础的矩阵与向量结构体实现
+    2. 基础结构的lu分解实现
+## 开发任务规划
+  1. [X] 实现基于计算图构建矩阵方程求解器
+  2. [X] 实现 MNA 求解器与基础接口定义
+  3. [X] 实现 基础元件 
+  4. [X] 实现 加载与导出
