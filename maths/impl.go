@@ -1,140 +1,79 @@
 package maths
 
-// Matrix 通用矩阵接口
-// 定义矩阵的基本操作，支持稀疏和密集两种实现
-type Matrix interface {
-	// BuildFromDense 从稠密矩阵构建矩阵
-	BuildFromDense(dense [][]float64)
-	// Clear 清空矩阵，重置为零矩阵
-	Clear()
-	// Cols 返回矩阵列数
-	Cols() int
-	// Copy 将自身值复制到 a 矩阵
-	Copy(a Matrix)
-	// Get 获取指定位置的元素值
-	Get(row int, col int) float64
-	// GetRow 获取指定行的所有元素
-	GetRow(row int) ([]int, Vector)
-	// Increment 增量设置矩阵元素（累加值）
-	Increment(row int, col int, value float64)
-	// IsSquare 检查矩阵是否为方阵
-	IsSquare() bool
-	// MatrixVectorMultiply 执行矩阵向量乘法
-	MatrixVectorMultiply(x Vector) Vector
-	// NonZeroCount 返回非零元素数量
-	NonZeroCount() int
-	// Rows 返回矩阵行数
-	Rows() int
-	// Set 设置矩阵元素值
-	Set(row int, col int, value float64)
-	// String 返回矩阵的字符串表示
-	String() string
-	// ToDense 转换为稠密向量
-	ToDense() Vector
-}
+// 补充必要常量（浮点精度阈值）
+const Epsilon = 1e-16
 
-// UpdateMatrix 更新矩阵接口
-// 扩展Matrix接口，提供基于uint16分块位图的缓存机制
-type UpdateMatrix interface {
-	Matrix // 继承Matrix接口的所有方法
-	// Update 更新操作
-	// 将位图为1的值写入底层以后将位图设置为0
-	Update()
-	// Rollback 回溯操作
-	// 将位图标记置0，清空缓存
-	Rollback()
-}
-
-// Vector 通用向量接口
-// 定义向量的基本操作
+// 向量接口定义（统一方法名为Len()，符合Go语言惯例）
 type Vector interface {
-	// BuildFromDense 从稠密向量构建向量
-	BuildFromDense(dense []float64)
-	// Clear 清空向量，重置为零向量
-	Clear()
-	// Copy 将自身值复制到 a 向量
-	Copy(a Vector)
-	// Get 获取指定位置的元素值
-	Get(index int) float64
-	// Increment 增量设置向量元素（累加值）
-	Increment(index int, value float64)
-	// Length 返回向量长度
-	Length() int
-	// NonZeroCount 返回非零元素数量
-	NonZeroCount() int
-	// Set 设置向量元素值
-	Set(index int, value float64)
-	// String 返回向量的字符串表示
-	String() string
-	// ToDense 转换为稠密向量
-	ToDense() []float64
-	// DotProduct 计算与另一个向量的点积
-	DotProduct(other Vector) float64
-	// Scale 向量缩放
-	Scale(scalar float64)
-	// Add 向量加法
-	Add(other Vector)
+	Length() int                        // 获取向量长度
+	Get(index int) float64              // 获取指定索引元素值
+	Set(index int, value float64)       // 设置指定索引元素值
+	Increment(index int, value float64) // 增量更新元素（value累加）
+	Copy(a Vector)                      // 复制自身数据到目标向量a
+	Clear()                             // 清空向量为零向量
+	NonZeroCount() int                  // 统计非零元素数量
+	String() string                     // 格式化字符串输出
+	ToDense() []float64                 // 转换为稠密切片（[]float64）
+	DotProduct(other Vector) float64    // 计算与另一个向量的点积
+	Scale(scalar float64)               // 向量缩放（所有元素乘scalar）
+	Add(other Vector)                   // 向量加法（自身 += 另一个向量）
+	BuildFromDense(dense []float64)     // 从稠密切片构建向量
 }
 
-// UpdateVector 更新向量接口
-// 扩展 Vector接口，提供基于uint16分块位图的缓存机制
+// 可更新向量接口（支持缓存与回溯，继承Vector）
 type UpdateVector interface {
-	Vector // 继承Vector接口的所有方法
-	// Update 更新操作
-	// 将位图为1的值写入底层以后将位图设置为0
-	Update()
-	// Rollback 回溯操作
-	// 将位图标记置0，清空缓存
-	Rollback()
+	Vector
+	Update()   // 缓存数据刷到底层存储
+	Rollback() // 回溯操作（清空缓存，放弃修改）
 }
 
-// RowInfoType 行类型
-type RowInfoType uint8
-
-const (
-	ROW_NORMAL RowInfoType = 0 // 普通行
-	ROW_CONST  RowInfoType = 1 // 常数行
-)
-
-// RowInfo 行信息，用于矩阵简化
-type RowInfo struct {
-	Type      RowInfoType // 行类型：ROW_NORMAL, ROW_CONST
-	MapCol    int         // 列映射
-	MapRow    int         // 行映射
-	Value     float64     // 常数值
-	LSChanges bool        // 左侧变化
-	RSChanges bool        // 右侧变化
-	DropRow   bool        // 删除行
+// 矩阵接口定义（补充ToDense()实现说明）
+type Matrix interface {
+	Rows() int                             // 获取矩阵行数
+	Cols() int                             // 获取矩阵列数
+	Get(row, col int) float64              // 获取指定行列元素值
+	Set(row, col int, value float64)       // 设置指定行列元素值
+	Increment(row, col int, value float64) // 增量更新元素
+	Copy(a Matrix)                         // 复制自身数据到目标矩阵a
+	Clear()                                // 清空矩阵为零矩阵
+	NonZeroCount() int                     // 统计非零元素数量
+	String() string                        // 格式化字符串输出
+	IsSquare() bool                        // 判断是否为方阵（行数=列数）
+	BuildFromDense(dense [][]float64)      // 从稠密矩阵构建
+	GetRow(row int) ([]int, Vector)        // 获取指定行非零元素（列索引+值向量）
+	MatrixVectorMultiply(x Vector) Vector  // 矩阵向量乘法（返回A*x）
+	ToDense() Vector                       // 转换为稠密向量（行优先展开）
 }
 
-// MatrixReducer 矩阵简化
-type MatrixReducer interface {
-	// Simplify 简化矩阵，返回简化后的矩阵和右侧向量
-	Simplify(matrix Matrix, rightSide Vector) (Matrix, Vector, error)
-	// ApplySolution 将简化系统的解映射回原始系统
-	ApplySolution(simplifiedSolution Vector, originalSolution Vector) error
-	// GetSimplifiedSize 获取简化后的矩阵大小
-	GetSimplifiedSize() int
-	// SetRowChanges 设置行的变化状态
-	SetRowChanges(row int, lsChanges, rsChanges, dropRow bool)
-	// GetRowInfo 获取行信息
-	GetRowInfo(row int) RowInfo
+// 可更新矩阵接口（支持缓存与回溯，继承Matrix）
+type UpdateMatrix interface {
+	Matrix
+	Update()   // 缓存数据刷到底层存储
+	Rollback() // 回溯操作（清空缓存，放弃修改）
 }
 
-// LU 稀疏LU分解接口
-// 定义稀疏矩阵LU分解的基本操作，支持部分主元法
+// LU分解接口（支持稠密/稀疏矩阵）
 type LU interface {
-	// Decompose 执行稀疏LU分解（原地分解，直接修改U矩阵）
-	// 参数：
-	//   matrix - 待分解的稀疏矩阵
-	// 返回：
-	//   error - 如果矩阵奇异或接近奇异则返回错误
-	Decompose(matrix Matrix) error
-	// SolveReuse 解线性方程组 Ax = b，重用预分配的向量
-	// 参数：
-	//   b - 右侧向量
-	//   x - 解向量（预分配，结果将存储在此）
-	// 返回：
-	//   error - 如果向量维度不匹配则返回错误
-	SolveReuse(b, x Vector) error
+	Decompose(matrix Matrix) error // 对输入方阵执行LU分解（A=PLU）
+	SolveReuse(b, x Vector) error  // 重用向量求解Ax=b（利用LU分解结果）
+}
+
+// MatrixPruner 矩阵精简接口（专注denseMatrix的零行/零列移除与压缩）
+type MatrixPruner interface {
+	// RemoveZeroRows 移除全零行（返回精简后的矩阵，不修改原始矩阵）
+	RemoveZeroRows() Matrix
+	// RemoveZeroCols 移除全零列（返回精简后的矩阵，不修改原始矩阵）
+	RemoveZeroCols() Matrix
+	// Compress 组合精简（先移除零行，再移除零列，可指定顺序）
+	Compress(removeRowsFirst bool) Matrix
+	// GetRowMapping 获取「精简后行索引 → 原始行索引」的映射
+	GetRowMapping() map[int]int
+	// GetColMapping 获取「精简后列索引 → 原始列索引」的映射
+	GetColMapping() map[int]int
+	// GetOriginalRowIndex 根据精简后行索引，获取原始行索引
+	GetOriginalRowIndex(newRow int) (int, bool)
+	// GetOriginalColIndex 根据精简后列索引，获取原始列索引
+	GetOriginalColIndex(newCol int) (int, bool)
+	// GetPrunedMatrix 获取缓存的精简后矩阵（避免重复计算）
+	GetPrunedMatrix() Matrix
 }

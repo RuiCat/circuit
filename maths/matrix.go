@@ -1,29 +1,28 @@
 package maths
 
 import (
-	"circuit/utils"
 	"fmt"
+	"sort"
 )
 
-// denseMatrix 稠密矩阵实现
-// 基于 MatrixDataManager 实现 Matrix 接口
+// denseMatrix 稠密矩阵实现（基于MatrixDataManager，全量存储所有元素）
 type denseMatrix struct {
-	*MatrixDataManager
+	*MatrixDataManager // 嵌入矩阵数据管理器复用功能
 }
 
-// NewDenseMatrix 创建新的稠密矩阵
+// NewDenseMatrix 创建指定维度的空稠密矩阵
 func NewDenseMatrix(rows, cols int) Matrix {
 	return &denseMatrix{
 		MatrixDataManager: NewMatrixDataManager(rows, cols),
 	}
 }
 
-// BuildFromDense 从稠密矩阵构建矩阵
+// BuildFromDense 从稠密矩阵构建（覆盖原有数据）
 func (m *denseMatrix) BuildFromDense(dense [][]float64) {
 	m.MatrixDataManager.BuildFromDense(dense)
 }
 
-// Clear 清空矩阵，重置为零矩阵
+// Clear 清空矩阵为零矩阵
 func (m *denseMatrix) Clear() {
 	m.MatrixDataManager.Clear()
 }
@@ -33,52 +32,55 @@ func (m *denseMatrix) Cols() int {
 	return m.MatrixDataManager.Cols()
 }
 
-// Copy 将自身值复制到 a 矩阵
+// Copy 复制自身数据到目标矩阵（支持稠密/稀疏等类型）
 func (m *denseMatrix) Copy(a Matrix) {
 	switch target := a.(type) {
 	case *denseMatrix:
-		// 直接复制矩阵数据管理器
+		// 同类型直接复制（高效）
+		if target.Rows() != m.Rows() || target.Cols() != m.Cols() {
+			panic(fmt.Sprintf("dimension mismatch: source %dx%d, target %dx%d", m.Rows(), m.Cols(), target.Rows(), target.Cols()))
+		}
 		m.MatrixDataManager.DataManager.Copy(target.MatrixDataManager.DataManager)
 		target.MatrixDataManager.rows = m.MatrixDataManager.rows
 		target.MatrixDataManager.cols = m.MatrixDataManager.cols
 	default:
-		// 对于其他类型的矩阵实现，逐个元素复制
+		// 异类型逐个元素复制（兼容稀疏矩阵）
 		for i := 0; i < m.Rows(); i++ {
 			for j := 0; j < m.Cols(); j++ {
-				value := m.Get(i, j)
-				if value != 0 {
-					a.Set(i, j, value)
+				val := m.Get(i, j)
+				if val != 0 { // 非零元素才复制（优化）
+					target.Set(i, j, val)
 				}
 			}
 		}
 	}
 }
 
-// Get 获取指定位置的元素值
+// Get 获取指定行列元素值（越界panic）
 func (m *denseMatrix) Get(row int, col int) float64 {
 	return m.MatrixDataManager.GetMatrix(row, col)
 }
 
-// GetRow 获取指定行的所有元素
+// GetRow 获取指定行的非零元素（返回：列索引切片+值向量）
 func (m *denseMatrix) GetRow(row int) ([]int, Vector) {
 	cols, values := m.MatrixDataManager.GetRow(row)
 	return cols, NewDenseVectorWithData(values)
 }
 
-// Increment 增量设置矩阵元素（累加值）
+// Increment 增量更新矩阵元素（value累加，越界panic）
 func (m *denseMatrix) Increment(row int, col int, value float64) {
 	m.MatrixDataManager.IncrementMatrix(row, col, value)
 }
 
-// IsSquare 检查矩阵是否为方阵
+// IsSquare 判断是否为方阵
 func (m *denseMatrix) IsSquare() bool {
 	return m.MatrixDataManager.IsSquare()
 }
 
-// MatrixVectorMultiply 执行矩阵向量乘法
+// MatrixVectorMultiply 矩阵向量乘法（A*x，返回新向量）
 func (m *denseMatrix) MatrixVectorMultiply(x Vector) Vector {
 	if x.Length() != m.Cols() {
-		panic("vector dimension mismatch")
+		panic(fmt.Sprintf("vector dimension mismatch: x length=%d, matrix cols=%d", x.Length(), m.Cols()))
 	}
 	result := NewDenseVector(m.Rows())
 	for i := 0; i < m.Rows(); i++ {
@@ -91,7 +93,7 @@ func (m *denseMatrix) MatrixVectorMultiply(x Vector) Vector {
 	return result
 }
 
-// NonZeroCount 返回非零元素数量
+// NonZeroCount 统计非零元素数量
 func (m *denseMatrix) NonZeroCount() int {
 	return m.MatrixDataManager.NonZeroCount()
 }
@@ -101,308 +103,283 @@ func (m *denseMatrix) Rows() int {
 	return m.MatrixDataManager.Rows()
 }
 
-// Set 设置矩阵元素值
+// Set 设置指定行列元素值（越界panic）
 func (m *denseMatrix) Set(row int, col int, value float64) {
 	m.MatrixDataManager.SetMatrix(row, col, value)
 }
 
-// String 返回矩阵的字符串表示
+// String 格式化输出矩阵
 func (m *denseMatrix) String() string {
 	return m.MatrixDataManager.String()
 }
 
-// ToDense 转换为稠密向量
+// ToDense 转换为稠密向量（行优先展开）
 func (m *denseMatrix) ToDense() Vector {
 	return NewDenseVectorWithData(m.MatrixDataManager.ToDense())
 }
 
-// ==================== 更新矩阵实现 ====================
-
-// updateMatrix 更新矩阵实现
-// 基于 denseMatrix 实现 UpdateMatrix 接口，集成 Bitmap 接口
-type updateMatrix struct {
-	*denseMatrix
-	bitmap    utils.Bitmap        // 位图管理
-	cache     map[int][16]float64 // 缓存块
-	blockSize int                 // 块大小
+// sparseMatrix 稀疏矩阵实现（CSR格式：Compressed Sparse Row）
+// 核心优化：仅存储非零元素，大幅节省内存（适合非零元素占比<10%的矩阵）
+type sparseMatrix struct {
+	rows, cols int          // 矩阵维度
+	rowPtr     []int        // 行指针：rowPtr[i] = 第i行非零元素在colInd/values中的起始索引
+	colInd     []int        // 列索引：存储非零元素的列号
+	values     *DataManager // 非零元素值：与colInd一一对应
 }
 
-// NewUpdateMatrix 创建新的更新矩阵
-func NewUpdateMatrix(base Matrix) UpdateMatrix {
-	rows := base.Rows()
-	cols := base.Cols()
-	blockSize := 16
-	return &updateMatrix{
-		denseMatrix: &denseMatrix{
-			MatrixDataManager: NewMatrixDataManager(rows, cols),
-		},
-		bitmap:    utils.NewBitmap(rows * cols),
-		cache:     make(map[int][16]float64),
-		blockSize: blockSize,
+// NewSparseMatrix 创建指定维度的空稀疏矩阵
+func NewSparseMatrix(rows, cols int) Matrix {
+	if rows < 0 || cols < 0 {
+		panic("invalid matrix dimensions: cannot be negative")
+	}
+	return &sparseMatrix{
+		rows:   rows,
+		cols:   cols,
+		rowPtr: make([]int, rows+1), // rowPtr[rows] = 非零元素总数
+		colInd: make([]int, 0),
+		values: NewDataManager(0),
 	}
 }
 
-// getBlockIndexAndPosition 计算给定行列对应的块索引和块内位置
-func (um *updateMatrix) getBlockIndexAndPosition(row, col int) (int, int) {
-	linearIndex := row*um.Cols() + col
-	blockIndex := linearIndex / um.blockSize
-	position := linearIndex % um.blockSize
-	return blockIndex, position
-}
-
-// isBitSet 检查位图中指定位置的bit是否为1
-func (um *updateMatrix) isBitSet(blockIndex, position int) bool {
-	return um.bitmap.Get(utils.BitmapFlag(blockIndex*um.blockSize + position))
-}
-
-// setBit 设置位图中指定位置的bit为1
-func (um *updateMatrix) setBit(blockIndex, position int) {
-	um.bitmap.Set(utils.BitmapFlag(blockIndex*um.blockSize+position), true)
-}
-
-// clearBit 清除位图中指定位置的bit（设置为0）
-func (um *updateMatrix) clearBit(blockIndex, position int) {
-	um.bitmap.Set(utils.BitmapFlag(blockIndex*um.blockSize+position), false)
-}
-
-// Get 获取矩阵元素
-// 先检查位图，如果位图为1则从cache中获取值，如果为0则从底层数据里面获取值
-func (um *updateMatrix) Get(row, col int) float64 {
-	if row < 0 || row >= um.Rows() || col < 0 || col >= um.Cols() {
-		panic("index out of range")
+// Set 设置矩阵元素值（非零则插入/更新，零则删除）
+func (m *sparseMatrix) Set(row, col int, value float64) {
+	if row < 0 || row >= m.rows || col < 0 || col >= m.cols {
+		panic(fmt.Sprintf("matrix index out of range: row=%d, col=%d (rows=%d, cols=%d)", row, col, m.rows, m.cols))
 	}
-	blockIndex, position := um.getBlockIndexAndPosition(row, col)
-	if um.isBitSet(blockIndex, position) {
-		// 从缓存中获取值
-		if block, exists := um.cache[blockIndex]; exists {
-			return block[position]
+	start := m.rowPtr[row]
+	end := m.rowPtr[row+1]
+	// 二分查找列索引在当前行的位置
+	pos := sort.Search(end-start, func(i int) bool {
+		return m.colInd[start+i] >= col
+	}) + start
+
+	if pos < end && m.colInd[pos] == col {
+		// 元素已存在：更新或删除
+		if value < -1e-16 || value > 1e-16 { // 非零：更新
+			m.values.Set(pos, value)
+		} else { // 零：删除
+			m.deleteElement(row, pos)
 		}
+	} else if value < -1e-16 || value > 1e-16 {
+		// 元素不存在且非零：插入
+		m.insertElement(row, col, value, pos)
 	}
-	// 从底层矩阵获取值
-	return um.denseMatrix.Get(row, col)
 }
 
-// Set 设置矩阵元素值
-// 设置缓存值并且将位图设置为1
-func (um *updateMatrix) Set(row, col int, value float64) {
-	if row < 0 || row >= um.Rows() || col < 0 || col >= um.Cols() {
-		panic("index out of range")
+// Increment 增量更新矩阵元素（非零则累加，零则插入）
+func (m *sparseMatrix) Increment(row, col int, value float64) {
+	if row < 0 || row >= m.rows || col < 0 || col >= m.cols {
+		panic(fmt.Sprintf("matrix index out of range: row=%d, col=%d (rows=%d, cols=%d)", row, col, m.rows, m.cols))
 	}
-	blockIndex, position := um.getBlockIndexAndPosition(row, col)
-	// 获取或创建缓存块
-	block, exists := um.cache[blockIndex]
-	if !exists {
-		// 初始化新的缓存块
-		block = [16]float64{}
-	}
-	// 设置缓存值
-	block[position] = value
-	um.cache[blockIndex] = block
-	// 设置位图标记
-	um.setBit(blockIndex, position)
-}
+	start := m.rowPtr[row]
+	end := m.rowPtr[row+1]
+	pos := sort.Search(end-start, func(i int) bool {
+		return m.colInd[start+i] >= col
+	}) + start
 
-// Increment 增量设置矩阵元素（累加值）
-func (um *updateMatrix) Increment(row, col int, value float64) {
-	if row < 0 || row >= um.Rows() || col < 0 || col >= um.Cols() {
-		panic("index out of range")
-	}
-	blockIndex, position := um.getBlockIndexAndPosition(row, col)
-	if um.isBitSet(blockIndex, position) {
-		// 在缓存中累加
-		block := um.cache[blockIndex]
-		block[position] += value
-		um.cache[blockIndex] = block
-	} else {
-		// 不在缓存中，创建新的缓存项
-		block, exists := um.cache[blockIndex]
-		if !exists {
-			block = [16]float64{}
+	if pos < end && m.colInd[pos] == col {
+		// 元素已存在：累加
+		current := m.values.Get(pos)
+		newVal := current + value
+		if newVal < -1e-16 || newVal > 1e-16 { // 累加后非零：更新
+			m.values.Set(pos, newVal)
+		} else { // 累加后零：删除
+			m.deleteElement(row, pos)
 		}
-		block[position] = um.denseMatrix.Get(row, col) + value
-		um.cache[blockIndex] = block
-		um.setBit(blockIndex, position)
+	} else if value < -1e-16 || value > 1e-16 {
+		// 元素不存在且增量非零：插入
+		m.insertElement(row, col, value, pos)
 	}
 }
 
-// Update 更新操作
-// 将位图为1的值写入底层以后将位图设置为0
-func (um *updateMatrix) Update() {
-	for blockIndex, block := range um.cache {
-		// 遍历块中的16个位置
-		for position := 0; position < um.blockSize; position++ {
-			if um.isBitSet(blockIndex, position) {
-				// 计算原始行列位置
-				linearIndex := blockIndex*um.blockSize + position
-				row := linearIndex / um.Cols()
-				col := linearIndex % um.Cols()
+// Get 获取矩阵元素值（非零返回值，零返回0）
+func (m *sparseMatrix) Get(row, col int) float64 {
+	if row < 0 || row >= m.rows || col < 0 || col >= m.cols {
+		panic(fmt.Sprintf("matrix index out of range: row=%d, col=%d (rows=%d, cols=%d)", row, col, m.rows, m.cols))
+	}
+	start := m.rowPtr[row]
+	end := m.rowPtr[row+1]
+	pos := sort.Search(end-start, func(i int) bool {
+		return m.colInd[start+i] >= col
+	}) + start
+	if pos < end && m.colInd[pos] == col {
+		return m.values.Get(pos)
+	}
+	return 0.0
+}
 
-				// 检查行列是否有效
-				if row < um.Rows() && col < um.Cols() {
-					// 将缓存值写入底层矩阵
-					um.denseMatrix.Set(row, col, block[position])
-					// 清除位图标记
-					um.clearBit(blockIndex, position)
-				}
-			}
-		}
+// deleteElement 删除指定位置的非零元素（内部方法）
+func (m *sparseMatrix) deleteElement(row, pos int) {
+	// 删除列索引
+	m.colInd = append(m.colInd[:pos], m.colInd[pos+1:]...)
+	// 删除值
+	m.values.RemoveInPlace(pos, 1)
+	// 更新后续行的指针（所有行号>row的行指针减1）
+	for i := row + 1; i <= m.rows; i++ {
+		m.rowPtr[i]--
 	}
 }
 
-// Rollback 回溯操作
-// 将位图标记置0，清空缓存
-func (um *updateMatrix) Rollback() {
-	// 重置位图
-	for i := 0; i < um.Rows()*um.Cols(); i++ {
-		blockIndex := i / um.blockSize
-		position := i % um.blockSize
-		um.clearBit(blockIndex, position)
-	}
-	// 清空缓存
-	clear(um.cache)
-}
-
-// BuildFromDense 从稠密矩阵构建矩阵
-func (um *updateMatrix) BuildFromDense(dense [][]float64) {
-	um.denseMatrix.BuildFromDense(dense)
-	um.Rollback()
-}
-
-// Clear 清空矩阵，重置为零矩阵
-func (um *updateMatrix) Clear() {
-	um.denseMatrix.Clear()
-	um.Rollback()
-}
-
-// Copy 复制矩阵内容到另一个矩阵
-func (um *updateMatrix) Copy(a Matrix) {
-	switch target := a.(type) {
-	case *updateMatrix:
-		// 复制底层矩阵
-		um.denseMatrix.Copy(target.denseMatrix)
-		// 复制缓存状态
-		target.bitmap = utils.NewBitmap(um.Rows() * um.Cols())
-		target.cache = make(map[int][16]float64)
-		for k, v := range um.cache {
-			target.cache[k] = v
-		}
-		// 复制位图状态
-		for i := 0; i < um.Rows()*um.Cols(); i++ {
-			blockIndex := i / um.blockSize
-			position := i % um.blockSize
-			if um.isBitSet(blockIndex, position) {
-				target.setBit(blockIndex, position)
-			}
-		}
-	default:
-		// 对于其他类型的矩阵，只复制当前可见的数据（底层+缓存）
-		for i := 0; i < um.Rows(); i++ {
-			for j := 0; j < um.Cols(); j++ {
-				value := um.Get(i, j)
-				if value != 0 {
-					a.Set(i, j, value)
-				}
-			}
-		}
+// insertElement 在指定位置插入非零元素（内部方法）
+func (m *sparseMatrix) insertElement(row, col int, value float64, pos int) {
+	// 插入列索引
+	m.colInd = append(m.colInd, 0)
+	copy(m.colInd[pos+1:], m.colInd[pos:])
+	m.colInd[pos] = col
+	// 插入值
+	m.values.InsertInPlace(pos, value)
+	// 更新后续行的指针（所有行号>row的行指针加1）
+	for i := row + 1; i <= m.rows; i++ {
+		m.rowPtr[i]++
 	}
 }
 
-// GetRow 获取指定行的所有元素
-func (um *updateMatrix) GetRow(row int) ([]int, Vector) {
-	if row < 0 || row >= um.Rows() {
-		panic("row index out of range")
-	}
-	// 获取底层矩阵的行数据
-	baseCols, baseVector := um.denseMatrix.GetRow(row)
-	baseValues := baseVector.ToDense()
-	// 合并缓存中的修改
-	resultCols := make([]int, 0, len(baseCols))
-	resultValues := make([]float64, 0, len(baseValues))
-	// 复制底层数据
-	for i := range baseCols {
-		resultCols = append(resultCols, baseCols[i])
-		resultValues = append(resultValues, baseValues[i])
-	}
-	// 处理该行的缓存修改
-	for col := 0; col < um.Cols(); col++ {
-		blockIndex, position := um.getBlockIndexAndPosition(row, col)
-		if um.isBitSet(blockIndex, position) {
-			if block, exists := um.cache[blockIndex]; exists {
-				cachedValue := block[position]
-				// 查找是否已存在该列
-				found := false
-				for i, c := range resultCols {
-					if c == col {
-						resultValues[i] = cachedValue
-						found = true
-						break
-					}
-				}
-				if !found && cachedValue != 0 {
-					resultCols = append(resultCols, col)
-					resultValues = append(resultValues, cachedValue)
-				}
-			}
-		}
-	}
-	return resultCols, NewDenseVectorWithData(resultValues)
+// Rows 返回矩阵行数
+func (m *sparseMatrix) Rows() int {
+	return m.rows
 }
 
-// MatrixVectorMultiply 执行矩阵向量乘法
-func (um *updateMatrix) MatrixVectorMultiply(x Vector) Vector {
-	if x.Length() != um.Cols() {
-		panic("vector dimension mismatch")
-	}
-	result := NewDenseVector(um.Rows())
-	// 处理每一行
-	for i := 0; i < um.Rows(); i++ {
-		// 获取该行的所有元素（包括缓存）
-		cols, values := um.GetRow(i)
-		for j := range cols {
-			result.Increment(i, values.Get(j)*x.Get(cols[j]))
-		}
-	}
-	return result
+// Cols 返回矩阵列数
+func (m *sparseMatrix) Cols() int {
+	return m.cols
 }
 
-// NonZeroCount 返回非零元素数量
-func (um *updateMatrix) NonZeroCount() int {
-	count := 0
-	// 统计底层矩阵的非零元素
-	for i := 0; i < um.Rows(); i++ {
-		cols, _ := um.denseMatrix.GetRow(i)
-		count += len(cols)
-	}
-	// 统计缓存中的修改（只统计不在底层矩阵中的新元素）
-	for blockIndex, block := range um.cache {
-		for position := 0; position < um.blockSize; position++ {
-			if um.isBitSet(blockIndex, position) {
-				linearIndex := blockIndex*um.blockSize + position
-				row := linearIndex / um.Cols()
-				col := linearIndex % um.Cols()
-				if row < um.Rows() && col < um.Cols() {
-					// 检查该位置是否在底层矩阵中
-					baseValue := um.denseMatrix.Get(row, col)
-					cachedValue := block[position]
-					// 如果底层为0但缓存不为0，或者缓存值与底层不同，则计数
-					if (baseValue == 0 && cachedValue != 0) || (baseValue != cachedValue) {
-						count++
-					}
-				}
-			}
-		}
-	}
-	return count
-}
-
-// String 返回矩阵的字符串表示
-func (um *updateMatrix) String() string {
+// String 格式化输出矩阵（显示所有元素，零元素也显示）
+func (m *sparseMatrix) String() string {
 	result := ""
-	for i := 0; i < um.Rows(); i++ {
-		for j := 0; j < um.Cols(); j++ {
-			result += fmt.Sprintf("%8.4f ", um.Get(i, j))
+	for i := 0; i < m.rows; i++ {
+		colPtr := m.rowPtr[i]
+		for j := 0; j < m.cols; j++ {
+			if colPtr < m.rowPtr[i+1] && m.colInd[colPtr] == j {
+				result += fmt.Sprintf("%8.4f ", m.values.Get(colPtr))
+				colPtr++
+			} else {
+				result += fmt.Sprintf("%8.4f ", 0.0)
+			}
 		}
 		result += "\n"
 	}
 	return result
+}
+
+// NonZeroCount 统计非零元素数量
+func (m *sparseMatrix) NonZeroCount() int {
+	return m.values.Length()
+}
+
+// Copy 复制自身数据到目标矩阵（支持稀疏/稠密等类型）
+func (m *sparseMatrix) Copy(a Matrix) {
+	switch target := a.(type) {
+	case *sparseMatrix:
+		// 同类型复制（高效）
+		if target.rows != m.rows || target.cols != m.cols {
+			panic(fmt.Sprintf("dimension mismatch: source %dx%d, target %dx%d", m.rows, m.cols, target.rows, target.cols))
+		}
+		// 复制行指针
+		copy(target.rowPtr, m.rowPtr)
+		// 复制列索引
+		target.colInd = make([]int, len(m.colInd))
+		copy(target.colInd, m.colInd)
+		// 复制值
+		target.values = NewDataManager(m.values.Length())
+		m.values.Copy(target.values)
+	default:
+		// 异类型复制（逐个非零元素复制）
+		for i := 0; i < m.rows; i++ {
+			start := m.rowPtr[i]
+			end := m.rowPtr[i+1]
+			for j := start; j < end; j++ {
+				col := m.colInd[j]
+				val := m.values.Get(j)
+				target.Set(i, col, val)
+			}
+		}
+	}
+}
+
+// IsSquare 判断是否为方阵
+func (m *sparseMatrix) IsSquare() bool {
+	return m.rows == m.cols
+}
+
+// BuildFromDense 从稠密矩阵构建稀疏矩阵（仅保留非零元素）
+func (m *sparseMatrix) BuildFromDense(dense [][]float64) {
+	if len(dense) != m.rows || (len(dense) > 0 && len(dense[0]) != m.cols) {
+		panic(fmt.Sprintf("dense matrix dimension mismatch: expected %dx%d, got %dx%d", m.rows, m.cols, len(dense), len(dense[0])))
+	}
+	// 重置所有数据
+	m.colInd = m.colInd[:0]
+	m.values.Clear()
+	clear(m.rowPtr)
+
+	count := 0
+	for i := 0; i < m.rows; i++ {
+		m.rowPtr[i] = count
+		for j := 0; j < m.cols; j++ {
+			val := dense[i][j]
+			if val < -1e-16 || val > 1e-16 { // 仅保留非零元素
+				m.colInd = append(m.colInd, j)
+				m.values.AppendInPlace(val)
+				count++
+			}
+		}
+	}
+	m.rowPtr[m.rows] = count
+}
+
+// GetRow 获取指定行的非零元素（返回：列索引切片+值向量）
+func (m *sparseMatrix) GetRow(row int) ([]int, Vector) {
+	if row < 0 || row >= m.rows {
+		panic(fmt.Sprintf("row index out of range: %d (rows: %d)", row, m.rows))
+	}
+	start := m.rowPtr[row]
+	end := m.rowPtr[row+1]
+	// 提取列索引和值
+	cols := m.colInd[start:end]
+	values := make([]float64, len(cols))
+	for i := range cols {
+		values[i] = m.values.Get(start + i)
+	}
+	return cols, NewDenseVectorWithData(values)
+}
+
+// MatrixVectorMultiply 矩阵向量乘法（A*x，稀疏优化：仅遍历非零元素）
+func (m *sparseMatrix) MatrixVectorMultiply(x Vector) Vector {
+	if x.Length() != m.cols {
+		panic(fmt.Sprintf("vector dimension mismatch: x length=%d, matrix cols=%d", x.Length(), m.cols))
+	}
+	result := NewDenseVector(m.rows)
+	for i := 0; i < m.rows; i++ {
+		start := m.rowPtr[i]
+		end := m.rowPtr[i+1]
+		for j := start; j < end; j++ {
+			col := m.colInd[j]
+			val := m.values.Get(j)
+			result.Increment(i, val*x.Get(col))
+		}
+	}
+	return result
+}
+
+// Clear 清空矩阵为零矩阵（释放非零元素内存）
+func (m *sparseMatrix) Clear() {
+	m.colInd = m.colInd[:0]
+	m.values.Clear()
+	m.values.ResizeInPlace(0) // 释放值切片内存
+	clear(m.rowPtr)
+}
+
+// ToDense 转换为稠密向量（行优先展开）
+func (m *sparseMatrix) ToDense() Vector {
+	dense := make([]float64, m.rows*m.cols)
+	for i := 0; i < m.rows; i++ {
+		start := m.rowPtr[i]
+		end := m.rowPtr[i+1]
+		for j := start; j < end; j++ {
+			col := m.colInd[j]
+			idx := i*m.cols + col
+			dense[idx] = m.values.Get(j)
+		}
+	}
+	return NewDenseVectorWithData(dense)
 }
