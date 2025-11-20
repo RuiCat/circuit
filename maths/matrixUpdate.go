@@ -29,6 +29,16 @@ func NewUpdateMatrix(base Matrix) UpdateMatrix {
 	}
 }
 
+// NewUpdateMatrixPtr 从基础矩阵指针创建更新矩阵
+func NewUpdateMatrixPtr(ptr Matrix) UpdateMatrix {
+	return &updateMatrix{
+		Matrix:    ptr,
+		bitmap:    utils.NewBitmap(ptr.Rows() * ptr.Cols()), // 位图长度=矩阵元素总数
+		cache:     make(map[int][16]float64),
+		blockSize: 16,
+	}
+}
+
 // getBlockIndexAndPosition 计算行列对应的缓存块索引和块内位置
 func (um *updateMatrix) getBlockIndexAndPosition(row, col int) (int, int) {
 	linearIndex := row*um.Cols() + col // 行列转一维索引
@@ -282,4 +292,15 @@ func (um *updateMatrix) String() string {
 		result += "\n"
 	}
 	return result
+}
+
+// Resize 重置矩阵大小和数据（清空所有元素）
+func (um *updateMatrix) Resize(rows, cols int) {
+	if rows < 0 || cols < 0 {
+		panic("invalid matrix dimensions: cannot be negative")
+	}
+	// 重置底层数据大小
+	clear(um.cache)
+	um.Matrix.Resize(rows, cols)
+	um.bitmap = utils.NewBitmap(rows * cols)
 }

@@ -118,13 +118,24 @@ func (m *denseMatrix) ToDense() Vector {
 	return NewDenseVectorWithData(m.MatrixDataManager.ToDense())
 }
 
+// Resize 重置矩阵大小和数据（清空所有元素）
+func (m *denseMatrix) Resize(rows, cols int) {
+	if rows < 0 || cols < 0 {
+		panic("invalid matrix dimensions: cannot be negative")
+	}
+	// 重置底层数据大小
+	m.MatrixDataManager.rows = rows
+	m.MatrixDataManager.cols = cols
+	m.MatrixDataManager.Resize(rows * cols)
+}
+
 // sparseMatrix 稀疏矩阵实现（CSR格式：Compressed Sparse Row）
 // 核心优化：仅存储非零元素，大幅节省内存（适合非零元素占比<10%的矩阵）
 type sparseMatrix struct {
-	rows, cols int          // 矩阵维度
-	rowPtr     []int        // 行指针：rowPtr[i] = 第i行非零元素在colInd/values中的起始索引
-	colInd     []int        // 列索引：存储非零元素的列号
-	values     *DataManager // 非零元素值：与colInd一一对应
+	DataManager       // 非零元素值：与colInd一一对应
+	rows, cols  int   // 矩阵维度
+	rowPtr      []int // 行指针：rowPtr[i] = 第i行非零元素在colInd/values中的起始索引
+	colInd      []int // 列索引：存储非零元素的列号
 }
 
 // NewSparseMatrix 创建指定维度的空稀疏矩阵
@@ -133,11 +144,11 @@ func NewSparseMatrix(rows, cols int) Matrix {
 		panic("invalid matrix dimensions: cannot be negative")
 	}
 	return &sparseMatrix{
-		rows:   rows,
-		cols:   cols,
-		rowPtr: make([]int, rows+1), // rowPtr[rows] = 非零元素总数
-		colInd: make([]int, 0),
-		values: NewDataManager(0),
+		rows:        rows,
+		cols:        cols,
+		rowPtr:      make([]int, rows+1), // rowPtr[rows] = 非零元素总数
+		colInd:      make([]int, 0),
+		DataManager: NewDataManager(0),
 	}
 }
 
@@ -156,7 +167,7 @@ func (m *sparseMatrix) Set(row, col int, value float64) {
 	if pos < end && m.colInd[pos] == col {
 		// 元素已存在：更新或删除
 		if value < -1e-16 || value > 1e-16 { // 非零：更新
-			m.values.Set(pos, value)
+			m.DataManager.Set(pos, value)
 		} else { // 零：删除
 			m.deleteElement(row, pos)
 		}
@@ -179,10 +190,10 @@ func (m *sparseMatrix) Increment(row, col int, value float64) {
 
 	if pos < end && m.colInd[pos] == col {
 		// 元素已存在：累加
-		current := m.values.Get(pos)
+		current := m.DataManager.Get(pos)
 		newVal := current + value
 		if newVal < -1e-16 || newVal > 1e-16 { // 累加后非零：更新
-			m.values.Set(pos, newVal)
+			m.DataManager.Set(pos, newVal)
 		} else { // 累加后零：删除
 			m.deleteElement(row, pos)
 		}
@@ -203,7 +214,7 @@ func (m *sparseMatrix) Get(row, col int) float64 {
 		return m.colInd[start+i] >= col
 	}) + start
 	if pos < end && m.colInd[pos] == col {
-		return m.values.Get(pos)
+		return m.DataManager.Get(pos)
 	}
 	return 0.0
 }
@@ -213,7 +224,7 @@ func (m *sparseMatrix) deleteElement(row, pos int) {
 	// 删除列索引
 	m.colInd = append(m.colInd[:pos], m.colInd[pos+1:]...)
 	// 删除值
-	m.values.RemoveInPlace(pos, 1)
+	m.DataManager.RemoveInPlace(pos, 1)
 	// 更新后续行的指针（所有行号>row的行指针减1）
 	for i := row + 1; i <= m.rows; i++ {
 		m.rowPtr[i]--
@@ -227,7 +238,7 @@ func (m *sparseMatrix) insertElement(row, col int, value float64, pos int) {
 	copy(m.colInd[pos+1:], m.colInd[pos:])
 	m.colInd[pos] = col
 	// 插入值
-	m.values.InsertInPlace(pos, value)
+	m.DataManager.InsertInPlace(pos, value)
 	// 更新后续行的指针（所有行号>row的行指针加1）
 	for i := row + 1; i <= m.rows; i++ {
 		m.rowPtr[i]++
@@ -251,7 +262,7 @@ func (m *sparseMatrix) String() string {
 		colPtr := m.rowPtr[i]
 		for j := 0; j < m.cols; j++ {
 			if colPtr < m.rowPtr[i+1] && m.colInd[colPtr] == j {
-				result += fmt.Sprintf("%8.4f ", m.values.Get(colPtr))
+				result += fmt.Sprintf("%8.4f ", m.DataManager.Get(colPtr))
 				colPtr++
 			} else {
 				result += fmt.Sprintf("%8.4f ", 0.0)
@@ -264,7 +275,7 @@ func (m *sparseMatrix) String() string {
 
 // NonZeroCount 统计非零元素数量
 func (m *sparseMatrix) NonZeroCount() int {
-	return m.values.Length()
+	return m.DataManager.Length()
 }
 
 // Copy 复制自身数据到目标矩阵（支持稀疏/稠密等类型）
@@ -281,8 +292,8 @@ func (m *sparseMatrix) Copy(a Matrix) {
 		target.colInd = make([]int, len(m.colInd))
 		copy(target.colInd, m.colInd)
 		// 复制值
-		target.values = NewDataManager(m.values.Length())
-		m.values.Copy(target.values)
+		target.DataManager = NewDataManager(m.DataManager.Length())
+		m.DataManager.Copy(target.DataManager)
 	default:
 		// 异类型复制（逐个非零元素复制）
 		for i := 0; i < m.rows; i++ {
@@ -290,7 +301,7 @@ func (m *sparseMatrix) Copy(a Matrix) {
 			end := m.rowPtr[i+1]
 			for j := start; j < end; j++ {
 				col := m.colInd[j]
-				val := m.values.Get(j)
+				val := m.DataManager.Get(j)
 				target.Set(i, col, val)
 			}
 		}
@@ -309,7 +320,7 @@ func (m *sparseMatrix) BuildFromDense(dense [][]float64) {
 	}
 	// 重置所有数据
 	m.colInd = m.colInd[:0]
-	m.values.Clear()
+	m.DataManager.Clear()
 	clear(m.rowPtr)
 
 	count := 0
@@ -319,7 +330,7 @@ func (m *sparseMatrix) BuildFromDense(dense [][]float64) {
 			val := dense[i][j]
 			if val < -1e-16 || val > 1e-16 { // 仅保留非零元素
 				m.colInd = append(m.colInd, j)
-				m.values.AppendInPlace(val)
+				m.DataManager.AppendInPlace(val)
 				count++
 			}
 		}
@@ -338,7 +349,7 @@ func (m *sparseMatrix) GetRow(row int) ([]int, Vector) {
 	cols := m.colInd[start:end]
 	values := make([]float64, len(cols))
 	for i := range cols {
-		values[i] = m.values.Get(start + i)
+		values[i] = m.DataManager.Get(start + i)
 	}
 	return cols, NewDenseVectorWithData(values)
 }
@@ -354,7 +365,7 @@ func (m *sparseMatrix) MatrixVectorMultiply(x Vector) Vector {
 		end := m.rowPtr[i+1]
 		for j := start; j < end; j++ {
 			col := m.colInd[j]
-			val := m.values.Get(j)
+			val := m.DataManager.Get(j)
 			result.Increment(i, val*x.Get(col))
 		}
 	}
@@ -364,8 +375,8 @@ func (m *sparseMatrix) MatrixVectorMultiply(x Vector) Vector {
 // Clear 清空矩阵为零矩阵（释放非零元素内存）
 func (m *sparseMatrix) Clear() {
 	m.colInd = m.colInd[:0]
-	m.values.Clear()
-	m.values.ResizeInPlace(0) // 释放值切片内存
+	m.DataManager.Clear()
+	m.DataManager.ResizeInPlace(0) // 释放值切片内存
 	clear(m.rowPtr)
 }
 
@@ -378,8 +389,21 @@ func (m *sparseMatrix) ToDense() Vector {
 		for j := start; j < end; j++ {
 			col := m.colInd[j]
 			idx := i*m.cols + col
-			dense[idx] = m.values.Get(j)
+			dense[idx] = m.DataManager.Get(j)
 		}
 	}
 	return NewDenseVectorWithData(dense)
+}
+
+// Resize 重置矩阵大小和数据（清空所有元素）
+func (m *sparseMatrix) Resize(rows, cols int) {
+	if rows < 0 || cols < 0 {
+		panic("invalid matrix dimensions: cannot be negative")
+	}
+	// 重置底层数据大小
+	m.rows = rows
+	m.cols = cols
+	m.rowPtr = make([]int, rows+1)
+	m.colInd = m.colInd[:0]
+	m.DataManager.Resize(rows * cols)
 }

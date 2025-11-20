@@ -7,7 +7,7 @@ import (
 
 // denseVector 稠密向量实现（基于DataManager，全量存储所有元素）
 type denseVector struct {
-	*DataManager // 嵌入DataManager复用功能
+	DataManager // 嵌入DataManager复用功能
 }
 
 // NewDenseVector 创建指定长度的空稠密向量
@@ -124,23 +124,34 @@ func (v *denseVector) Add(other Vector) {
 // updateVector 带缓存更新向量（基于稠密向量，支持缓存+回溯）
 // 核心优化：频繁修改先写缓存，批量刷盘，支持回滚，提升性能
 type updateVector struct {
-	*denseVector              // 嵌入稠密向量（底层存储）
-	bitmap       utils.Bitmap // 位图：标记哪些位置被缓存修改（1=缓存有效）
-	cache        []float64    // 缓存：存储修改后的值（与底层向量同长度）
-	blockSize    int          // 缓存块大小（固定16，对齐CPU缓存）
+	Vector                 // 嵌入稠密向量（底层存储）
+	bitmap    utils.Bitmap // 位图：标记哪些位置被缓存修改（1=缓存有效）
+	cache     []float64    // 缓存：存储修改后的值（与底层向量同长度）
+	blockSize int          // 缓存块大小（固定16，对齐CPU缓存）
 }
 
 // NewUpdateVector 从基础向量创建更新向量（复制基础向量数据）
 func NewUpdateVector(base Vector) UpdateVector {
 	length := base.Length()
 	// 初始化底层稠密向量并复制基础数据
-	dv := NewDenseVector(length).(*denseVector)
+	dv := NewDenseVector(length)
 	base.Copy(dv)
 	return &updateVector{
-		denseVector: dv,
-		bitmap:      utils.NewBitmap(length), // 位图长度=向量长度
-		cache:       make([]float64, length),
-		blockSize:   16,
+		Vector:    dv,
+		bitmap:    utils.NewBitmap(length), // 位图长度=向量长度
+		cache:     make([]float64, length),
+		blockSize: 16,
+	}
+}
+
+// NewUpdateVectorPtr 从基础向量指针创建
+func NewUpdateVectorPtr(ptr Vector) UpdateVector {
+	length := ptr.Length()
+	return &updateVector{
+		Vector:    ptr,
+		bitmap:    utils.NewBitmap(length), // 位图长度=向量长度
+		cache:     make([]float64, length),
+		blockSize: 16,
 	}
 }
 
@@ -175,7 +186,7 @@ func (uv *updateVector) Get(index int) float64 {
 	if uv.isBitSet(index) {
 		return uv.cache[index] // 缓存有效：返回缓存值
 	}
-	return uv.denseVector.Get(index) // 缓存无效：返回底层值
+	return uv.Vector.Get(index) // 缓存无效：返回底层值
 }
 
 // Set 设置元素值（写缓存+标记位图）
@@ -196,7 +207,7 @@ func (uv *updateVector) Increment(index int, value float64) {
 		uv.cache[index] += value // 缓存有效：直接累加
 	} else {
 		// 缓存无效：读底层值+累加，写入缓存
-		uv.cache[index] = uv.denseVector.Get(index) + value
+		uv.cache[index] = uv.Vector.Get(index) + value
 		uv.setBit(index)
 	}
 }
@@ -205,8 +216,8 @@ func (uv *updateVector) Increment(index int, value float64) {
 func (uv *updateVector) Update() {
 	for i := 0; i < uv.Length(); i++ {
 		if uv.isBitSet(i) {
-			uv.denseVector.Set(i, uv.cache[i]) // 缓存值刷到底层
-			uv.clearBit(i)                     // 清除位图标记
+			uv.Vector.Set(i, uv.cache[i]) // 缓存值刷到底层
+			uv.clearBit(i)                // 清除位图标记
 		}
 	}
 }
@@ -223,13 +234,13 @@ func (uv *updateVector) Rollback() {
 
 // BuildFromDense 从稠密切片构建（覆盖底层数据，清空缓存）
 func (uv *updateVector) BuildFromDense(dense []float64) {
-	uv.denseVector.BuildFromDense(dense)
+	uv.Vector.BuildFromDense(dense)
 	uv.Rollback() // 构建后清空缓存
 }
 
 // Clear 清空向量（底层+缓存均置0，清空位图）
 func (uv *updateVector) Clear() {
-	uv.denseVector.Clear()
+	uv.Vector.Clear()
 	uv.Rollback()
 }
 
@@ -241,7 +252,7 @@ func (uv *updateVector) Copy(a Vector) {
 			panic(fmt.Sprintf("dimension mismatch: source length=%d, target length=%d", uv.Length(), target.Length()))
 		}
 		// 复制底层数据
-		uv.denseVector.Copy(target.denseVector)
+		uv.Vector.Copy(target.Vector)
 		// 复制缓存
 		copy(target.cache, uv.cache)
 		// 复制位图

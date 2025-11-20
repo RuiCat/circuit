@@ -16,7 +16,7 @@ type denseMatrixPruner struct {
 // RemoveZeroRows 移除全零行（核心逻辑：筛选非零行，记录索引映射）
 func (p *denseMatrixPruner) RemoveZeroRows() Matrix {
 	if p.originalMatrix == nil {
-		return NewDenseMatrix(0, 0)
+		return nil
 	}
 
 	originalRows := p.originalMatrix.Rows()
@@ -59,7 +59,7 @@ func (p *denseMatrixPruner) RemoveZeroRows() Matrix {
 // RemoveZeroCols 移除全零列（逻辑与行类似，遍历列判断）
 func (p *denseMatrixPruner) RemoveZeroCols() Matrix {
 	if p.originalMatrix == nil {
-		return NewDenseMatrix(0, 0)
+		return nil
 	}
 
 	originalRows := p.originalMatrix.Rows()
@@ -102,15 +102,15 @@ func (p *denseMatrixPruner) RemoveZeroCols() Matrix {
 // Compress 组合精简（先移除零行/零列，再移除另一维度的零元素）
 func (p *denseMatrixPruner) Compress(removeRowsFirst bool) Matrix {
 	if p.originalMatrix == nil {
-		return NewDenseMatrix(0, 0)
+		return nil
 	}
 
-	var tempMat *denseMatrix
+	var tempMat Matrix
 	// 第一步：按指定顺序移除第一个维度的零元素
 	if removeRowsFirst {
-		tempMat = p.RemoveZeroRows().(*denseMatrix) // 先删零行（列索引不变）
+		tempMat = p.RemoveZeroRows() // 先删零行（列索引不变）
 	} else {
-		tempMat = p.RemoveZeroCols().(*denseMatrix) // 先删零列（行索引不变）
+		tempMat = p.RemoveZeroCols() // 先删零列（行索引不变）
 	}
 
 	// 第二步：基于第一步结果，移除第二个维度的零元素
@@ -120,16 +120,16 @@ func (p *denseMatrixPruner) Compress(removeRowsFirst bool) Matrix {
 		colMapping:     make(map[int]int),
 		epsilon:        Epsilon,
 	}
-	var finalMat *denseMatrix
+	var finalMat Matrix
 
 	if removeRowsFirst {
 		// 先删零行 → 再删零列
-		finalMat = tempPruner.RemoveZeroCols().(*denseMatrix)
+		finalMat = tempPruner.RemoveZeroCols()
 		// 关键修复：tempMat的列索引 = 原始矩阵的列索引，直接复用tempPruner的列映射
 		p.colMapping = tempPruner.GetColMapping() // 新列 → 原始列（正确映射）
 	} else {
 		// 先删零列 → 再删零行
-		finalMat = tempPruner.RemoveZeroRows().(*denseMatrix)
+		finalMat = tempPruner.RemoveZeroRows()
 		// 复用tempPruner的行映射（tempMat的行索引 = 原始矩阵的行索引）
 		p.rowMapping = tempPruner.GetRowMapping()
 	}
@@ -201,7 +201,7 @@ func NewSparseMatrixPruner(mat *sparseMatrix) MatrixPruner {
 // RemoveZeroRows 移除全零行（利用 rowPtr 高效判断，O(rows + nonZeroCount) 时间）
 func (p *sparseMatrixPruner) RemoveZeroRows() Matrix {
 	if p.originalMatrix == nil {
-		return NewSparseMatrix(0, 0)
+		return nil
 	}
 
 	origRows := p.originalMatrix.rows
@@ -222,6 +222,7 @@ func (p *sparseMatrixPruner) RemoveZeroRows() Matrix {
 	newValues := make([]float64, 0, p.originalMatrix.NonZeroCount())
 
 	// 3. 复制非零行数据，更新 rowPtr
+	dataPtr := p.originalMatrix.DataManager.DataPtr()
 	currentIdx := 0
 	p.rowMapping = make(map[int]int, newRows)
 	for newRow, origRow := range nonZeroRowIndices {
@@ -232,7 +233,7 @@ func (p *sparseMatrixPruner) RemoveZeroRows() Matrix {
 		start := p.originalMatrix.rowPtr[origRow]
 		end := p.originalMatrix.rowPtr[origRow+1]
 		newColInd = append(newColInd, p.originalMatrix.colInd[start:end]...)
-		newValues = append(newValues, p.originalMatrix.values.data[start:end]...)
+		newValues = append(newValues, dataPtr[start:end]...)
 
 		currentIdx += end - start
 	}
@@ -240,11 +241,11 @@ func (p *sparseMatrixPruner) RemoveZeroRows() Matrix {
 
 	// 4. 构建精简后的稀疏矩阵
 	prunedMat := &sparseMatrix{
-		rows:   newRows,
-		cols:   origCols,
-		rowPtr: newRowPtr,
-		colInd: newColInd,
-		values: &DataManager{data: newValues, length: len(newValues)},
+		rows:        newRows,
+		cols:        origCols,
+		rowPtr:      newRowPtr,
+		colInd:      newColInd,
+		DataManager: NewDataManagerWithData(newValues),
 	}
 
 	// 缓存结果，清空列映射（列未变化）
@@ -257,7 +258,7 @@ func (p *sparseMatrixPruner) RemoveZeroRows() Matrix {
 // RemoveZeroCols 移除全零列（先统计列非零数，再筛选非零列）
 func (p *sparseMatrixPruner) RemoveZeroCols() Matrix {
 	if p.originalMatrix == nil {
-		return NewSparseMatrix(0, 0)
+		return nil
 	}
 
 	origRows := p.originalMatrix.rows
@@ -287,9 +288,10 @@ func (p *sparseMatrixPruner) RemoveZeroCols() Matrix {
 
 	// 3. 构建新的 CSR 结构（更新 colInd 为新列索引）
 	newRowPtr := make([]int, origRows+1)
+	dataPtr := p.originalMatrix.DataManager.DataPtr()
 	copy(newRowPtr, p.originalMatrix.rowPtr) // rowPtr 长度不变，值直接复用
 	newColInd := make([]int, len(p.originalMatrix.colInd))
-	newValues := make([]float64, len(p.originalMatrix.values.data))
+	newValues := make([]float64, len(dataPtr))
 
 	// 4. 映射原始列索引到新列索引，复制非零元素
 	for i, origCol := range p.originalMatrix.colInd {
@@ -298,16 +300,16 @@ func (p *sparseMatrixPruner) RemoveZeroCols() Matrix {
 			panic(fmt.Sprintf("invalid column index: %d (should be non-zero column)", origCol))
 		}
 		newColInd[i] = newCol
-		newValues[i] = p.originalMatrix.values.data[i]
+		newValues[i] = dataPtr[i]
 	}
 
 	// 5. 构建精简后的稀疏矩阵
 	prunedMat := &sparseMatrix{
-		rows:   origRows,
-		cols:   newCols,
-		rowPtr: newRowPtr,
-		colInd: newColInd,
-		values: &DataManager{data: newValues, length: len(newValues)},
+		rows:        origRows,
+		cols:        newCols,
+		rowPtr:      newRowPtr,
+		colInd:      newColInd,
+		DataManager: NewDataManagerWithData(newValues),
 	}
 
 	// 缓存结果，清空行映射（行未变化）
@@ -319,7 +321,7 @@ func (p *sparseMatrixPruner) RemoveZeroCols() Matrix {
 // Compress 组合精简（先移除零行/零列，再移除另一维度零元素，保持稀疏特性）
 func (p *sparseMatrixPruner) Compress(removeRowsFirst bool) Matrix {
 	if p.originalMatrix == nil {
-		return NewSparseMatrix(0, 0)
+		return nil
 	}
 
 	var tempMat *sparseMatrix
@@ -356,7 +358,6 @@ func (p *sparseMatrixPruner) Compress(removeRowsFirst bool) Matrix {
 			p.rowMapping[newRow] = originalRow
 		}
 	}
-
 	// 缓存最终结果
 	p.prunedMatrix = finalMat
 	return finalMat

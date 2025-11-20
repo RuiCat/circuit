@@ -2,34 +2,38 @@ package maths
 
 import "fmt"
 
-// DataManager 一维浮点数据管理器（底层存储核心）
+// dataManager 一维浮点数据管理器（底层存储核心）
 // 提供向量/矩阵底层数据的增删改查、扩容等基础操作
-type DataManager struct {
+type dataManager struct {
 	data   []float64 // 底层数据存储切片
 	length int       // 数据长度（与len(data)一致）
 }
 
 // NewDataManager 创建指定长度的空数据管理器
-func NewDataManager(length int) *DataManager {
+func NewDataManager(length int) DataManager {
 	if length < 0 {
 		panic("invalid length: cannot be negative")
 	}
-	return &DataManager{
+	return &dataManager{
 		data:   make([]float64, length),
 		length: length,
 	}
 }
 
 // NewDataManagerWithData 从现有切片创建数据管理器
-func NewDataManagerWithData(data []float64) *DataManager {
-	return &DataManager{
+func NewDataManagerWithData(data []float64) DataManager {
+	return &dataManager{
 		data:   append([]float64(nil), data...), // 深拷贝避免外部修改
 		length: len(data),
 	}
 }
+func (dm *dataManager) Resize(length int) {
+	dm.length = length
+	dm.data = make([]float64, length)
+}
 
 // Set 设置指定索引的值（索引越界会panic）
-func (dm *DataManager) Set(index int, value float64) {
+func (dm *dataManager) Set(index int, value float64) {
 	if index < 0 || index >= dm.length {
 		panic(fmt.Sprintf("index out of range: %d (length: %d)", index, dm.length))
 	}
@@ -37,7 +41,7 @@ func (dm *DataManager) Set(index int, value float64) {
 }
 
 // Get 获取指定索引的值（索引越界会panic）
-func (dm *DataManager) Get(index int) float64 {
+func (dm *dataManager) Get(index int) float64 {
 	if index < 0 || index >= dm.length {
 		panic(fmt.Sprintf("index out of range: %d (length: %d)", index, dm.length))
 	}
@@ -45,7 +49,7 @@ func (dm *DataManager) Get(index int) float64 {
 }
 
 // Increment 增量更新指定索引的值（value累加，索引越界会panic）
-func (dm *DataManager) Increment(index int, value float64) {
+func (dm *dataManager) Increment(index int, value float64) {
 	if index < 0 || index >= dm.length {
 		panic(fmt.Sprintf("index out of range: %d (length: %d)", index, dm.length))
 	}
@@ -53,22 +57,27 @@ func (dm *DataManager) Increment(index int, value float64) {
 }
 
 // Length 返回数据长度
-func (dm *DataManager) Length() int {
+func (dm *dataManager) Length() int {
 	return dm.length
 }
 
 // Data 返回底层数据切片的拷贝（避免外部修改原数据）
-func (dm *DataManager) Data() []float64 {
+func (dm *dataManager) Data() []float64 {
 	return append([]float64(nil), dm.data...)
 }
 
+// DataPtr 返回底层数据切片指针
+func (dm *dataManager) DataPtr() []float64 {
+	return dm.data
+}
+
 // Clear 清空所有数据（设置为0）
-func (dm *DataManager) Clear() {
+func (dm *dataManager) Clear() {
 	clear(dm.data) // 高效置零（Go 1.21+支持）
 }
 
 // ResizeInPlace 调整数据长度（原地扩容/缩容，保留前N个元素）
-func (dm *DataManager) ResizeInPlace(newLength int) {
+func (dm *dataManager) ResizeInPlace(newLength int) {
 	if newLength < 0 {
 		panic("invalid length: cannot be negative")
 	}
@@ -83,7 +92,7 @@ func (dm *DataManager) ResizeInPlace(newLength int) {
 }
 
 // AppendInPlace 追加数据（原地扩展切片）
-func (dm *DataManager) AppendInPlace(values ...float64) {
+func (dm *dataManager) AppendInPlace(values ...float64) {
 	if len(values) == 0 {
 		return
 	}
@@ -96,7 +105,7 @@ func (dm *DataManager) AppendInPlace(values ...float64) {
 }
 
 // InsertInPlace 在指定索引插入数据（原地扩展，索引越界会panic）
-func (dm *DataManager) InsertInPlace(index int, values ...float64) {
+func (dm *dataManager) InsertInPlace(index int, values ...float64) {
 	if index < 0 || index > dm.length {
 		panic(fmt.Sprintf("insert index out of range: %d (length: %d)", index, dm.length))
 	}
@@ -113,7 +122,7 @@ func (dm *DataManager) InsertInPlace(index int, values ...float64) {
 }
 
 // RemoveInPlace 从指定索引删除count个元素（原地缩容，越界会panic）
-func (dm *DataManager) RemoveInPlace(index int, count int) {
+func (dm *dataManager) RemoveInPlace(index int, count int) {
 	if index < 0 || index+count > dm.length {
 		panic(fmt.Sprintf("remove range out of range: index=%d, count=%d (length: %d)", index, count, dm.length))
 	}
@@ -129,7 +138,7 @@ func (dm *DataManager) RemoveInPlace(index int, count int) {
 }
 
 // ReplaceInPlace 替换指定索引开始的元素（越界会panic）
-func (dm *DataManager) ReplaceInPlace(index int, values ...float64) {
+func (dm *dataManager) ReplaceInPlace(index int, values ...float64) {
 	if index < 0 || index+len(values) > dm.length {
 		panic(fmt.Sprintf("replace range out of range: index=%d, count=%d (length: %d)", index, len(values), dm.length))
 	}
@@ -137,27 +146,27 @@ func (dm *DataManager) ReplaceInPlace(index int, values ...float64) {
 }
 
 // FillInPlace 填充所有元素为指定值
-func (dm *DataManager) FillInPlace(value float64) {
+func (dm *dataManager) FillInPlace(value float64) {
 	for i := range dm.data {
 		dm.data[i] = value
 	}
 }
 
 // ZeroInPlace 清空数据（等价于Clear，兼容旧逻辑）
-func (dm *DataManager) ZeroInPlace() {
+func (dm *dataManager) ZeroInPlace() {
 	dm.Clear()
 }
 
-// Copy 复制自身数据到目标DataManager（维度不匹配会panic）
-func (dm *DataManager) Copy(target *DataManager) {
-	if target.length != dm.length {
-		panic(fmt.Sprintf("dimension mismatch: source length=%d, target length=%d", dm.length, target.length))
+// Copy 复制自身数据到目标dataManager（维度不匹配会panic）
+func (dm *dataManager) Copy(target DataManager) {
+	if target.Length() != dm.length {
+		panic(fmt.Sprintf("dimension mismatch: source length=%d, target length=%d", dm.length, target.Length()))
 	}
-	copy(target.data, dm.data)
+	copy(target.DataPtr(), dm.data)
 }
 
 // NonZeroCount 统计非零元素数量（浮点数精度：|x| > 1e-16 视为非零）
-func (dm *DataManager) NonZeroCount() int {
+func (dm *dataManager) NonZeroCount() int {
 	count := 0
 	epsilon := 1e-16
 	for i := 0; i < dm.length; i++ {
@@ -169,7 +178,7 @@ func (dm *DataManager) NonZeroCount() int {
 }
 
 // String 格式化输出数据（保留4位小数）
-func (dm *DataManager) String() string {
+func (dm *dataManager) String() string {
 	result := "["
 	for i := 0; i < dm.length; i++ {
 		result += fmt.Sprintf("%8.4f ", dm.data[i])
@@ -177,10 +186,10 @@ func (dm *DataManager) String() string {
 	return result + "]"
 }
 
-// MatrixDataManager 矩阵数据管理器（基于DataManager实现行优先存储）
+// MatrixDataManager 矩阵数据管理器（基于dataManager实现行优先存储）
 type MatrixDataManager struct {
-	*DataManager     // 嵌入DataManager复用功能
-	rows, cols   int // 矩阵维度（rows行cols列）
+	DataManager     // 嵌入dataManager复用功能
+	rows, cols  int // 矩阵维度（rows行cols列）
 }
 
 // NewMatrixDataManager 创建指定维度的矩阵数据管理器
@@ -295,7 +304,7 @@ func (mdm *MatrixDataManager) BuildFromDense(dense [][]float64) {
 
 // ToDense 转换为稠密切片（行优先展开）
 func (mdm *MatrixDataManager) ToDense() []float64 {
-	return mdm.Data() // 利用DataManager的深拷贝
+	return mdm.DataPtr() // 非拷贝
 }
 
 // String 格式化输出矩阵（每行一行数据）
