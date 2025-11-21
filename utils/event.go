@@ -3,10 +3,14 @@ package utils
 // EventType 注册的事件类型标记
 type EventType uint16
 
+// EventMark 用于区分事件的标记
+type EventMark uint8
+
 // EventValue 事件值
 type EventValue interface {
 	Get() (value any) // 获取值
 	Set(value any)    // 设置值
+	Mark() EventMark  // 标记类型
 	Type() EventType  // 事件类型
 }
 

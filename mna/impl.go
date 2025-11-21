@@ -3,9 +3,6 @@ package mna
 // NodeID 电路节点
 type NodeID int
 
-// ElementType 元件类型
-type ElementType uint
-
 // Gnd 地节点
 const Gnd NodeID = -1
 
@@ -40,7 +37,6 @@ type Element interface {
 
 // ElementConfig 元件配置信息
 type ElementConfig interface {
-	Type() ElementType        // 元件类型
 	Init() *ElementBase       // 得到底层
 	Reset(base *ElementBase)  // 元件值初始化
 	CirLoad(netlist *NetList) // 网表文件写入值
