@@ -5,68 +5,93 @@ import (
 	"circuit/utils"
 )
 
+// 接口回调类型
 const (
-	MarkStartIteration utils.EventMark = iota
-	MarkStamp
-	MarkDoStep
-	MarkCalculateCurrent
-	MarkStepFinished
+	MarkReset            utils.EventMark = iota // 元件重置
+	MarkStartIteration                          // 步长迭代开始
+	MarkStamp                                   // 加盖线性贡献
+	MarkDoStep                                  // 执行仿真
+	MarkCalculateCurrent                        // 电流计算
+	MarkStepFinished                            // 步长迭代结束
+	MarkCirLoad                                 // 网表文件写入值
+	MarkCirExport                               // 网表文件导出值
 )
 
 // ElementValue 元件值
 type ElementValue struct {
 	MNA  mna.MNA
-	Base *mna.ElementBase
+	Base mna.ValueMNA
 }
 
 // Element 元件实现接口
 type Element struct {
-	Config    mna.ElementConfig
-	Element   mna.Element
-	EventType utils.EventType
-	utils.Event
+	EleType utils.EventType
+	Config  mna.ElementConfig
+	Element mna.Element
 }
 
+// Type 元件类型
 func (ele *Element) Type() utils.EventType {
-	return ele.EventType
+	return ele.EleType
 }
+
+// Callback 转发事件
 func (ele *Element) Callback(event utils.EventValue) {
-	val := event.Get().(ElementValue)
-	switch event.Mark() {
-	case MarkStartIteration:
-		ele.Element.StartIteration(val.MNA, val.Base)
-	case MarkStamp:
-		ele.Element.Stamp(val.MNA, val.Base)
-	case MarkDoStep:
-		ele.Element.DoStep(val.MNA, val.Base)
-	case MarkCalculateCurrent:
-		ele.Element.CalculateCurrent(val.MNA, val.Base)
-	case MarkStepFinished:
-		ele.Element.StepFinished(val.MNA, val.Base)
+	if val, ok := event.Get().(ElementValue); ok {
+		switch event.Mark() {
+		case MarkStartIteration:
+			ele.Element.StartIteration(val.MNA, val.Base)
+		case MarkStamp:
+			ele.Element.Stamp(val.MNA, val.Base)
+		case MarkDoStep:
+			ele.Element.DoStep(val.MNA, val.Base)
+		case MarkCalculateCurrent:
+			ele.Element.CalculateCurrent(val.MNA, val.Base)
+		case MarkStepFinished:
+			ele.Element.StepFinished(val.MNA, val.Base)
+		case MarkReset:
+			ele.Config.Reset(val.Base)
+		case MarkCirLoad:
+			ele.Config.CirLoad(val.Base)
+		case MarkCirExport:
+			ele.Config.CirExport(val.Base)
+		}
 	}
 }
+
+// EventValue 创建事件传递值
 func (ele *Element) EventValue() utils.EventValue {
 	return &EventValue{
-		types: ele.EventType,
+		types: ele.EleType,
+		Value: ElementValue{
+			Base: ele.Config.Init(),
+		},
 	}
 }
 
+// EventValue 封装事件传递过程值
 type EventValue struct {
 	types     utils.EventType
 	Value     ElementValue
 	EventMark utils.EventMark
 }
 
-func (val *EventValue) Get() (value any) {
-	return val.Value
+// Type 元件类型
+func (val *EventValue) Type() utils.EventType {
+	return val.types
 }
-func (val *EventValue) Set(value any) {
-	val.Value = value.(ElementValue)
-}
+
+// Mark 事件标记
 func (val *EventValue) Mark() utils.EventMark {
 	return val.EventMark
 }
 
-func (val *EventValue) Type() utils.EventType {
-	return val.types
+// Get 得到值
+func (val *EventValue) Get() (value any) {
+	return val.Value
+}
+
+// Set 设置值
+func (val *EventValue) Set(value any) {
+	val.Value = value.(ElementValue)
 }

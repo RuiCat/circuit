@@ -2,6 +2,51 @@ package mna
 
 import "circuit/maths"
 
+// updateMNA 带更新的矩阵
+type updateMNA struct {
+	MNA
+	A maths.UpdateMatrix // 求解矩阵
+	Z maths.UpdateVector // 已知向量
+	X maths.UpdateVector // 未知向量
+}
+
+// Zero 重置
+func (mna *updateMNA) Zero() {
+	mna.A.Clear()
+	mna.Z.Clear()
+	mna.X.Clear()
+}
+
+// Update 更新数据到底层
+func (mna *updateMNA) Update() {
+	mna.Z.Update()
+	mna.X.Update()
+}
+
+// Rollback 放弃数据
+func (mna *updateMNA) Rollback() {
+	mna.Z.Rollback()
+	mna.X.Rollback()
+}
+
+// NewUpdateMNA 创建更新求解矩阵
+func NewUpdateMNA(NodesNum, VoltageSourcesNum int) UpdateMNA {
+	n := NodesNum + VoltageSourcesNum
+	a, z, x := maths.NewDenseMatrix(n, n), maths.NewDenseVector(n), maths.NewDenseVector(n)
+	return &updateMNA{
+		MNA: &mna{
+			A:                 a,
+			Z:                 z,
+			X:                 x,
+			NodesNum:          NodesNum,
+			VoltageSourcesNum: VoltageSourcesNum,
+		},
+		A: maths.NewUpdateMatrixPtr(a),
+		Z: maths.NewUpdateVectorPtr(z),
+		X: maths.NewUpdateVectorPtr(x),
+	}
+}
+
 // mna 矩阵操作
 // x = A⁻¹z
 type mna struct {
@@ -24,14 +69,28 @@ func NewMNA(NodesNum, VoltageSourcesNum int) MNA {
 	}
 }
 
-func (mna *mna) GetNodesNum() int          { return mna.NodesNum }
+// Zero 重置
+func (mna *mna) Zero() {
+	mna.A.Clear()
+	mna.Z.Clear()
+	mna.X.Clear()
+}
+
+// GetNodesNum 获取电路节点数量
+func (mna *mna) GetNodesNum() int { return mna.NodesNum }
+
+// GetVoltageSourcesNum 获取独立电压源数量
 func (mna *mna) GetVoltageSourcesNum() int { return mna.VoltageSourcesNum }
+
+// GetVoltage 获取节点电压
 func (mna *mna) GetVoltage(i NodeID) float64 {
 	if i == Gnd {
 		return 0
 	}
 	return mna.X.Get(int(i))
 }
+
+// GetCurrent 获取电压源电流
 func (mna *mna) GetCurrent(vs NodeID) float64 {
 	if vs == Gnd {
 		return 0
@@ -39,6 +98,7 @@ func (mna *mna) GetCurrent(vs NodeID) float64 {
 	return mna.X.Get(int(vs) + mna.NodesNum)
 }
 
+// StampMatrix 在矩阵A的(i,j)位置叠加值
 func (mna *mna) StampMatrix(i, j NodeID, value float64) {
 	// Gnd节点(-1)不参与矩阵计算
 	if i == Gnd || j == Gnd {
@@ -47,6 +107,7 @@ func (mna *mna) StampMatrix(i, j NodeID, value float64) {
 	mna.A.Increment(int(i), int(j), value)
 }
 
+// StampMatrixSet 在矩阵A的(i,j)位置设置值
 func (mna *mna) StampMatrixSet(i, j NodeID, v float64) {
 	// Gnd节点(-1)不参与矩阵计算
 	if i == Gnd || j == Gnd {
@@ -55,6 +116,7 @@ func (mna *mna) StampMatrixSet(i, j NodeID, v float64) {
 	mna.A.Set(int(i), int(j), v)
 }
 
+// StampRightSide 在右侧向量B的i位置叠加值
 func (mna *mna) StampRightSide(i NodeID, value float64) {
 	// Gnd节点(-1)不参与矩阵计算
 	if i == Gnd {
@@ -63,6 +125,7 @@ func (mna *mna) StampRightSide(i NodeID, value float64) {
 	mna.Z.Increment(int(i), value)
 }
 
+// StampRightSideSet 在右侧向量B的i位置设置值
 func (mna *mna) StampRightSideSet(i NodeID, v float64) {
 	// Gnd节点(-1)不参与矩阵计算
 	if i == Gnd {
