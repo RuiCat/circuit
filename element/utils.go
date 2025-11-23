@@ -1,0 +1,64 @@
+package element
+
+import (
+	"circuit/mna"
+	"circuit/utils"
+	"fmt"
+)
+
+// GetEventValue 得到底层值
+func GetEventValue(val utils.EventValue) *EventValue {
+	return val.(*EventValue)
+}
+
+// GetElementBase 得到底层
+func GetElementBase(val utils.EventValue) *mna.ElementBase {
+	return (val.(*EventValue)).Value.Base.Base()
+}
+
+// GetElementBase 得到底层
+func GetElementBaseString(val utils.EventValue) string {
+	base := GetElementBase(val)
+	return fmt.Sprintf("Pin:%s Voltage:%s Internal:%s Value:%v Nodes:%v VoltSource:%v NodesInternal:%v", base.Pin, base.Voltage, base.Internal, base.Value,
+		base.Graph.Nodes, base.Graph.VoltSource, base.Graph.NodesInternal)
+}
+
+// SetMNA 设置求解矩阵接口
+func SetMNA(val utils.EventValue, mna mna.MNA) {
+	GetEventValue(val).Value.MNA = mna
+}
+
+// SetNodes 设置节点索引
+func SetNodes(val utils.EventValue, n ...mna.NodeID) {
+	GetElementBase(val).Graph.Nodes = n
+}
+
+// SetVoltSource 设置电压索引
+func SetVoltSource(val utils.EventValue, n ...mna.NodeID) {
+	GetElementBase(val).Graph.VoltSource = n
+}
+
+// SetNodesInternal 设置指定内部索引
+func SetNodesInternal(val utils.EventValue, n ...mna.NodeID) {
+	GetElementBase(val).Graph.NodesInternal = n
+}
+
+// EventSendValue 发送
+func EventSendValue(cxt utils.Context, mark utils.EventMark, list ...utils.EventValue) {
+	for i := range len(list) {
+		// 设置
+		list[i].SetMark(mark)
+		// 传递
+		cxt.EventSendValue(list[i])
+	}
+}
+
+// Callback 调用
+func Callback(cxt utils.Context, mark utils.EventMark, list ...utils.EventValue) {
+	for i := range list {
+		// 设置
+		list[i].SetMark(mark)
+		// 传递
+		cxt.Callback(list[i])
+	}
+}

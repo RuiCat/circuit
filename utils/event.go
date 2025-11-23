@@ -8,10 +8,11 @@ type EventMark uint8
 
 // EventValue 事件值
 type EventValue interface {
-	Get() (value any) // 获取值
-	Set(value any)    // 设置值
-	Mark() EventMark  // 标记类型
-	Type() EventType  // 事件类型
+	Get() (value any)       // 获取值
+	Set(value any)          // 设置值
+	SetMark(mark EventMark) // 设置标记
+	Mark() EventMark        // 标记类型
+	Type() EventType        // 事件类型
 }
 
 // Event 事件接口

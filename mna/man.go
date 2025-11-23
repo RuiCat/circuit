@@ -1,6 +1,9 @@
 package mna
 
-import "circuit/maths"
+import (
+	"circuit/maths"
+	"fmt"
+)
 
 // updateMNA 带更新的矩阵
 type updateMNA struct {
@@ -68,6 +71,9 @@ func NewMNA(NodesNum, VoltageSourcesNum int) MNA {
 		VoltageSourcesNum: VoltageSourcesNum,
 	}
 }
+func (mna *mna) GetA() maths.Matrix { return mna.A }
+func (mna *mna) GetZ() maths.Vector { return mna.Z }
+func (mna *mna) GetX() maths.Vector { return mna.X }
 
 // Zero 重置
 func (mna *mna) Zero() {
@@ -268,5 +274,12 @@ func (mna *mna) StampVCCurrentSource(cn1, cn2, vn1, vn2 NodeID, gain float64) {
 
 // UpdateVoltageSource 更新电压源值
 func (mna *mna) UpdateVoltageSource(vs NodeID, v float64) {
-	mna.StampRightSideSet(NodeID(int(vs)+mna.NodesNum), v)
+	if vs > Gnd {
+		mna.StampRightSideSet(NodeID(int(vs)+mna.NodesNum), v)
+	}
+}
+
+// String 格式化输出
+func (mna *mna) String() string {
+	return fmt.Sprintf("A:\n%s\nX:%s\nZ:%s\n", mna.A, mna.X, mna.Z)
 }

@@ -1,5 +1,7 @@
 package mna
 
+import "circuit/maths"
+
 // NodeID 电路节点
 type NodeID int
 
@@ -8,6 +10,10 @@ const Gnd NodeID = -1
 
 // MNA 矩阵操作
 type MNA interface {
+	String() string                                               // 格式化输出
+	GetA() maths.Matrix                                           // 求解矩阵
+	GetZ() maths.Vector                                           // 已知向量
+	GetX() maths.Vector                                           // 未知向量
 	Zero()                                                        // 重置
 	GetVoltage(i NodeID) float64                                  // 得到节点电压
 	GetCurrent(vs NodeID) float64                                 // 得到电压源电流

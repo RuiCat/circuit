@@ -7,6 +7,27 @@ type Graph struct {
 	NodesInternal []NodeID // 内部索引
 }
 
+// SetNodes 设置指定节点索引
+func (graph *Graph) SetNodes(i int, n NodeID) {
+	if i >= 0 && i < len(graph.Nodes) {
+		graph.Nodes[i] = n
+	}
+}
+
+// SetVoltSource 设置指定电压索引
+func (graph *Graph) SetVoltSource(i int, n NodeID) {
+	if i >= 0 && i < len(graph.VoltSource) {
+		graph.VoltSource[i] = n
+	}
+}
+
+// SetNodesInternal 设置指定内部索引
+func (graph *Graph) SetNodesInternal(i int, n NodeID) {
+	if i >= 0 && i < len(graph.NodesInternal) {
+		graph.NodesInternal[i] = n
+	}
+}
+
 // ElementBase 元件底层数据
 type ElementBase struct {
 	Graph

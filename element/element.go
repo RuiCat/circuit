@@ -61,12 +61,19 @@ func (ele *Element) Callback(event utils.EventValue) {
 
 // EventValue 创建事件传递值
 func (ele *Element) EventValue() utils.EventValue {
-	return &EventValue{
+	// 初始化
+	event := &EventValue{
 		types: ele.EleType,
 		Value: ElementValue{
 			Base: ele.Config.Init(),
 		},
 	}
+	// 初始化引脚
+	base := event.Value.Base.Base()
+	base.Graph.Nodes = make([]mna.NodeID, base.PinNum())
+	base.Graph.VoltSource = make([]mna.NodeID, base.VoltageNum())
+	base.Graph.NodesInternal = make([]mna.NodeID, base.InternalNum())
+	return event
 }
 
 // EventValue 封装事件传递过程值
@@ -84,6 +91,11 @@ func (val *EventValue) Type() utils.EventType {
 // Mark 事件标记
 func (val *EventValue) Mark() utils.EventMark {
 	return val.EventMark
+}
+
+// SetMark 事件标记
+func (val *EventValue) SetMark(mark utils.EventMark) {
+	val.EventMark = mark
 }
 
 // Get 得到值
