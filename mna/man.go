@@ -93,7 +93,7 @@ func (mna *mna) GetVoltage(i NodeID) float64 {
 	if i == Gnd {
 		return 0
 	}
-	return mna.X.Get(int(i))
+	return mna.X.Get(i)
 }
 
 // GetCurrent 获取电压源电流
@@ -101,7 +101,7 @@ func (mna *mna) GetCurrent(vs NodeID) float64 {
 	if vs == Gnd {
 		return 0
 	}
-	return mna.X.Get(int(vs) + mna.NodesNum)
+	return mna.X.Get(vs + mna.NodesNum)
 }
 
 // StampMatrix 在矩阵A的(i,j)位置叠加值
@@ -110,7 +110,7 @@ func (mna *mna) StampMatrix(i, j NodeID, value float64) {
 	if i == Gnd || j == Gnd {
 		return
 	}
-	mna.A.Increment(int(i), int(j), value)
+	mna.A.Increment(i, j, value)
 }
 
 // StampMatrixSet 在矩阵A的(i,j)位置设置值
@@ -119,7 +119,7 @@ func (mna *mna) StampMatrixSet(i, j NodeID, v float64) {
 	if i == Gnd || j == Gnd {
 		return
 	}
-	mna.A.Set(int(i), int(j), v)
+	mna.A.Set(i, j, v)
 }
 
 // StampRightSide 在右侧向量B的i位置叠加值
@@ -128,7 +128,7 @@ func (mna *mna) StampRightSide(i NodeID, value float64) {
 	if i == Gnd {
 		return
 	}
-	mna.Z.Increment(int(i), value)
+	mna.Z.Increment(i, value)
 }
 
 // StampRightSideSet 在右侧向量B的i位置设置值
@@ -137,7 +137,7 @@ func (mna *mna) StampRightSideSet(i NodeID, v float64) {
 	if i == Gnd {
 		return
 	}
-	mna.Z.Set(int(i), v)
+	mna.Z.Set(i, v)
 }
 
 // StampResistor 加盖电阻元件
@@ -199,7 +199,7 @@ func (mna *mna) StampCurrentSource(n1, n2 NodeID, i float64) {
 // - 右侧向量：电压源值在对应位置
 func (mna *mna) StampVoltageSource(n1, n2 NodeID, vs NodeID, v float64) {
 	// 电压源在矩阵中的位置
-	vsRow := NodeID(int(vs) + mna.NodesNum) // 电压源在矩阵下半部分
+	vsRow := vs + mna.NodesNum // 电压源在矩阵下半部分
 	// B矩阵部分：电压源对节点电流的贡献
 	if n1 != Gnd {
 		mna.StampMatrix(n1, vsRow, 1.0)
@@ -218,7 +218,7 @@ func (mna *mna) StampVoltageSource(n1, n2 NodeID, vs NodeID, v float64) {
 // (v_N+ - v_N-) = coef * (v_NC+ - v_NC-)
 func (mna *mna) StampVCVS(n1, n2 NodeID, vs NodeID, coef float64) {
 	// 电压源在矩阵中的位置
-	vsRow := NodeID(int(vs) + mna.NodesNum)
+	vsRow := vs + mna.NodesNum
 	// B矩阵部分
 	if n1 != Gnd {
 		mna.StampMatrix(n1, vsRow, 1.0)
@@ -238,7 +238,7 @@ func (mna *mna) StampVCVS(n1, n2 NodeID, vs NodeID, coef float64) {
 // 输出电流 = gain * 控制电流
 func (mna *mna) StampCCCS(n1, n2 NodeID, vs NodeID, gain float64) {
 	// 控制电压源在矩阵中的位置
-	vsCol := NodeID(int(vs) + mna.NodesNum)
+	vsCol := vs + mna.NodesNum
 	// 在B矩阵中修改控制电压源对应的列
 	if n1 != Gnd {
 		mna.StampMatrix(n1, vsCol, gain)
@@ -275,7 +275,7 @@ func (mna *mna) StampVCCurrentSource(cn1, cn2, vn1, vn2 NodeID, gain float64) {
 // UpdateVoltageSource 更新电压源值
 func (mna *mna) UpdateVoltageSource(vs NodeID, v float64) {
 	if vs > Gnd {
-		mna.StampRightSideSet(NodeID(int(vs)+mna.NodesNum), v)
+		mna.StampRightSideSet(NodeID(v)+mna.NodesNum, v)
 	}
 }
 

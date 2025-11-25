@@ -18,8 +18,9 @@ func GetElementBase(val utils.EventValue) *mna.ElementBase {
 
 // GetElementBase 得到底层
 func GetElementBaseString(val utils.EventValue) string {
-	base := GetElementBase(val)
-	return fmt.Sprintf("Pin:%s Voltage:%s Internal:%s Value:%v Nodes:%v VoltSource:%v NodesInternal:%v", base.Pin, base.Voltage, base.Internal, base.Value,
+	value := GetEventValue(val).Value.Base
+	base := value.Base()
+	return fmt.Sprintf("Pin:%s Voltage:%s Internal:%s Value:%v Nodes:%v VoltSource:%v NodesInternal:%v", base.Pin, base.Voltage, base.Internal, base.ElementConfigBase.Value,
 		base.Graph.Nodes, base.Graph.VoltSource, base.Graph.NodesInternal)
 }
 

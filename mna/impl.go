@@ -3,7 +3,7 @@ package mna
 import "circuit/maths"
 
 // NodeID 电路节点
-type NodeID int
+type NodeID = int
 
 // Gnd 地节点
 const Gnd NodeID = -1
@@ -79,6 +79,7 @@ type Element interface {
 
 // ElementConfig 元件配置信息
 type ElementConfig interface {
+	New()                // 元件创建
 	Init() ValueMNA      // 得到底层
 	Reset(base ValueMNA) // 元件值初始化
 	CirLoad(ValueMNA)    // 网表文件写入值

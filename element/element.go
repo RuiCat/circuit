@@ -30,6 +30,15 @@ type Element struct {
 	Element mna.Element
 }
 
+// NewElement 创建
+func NewElement(t utils.EventType, ele interface {
+	mna.ElementConfig
+	mna.Element
+}) *Element {
+	ele.New()
+	return &Element{EleType: t, Config: ele, Element: ele}
+}
+
 // Type 元件类型
 func (ele *Element) Type() utils.EventType {
 	return ele.EleType
@@ -70,9 +79,10 @@ func (ele *Element) EventValue() utils.EventValue {
 	}
 	// 初始化引脚
 	base := event.Value.Base.Base()
-	base.Graph.Nodes = make([]mna.NodeID, base.PinNum())
-	base.Graph.VoltSource = make([]mna.NodeID, base.VoltageNum())
-	base.Graph.NodesInternal = make([]mna.NodeID, base.InternalNum())
+	config := base.ElementConfigBase
+	base.Graph.Nodes = make([]mna.NodeID, config.PinNum())
+	base.Graph.VoltSource = make([]mna.NodeID, config.VoltageNum())
+	base.Graph.NodesInternal = make([]mna.NodeID, config.InternalNum())
 	return event
 }
 
