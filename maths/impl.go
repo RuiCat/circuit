@@ -19,7 +19,7 @@ type DataManager interface {
 	DataPtr() []float64 // 返回数据的切片引用（直接操作底层数据）
 
 	// 数据修改方法
-	Clear()                                      // 清空所有数据
+	Zero()                                       // 清空所有数据
 	ZeroInPlace()                                // 原地将所有元素设置为零
 	FillInPlace(value float64)                   // 原地填充所有元素为指定值
 	AppendInPlace(values ...float64)             // 原地追加元素（不创建新对象）
@@ -52,7 +52,7 @@ type Vector interface {
 	BuildFromDense(dense []float64) // 从稠密切片构建向量
 
 	// 数据修改方法
-	Clear()        // 清空向量为零向量
+	Zero()         // 清空向量为零向量
 	Copy(a Vector) // 复制自身数据到目标向量a
 
 	// 数学运算方法
@@ -90,7 +90,7 @@ type Matrix interface {
 	BuildFromDense(dense [][]float64) // 从稠密矩阵构建
 
 	// 数据修改方法
-	Clear()                // 清空矩阵为零矩阵
+	Zero()                 // 清空矩阵为零矩阵
 	Copy(a Matrix)         // 复制自身数据到目标矩阵a
 	Resize(rows, cols int) // 重置矩阵大小和数据（清空所有元素）
 

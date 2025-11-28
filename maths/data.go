@@ -71,8 +71,8 @@ func (dm *dataManager) DataPtr() []float64 {
 	return dm.data
 }
 
-// Clear 清空所有数据（设置为0）
-func (dm *dataManager) Clear() {
+// Zero 清空所有数据（设置为0）
+func (dm *dataManager) Zero() {
 	clear(dm.data) // 高效置零（Go 1.21+支持）
 }
 
@@ -154,7 +154,7 @@ func (dm *dataManager) FillInPlace(value float64) {
 
 // ZeroInPlace 清空数据（等价于Clear，兼容旧逻辑）
 func (dm *dataManager) ZeroInPlace() {
-	dm.Clear()
+	dm.Zero()
 }
 
 // Copy 复制自身数据到目标dataManager（维度不匹配会panic）

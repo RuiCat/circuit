@@ -22,9 +22,9 @@ func (m *denseMatrix) BuildFromDense(dense [][]float64) {
 	m.MatrixDataManager.BuildFromDense(dense)
 }
 
-// Clear 清空矩阵为零矩阵
-func (m *denseMatrix) Clear() {
-	m.MatrixDataManager.Clear()
+// Zero 清空矩阵为零矩阵
+func (m *denseMatrix) Zero() {
+	m.MatrixDataManager.Zero()
 }
 
 // Cols 返回矩阵列数
@@ -320,7 +320,7 @@ func (m *sparseMatrix) BuildFromDense(dense [][]float64) {
 	}
 	// 重置所有数据
 	m.colInd = m.colInd[:0]
-	m.DataManager.Clear()
+	m.DataManager.Zero()
 	clear(m.rowPtr)
 
 	count := 0
@@ -372,10 +372,10 @@ func (m *sparseMatrix) MatrixVectorMultiply(x Vector) Vector {
 	return result
 }
 
-// Clear 清空矩阵为零矩阵（释放非零元素内存）
-func (m *sparseMatrix) Clear() {
+// Zero 清空矩阵为零矩阵（释放非零元素内存）
+func (m *sparseMatrix) Zero() {
 	m.colInd = m.colInd[:0]
-	m.DataManager.Clear()
+	m.DataManager.Zero()
 	m.DataManager.ResizeInPlace(0) // 释放值切片内存
 	clear(m.rowPtr)
 }

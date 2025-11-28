@@ -32,9 +32,9 @@ func (v *denseVector) BuildFromDense(dense []float64) {
 	v.ReplaceInPlace(0, dense...)
 }
 
-// Clear 清空向量为零向量
-func (v *denseVector) Clear() {
-	v.DataManager.Clear()
+// Zero 清空向量为零向量
+func (v *denseVector) Zero() {
+	v.DataManager.Zero()
 }
 
 // Copy 复制自身数据到目标向量（支持稠密/其他向量类型）
@@ -238,9 +238,9 @@ func (uv *updateVector) BuildFromDense(dense []float64) {
 	uv.Rollback() // 构建后清空缓存
 }
 
-// Clear 清空向量（底层+缓存均置0，清空位图）
-func (uv *updateVector) Clear() {
-	uv.Vector.Clear()
+// Zero 清空向量（底层+缓存均置0，清空位图）
+func (uv *updateVector) Zero() {
+	uv.Vector.Zero()
 	uv.Rollback()
 }
 

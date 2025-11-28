@@ -152,9 +152,9 @@ func (um *updateMatrix) BuildFromDense(dense [][]float64) {
 	um.Rollback()
 }
 
-// Clear 清空矩阵（底层+缓存均置0，清空位图）
-func (um *updateMatrix) Clear() {
-	um.Matrix.Clear()
+// Zero 清空矩阵（底层+缓存均置0，清空位图）
+func (um *updateMatrix) Zero() {
+	um.Matrix.Zero()
 	um.Rollback()
 }
 

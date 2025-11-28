@@ -11,6 +11,24 @@ func GetEventValue(val utils.EventValue) *EventValue {
 	return val.(*EventValue)
 }
 
+// GetNum 得到节点数量
+func GetNum(lise []utils.EventValue) (NodesNum, VoltageSourcesNum int) {
+	nodesNum, voltageSourcesNum := make(map[mna.NodeID]struct{}), make(map[mna.NodeID]struct{})
+	for i := range len(lise) {
+		base := GetEventValue(lise[i]).Value.Base.Base().Graph
+		for _, i := range base.Nodes {
+			nodesNum[i] = struct{}{}
+		}
+		for _, i := range base.NodesInternal {
+			nodesNum[i] = struct{}{}
+		}
+		for _, i := range base.VoltSource {
+			voltageSourcesNum[i] = struct{}{}
+		}
+	}
+	return len(nodesNum) - 1, len(voltageSourcesNum)
+}
+
 // GetElementBase 得到底层
 func GetElementBase(val utils.EventValue) *mna.ElementBase {
 	return (val.(*EventValue)).Value.Base.Base()
