@@ -23,6 +23,11 @@ type ElementValue struct {
 	Base mna.ValueMNA
 }
 
+// ElementBase 得到底层
+func (ele *ElementValue) ElementBase() *mna.ElementBase {
+	return ele.Base.Base()
+}
+
 // Element 元件实现接口
 type Element struct {
 	EleType utils.EventType
@@ -71,19 +76,12 @@ func (ele *Element) Callback(event utils.EventValue) {
 // EventValue 创建事件传递值
 func (ele *Element) EventValue() utils.EventValue {
 	// 初始化
-	event := &EventValue{
+	return &EventValue{
 		types: ele.EleType,
 		Value: ElementValue{
 			Base: ele.Config.Init(),
 		},
 	}
-	// 初始化引脚
-	base := event.Value.Base.Base()
-	config := base.ElementConfigBase
-	base.Graph.Nodes = make([]mna.NodeID, config.PinNum())
-	base.Graph.VoltSource = make([]mna.NodeID, config.VoltageNum())
-	base.Graph.NodesInternal = make([]mna.NodeID, config.InternalNum())
-	return event
 }
 
 // EventValue 封装事件传递过程值

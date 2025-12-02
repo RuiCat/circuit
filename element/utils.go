@@ -31,7 +31,7 @@ func GetNum(lise []utils.EventValue) (NodesNum, VoltageSourcesNum int) {
 
 // GetElementBase 得到底层
 func GetElementBase(val utils.EventValue) *mna.ElementBase {
-	return (val.(*EventValue)).Value.Base.Base()
+	return (val.(*EventValue)).Value.ElementBase()
 }
 
 // GetElementBase 得到底层
@@ -79,5 +79,21 @@ func Callback(cxt utils.Context, mark utils.EventMark, list ...utils.EventValue)
 		list[i].SetMark(mark)
 		// 传递
 		cxt.Callback(list[i])
+	}
+}
+
+// Update 更新数据到底层
+func UpdateElements(mna mna.UpdateMNA, ele []utils.EventValue) {
+	mna.UpdateX()
+	for i := range ele {
+		GetElementBase(ele[i]).Update()
+	}
+}
+
+// Rollback 放弃数据
+func RollbackElements(mna mna.UpdateMNA, ele []utils.EventValue) {
+	mna.RollbackX()
+	for i := range ele {
+		GetElementBase(ele[i]).Rollback()
 	}
 }

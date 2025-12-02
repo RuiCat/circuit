@@ -39,6 +39,7 @@ type DataManager interface {
 // 向量接口定义（统一方法名为Len()，符合Go语言惯例）
 type Vector interface {
 	// 基础属性方法
+	Base() Vector   // 获取底层
 	Length() int    // 获取向量长度
 	String() string // 格式化字符串输出
 
@@ -74,6 +75,7 @@ type UpdateVector interface {
 // 矩阵接口定义（补充ToDense()实现说明）
 type Matrix interface {
 	// 基础属性方法
+	Base() Matrix   // 获取底层
 	Rows() int      // 获取矩阵行数
 	Cols() int      // 获取矩阵列数
 	String() string // 格式化字符串输出

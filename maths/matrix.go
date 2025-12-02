@@ -10,6 +10,11 @@ type denseMatrix struct {
 	*MatrixDataManager // 嵌入矩阵数据管理器复用功能
 }
 
+// Base 获取底层
+func (m *denseMatrix) Base() Matrix {
+	return m
+}
+
 // NewDenseMatrix 创建指定维度的空稠密矩阵
 func NewDenseMatrix(rows, cols int) Matrix {
 	return &denseMatrix{
@@ -136,6 +141,11 @@ type sparseMatrix struct {
 	rows, cols  int   // 矩阵维度
 	rowPtr      []int // 行指针：rowPtr[i] = 第i行非零元素在colInd/values中的起始索引
 	colInd      []int // 列索引：存储非零元素的列号
+}
+
+// Base 获取底层
+func (m *sparseMatrix) Base() Matrix {
+	return m
 }
 
 // NewSparseMatrix 创建指定维度的空稀疏矩阵

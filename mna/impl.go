@@ -1,6 +1,8 @@
 package mna
 
-import "circuit/maths"
+import (
+	"circuit/maths"
+)
 
 // NodeID 电路节点
 type NodeID = int
@@ -9,7 +11,7 @@ type NodeID = int
 const Gnd NodeID = -1
 
 // MNA 接口定义了改进节点分析法(Modified Nodal Analysis)的核心操作，
-// 用于构建电路的MNA矩阵和向量，并实现各类电路元件的"加盖"(Stamp)操作，最终求解 Ax=Z 得到节点电压和支路电流。
+// 用于构建电路的MNA矩阵和向量，并实现各类电路元件的"加盖"(MNA)操作，最终求解 Ax=Z 得到节点电压和支路电流。
 type MNA interface {
 	// String 格式化输出MNA的矩阵A、向量Z和X的完整信息，便于调试和日志打印
 	String() string
@@ -59,7 +61,7 @@ type MNA interface {
 	// 数学模型: 矩阵对角元(n1,n1)和(n2,n2)加G，非对角元(n1,n2)和(n2,n1)减G
 	// 参数n1: 电导的第一个节点ID
 	// 参数n2: 电导的第二个节点ID
-	// 参数g: 电导的电导值（单位：西门子）
+	// 参数g: 电导的电导值
 	StampConductance(n1, n2 NodeID, g float64)
 	// StampCurrentSource 对独立电流源执行MNA加盖操作，将电流贡献写入右侧向量Z
 	// 数学模型: 电流从n1流出、流入n2，向量Z的n1位置减i，n2位置加i
@@ -94,24 +96,26 @@ type MNA interface {
 	// 数学模型: V(on1)-V(on2) = gain × I(control)，通过扩展行和列写入矩阵A
 	// 参数on1: CCVS输出电压的正极节点ID
 	// 参数on2: CCVS输出电压的负极节点ID
-	// 参数cn1: CCVS控制电流的流出节点ID
-	// 参数cn2: CCVS控制电流的流入节点ID
 	// 参数cs: 控制电流对应的电压源/受控源ID（对应MNA扩展未知量的索引）
 	// 参数vs: CCVS的唯一ID（对应MNA扩展未知量的索引）
 	// 参数gain: CCVS的传输增益（单位：欧姆）
-	StampCCVS(on1 NodeID, on2 NodeID, cn1 NodeID, cn2 NodeID, cs NodeID, vs NodeID, gain float64)
+	StampCCVS(on1 NodeID, on2 NodeID, cs NodeID, vs NodeID, gain float64)
 	// StampVCCS 对电压控制电流源(VCCS)执行MNA加盖操作，实现受控源的电流约束
 	// 数学模型: I(out) = gain × (V(vn1)-V(vn2))，直接将电导贡献写入矩阵A的节点行
 	// 参数cn1: VCCS输出电流的流出节点ID
 	// 参数cn2: VCCS输出电流的流入节点ID
 	// 参数vn1: VCCS控制电压的正极节点ID
 	// 参数vn2: VCCS控制电压的负极节点ID
-	// 参数gain: VCCS的跨导增益（单位：西门子）
+	// 参数gain: VCCS的跨导增益
 	StampVCCS(cn1 NodeID, cn2 NodeID, vn1 NodeID, vn2 NodeID, gain float64)
 	// UpdateVoltageSource 更新指定电压源/受控源的电压值，仅修改右侧向量Z的对应位置
 	// 参数vs: 电压源/受控源的唯一ID（对应MNA扩展未知量的索引）
 	// 参数v: 新的电压值（单位：伏特）
 	UpdateVoltageSource(vs NodeID, v float64)
+	// IncrementVoltageSource 叠加指定电压源/受控源的电压值，仅修改右侧向量Z的对应位置
+	// 参数vs: 电压源/受控源的唯一ID（对应MNA扩展未知量的索引）
+	// 参数v: 叠加电压值（单位：伏特）
+	IncrementVoltageSource(vs NodeID, v float64)
 }
 
 // TimeMNA 仿真时间
@@ -146,9 +150,10 @@ type ValueMNA interface {
 // UpdateMNA 矩阵操作
 type UpdateMNA interface {
 	MNA
-	Update()      // 缓存数据刷到底层存储
-	UpdateStamp() // 更新线性数据
-	Rollback()    // 回溯操作（清空缓存，放弃修改）
+	Update()    // 更新 A,Z 内容
+	Rollback()  // 回溯操作 将 A,Z 内容还原
+	UpdateX()   // 更新 X 内容
+	RollbackX() // 回溯操作 将 X 内容还原
 }
 
 // Element 元件实现

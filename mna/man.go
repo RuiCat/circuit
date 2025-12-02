@@ -23,37 +23,43 @@ func (mna *updateMNA) Zero() {
 
 // Update 更新数据到底层
 func (mna *updateMNA) Update() {
-	mna.X.Update()
-	mna.A.Rollback()
-	mna.Z.Rollback()
-}
-
-// UpdateStamp 更新线性数据
-func (mna *updateMNA) UpdateStamp() {
 	mna.A.Update()
 	mna.Z.Update()
 }
 
 // Rollback 放弃数据
 func (mna *updateMNA) Rollback() {
+	mna.A.Rollback()
+	mna.Z.Rollback()
+}
+
+// Update 更新数据到底层
+func (mna *updateMNA) UpdateX() {
+	mna.X.Update()
+}
+
+// RollbackX 放弃数据
+func (mna *updateMNA) RollbackX() {
 	mna.X.Rollback()
 }
 
 // NewUpdateMNA 创建更新求解矩阵
 func NewUpdateMNA(NodesNum, VoltageSourcesNum int) UpdateMNA {
 	n := NodesNum + VoltageSourcesNum
-	a, z, x := maths.NewDenseMatrix(n, n), maths.NewDenseVector(n), maths.NewDenseVector(n)
+	A := maths.NewUpdateMatrixPtr(maths.NewDenseMatrix(n, n))
+	Z := maths.NewUpdateVectorPtr(maths.NewDenseVector(n))
+	X := maths.NewUpdateVectorPtr(maths.NewDenseVector(n))
 	return &updateMNA{
 		MNA: &mna{
-			A:                 a,
-			Z:                 z,
-			X:                 x,
+			A:                 A,
+			Z:                 Z,
+			X:                 X,
 			NodesNum:          NodesNum,
 			VoltageSourcesNum: VoltageSourcesNum,
 		},
-		A: maths.NewUpdateMatrixPtr(a),
-		Z: maths.NewUpdateVectorPtr(z),
-		X: maths.NewUpdateVectorPtr(x),
+		A: A,
+		Z: Z,
+		X: X,
 	}
 }
 
@@ -232,10 +238,9 @@ func (m *mna) StampVCVS(on1, on2, cn1, cn2, vs NodeID, gain float64) {
 
 // StampCCVS 加盖电流控制电压源 (CCVS)
 // on1: 输出电压正端, on2: 输出电压负端
-// cn1: 控制电流正端, cn2: 控制电流负端
 // cs: 控制电流源ID, vs: 受控源ID（扩展未知量）
 // gain: 传输增益G (V(on1)-V(on2) = G*I_cs)
-func (m *mna) StampCCVS(on1, on2, cn1, cn2, cs, vs NodeID, gain float64) {
+func (m *mna) StampCCVS(on1, on2, cs, vs NodeID, gain float64) {
 	vsRow := NodeID(int(vs) + m.NodesNum) // 受控源对应矩阵行
 	csCol := NodeID(int(cs) + m.NodesNum) // 控制电流对应矩阵列
 	// 节点电流方程：I(vs) 对 on1/on2 的贡献
@@ -254,6 +259,12 @@ func (m *mna) StampCCVS(on1, on2, cn1, cn2, cs, vs NodeID, gain float64) {
 func (m *mna) UpdateVoltageSource(vs NodeID, v float64) {
 	vsRow := NodeID(int(vs) + m.NodesNum)
 	m.StampRightSideSet(vsRow, v)
+}
+
+// IncrementVoltageSource 叠加电压源（独立/受控）的电压值
+func (m *mna) IncrementVoltageSource(vs NodeID, v float64) {
+	vsRow := NodeID(int(vs) + m.NodesNum)
+	m.StampRightSide(vsRow, v)
 }
 
 // String MNA信息格式化输出

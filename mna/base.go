@@ -106,6 +106,27 @@ type ElementBase struct {
 	TimeMNA            // 迭代时间
 }
 
+// NewElementBase 创建底层元件
+func NewElementBase(confige *ElementConfigBase) (base *ElementBase) {
+	base = &ElementBase{
+		ElementConfigBase: confige,
+		Graph: Graph{
+			Nodes:         make([]NodeID, confige.PinNum()),
+			VoltSource:    make([]NodeID, confige.VoltageNum()),
+			NodesInternal: make([]NodeID, confige.InternalNum()),
+		},
+	}
+	// 初始化默认数据
+	base.Graph.Value = make([]any, len(confige.Value))
+	copy(base.Graph.Value, confige.Value)
+	// 初始化默认记录
+	base.Graph.OrigValue = make(map[int]any)
+	for _, n := range confige.OrigValue {
+		base.Graph.OrigValue[n] = base.Graph.Value[n]
+	}
+	return base
+}
+
 // Nodes 节点索引
 func (base *ElementBase) Nodes(i int) NodeID {
 	return base.Graph.Nodes[i]

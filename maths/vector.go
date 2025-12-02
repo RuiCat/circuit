@@ -10,6 +10,11 @@ type denseVector struct {
 	DataManager // 嵌入DataManager复用功能
 }
 
+// Base 获取底层
+func (v *denseVector) Base() Vector {
+	return v
+}
+
 // NewDenseVector 创建指定长度的空稠密向量
 func NewDenseVector(length int) Vector {
 	return &denseVector{
