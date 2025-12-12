@@ -111,6 +111,14 @@ func (m *mna) GetNodeVoltage(i NodeID) float64 {
 	return m.X.Get(int(i))
 }
 
+// GetNodeCurrent 获取电压源电流
+func (m *mna) GetNodeCurrent(i NodeID) float64 {
+	if i < 0 || int(i) >= m.VoltageSourcesNum {
+		return 0 // 超出节点范围返回0
+	}
+	return m.X.Get(m.NodesNum + int(i))
+}
+
 // GetVoltageSourceCurrent 获取电压源/受控源的电流（扩展未知量）
 func (m *mna) GetVoltageSourceCurrent(vs NodeID) float64 {
 	idx := int(vs) + m.NodesNum

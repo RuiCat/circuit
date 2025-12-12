@@ -26,6 +26,9 @@ type MNA interface {
 	// GetNodeVoltage 获取指定节点的电压值，地节点(Gnd)返回0
 	// 参数i: 目标节点的ID（NodeID类型）
 	GetNodeVoltage(i NodeID) float64
+	// GetNodeCurrent 获取指定电压源的电流值，地节点(Gnd)返回0
+	// 参数i: 目标节点的ID（NodeID类型）
+	GetNodeCurrent(i NodeID) float64
 	// GetVoltageSourceCurrent 获取指定电压源/受控源的支路电流值，地节点(Gnd)返回0
 	// 参数vs: 电压源/受控源的ID（NodeID类型），对应解向量X中节点数后的扩展未知量位置
 	GetVoltageSourceCurrent(vs NodeID) float64

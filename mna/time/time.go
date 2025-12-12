@@ -537,7 +537,7 @@ func (t *TimeMNA) CalculateMNAResidual(mnaSolver mna.MNA) error {
 	// 计算残差向量 R = A*X - Z 和解向量范数（合并循环优化）
 	t.solutionNorm = 0.0
 	t.residualNorm = 0.0
-	for i := 0; i < n; i++ {
+	for i := range n {
 		xVal := X.Get(i)
 		t.solutionNorm += xVal * xVal
 		residual := AX.Get(i) - Z.Get(i)
@@ -682,7 +682,8 @@ func (t *TimeMNA) initializeIfNeeded(mnaSolver mna.MNA, derFunc DerivativeFunc) 
 	xVec := mnaSolver.GetX()
 	initialState := make([]float64, xVec.Length())
 	validCount := 0
-	for i := 0; i < xVec.Length(); i++ {
+	le := xVec.Length()
+	for i := range le {
 		val := xVec.Get(i)
 		if !math.IsNaN(val) && !math.IsInf(val, 0) {
 			initialState[i] = val

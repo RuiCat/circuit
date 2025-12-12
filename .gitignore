@@ -32,6 +32,6 @@ go.work.sum
 # .vscode/
 cmd/*.txt
 cmd/client
-v1
 test
-base
+go.mod
+go.sum
