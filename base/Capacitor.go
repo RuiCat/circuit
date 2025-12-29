@@ -1,6 +1,8 @@
 package base
 
-import "circuit/mna"
+import (
+	"circuit/mna"
+)
 
 // Capacitor 电容
 type Capacitor struct{ Base }
@@ -8,7 +10,7 @@ type Capacitor struct{ Base }
 func (capacitor *Capacitor) New() {
 	capacitor.ElementConfigBase = &mna.ElementConfigBase{
 		Pin:       []string{"c1", "c2"},
-		Value:     []any{float64(1e-6), 0.0, 0.0, 0.0, 0.0}, // 0:C 1:G_eq 2:I_hist 3:V_diff 4:I_cap
+		ValueInit: []any{float64(1e-6), 0.0, 0.0, 0.0, 0.0}, // 0:C 1:G_eq 2:I_hist 3:V_diff 4:I_cap
 		Current:   []int{4},
 		OrigValue: []int{1, 2, 3, 4},
 	}
@@ -16,6 +18,7 @@ func (capacitor *Capacitor) New() {
 func (capacitor *Capacitor) Init() mna.ValueMNA {
 	return mna.NewElementBase(capacitor.ElementConfigBase)
 }
+
 func (Capacitor) StartIteration(mna mna.MNA, base mna.ValueMNA) {
 	dt := base.TimeStep()
 	c := base.GetFloat64(0)

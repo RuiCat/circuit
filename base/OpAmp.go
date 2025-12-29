@@ -17,7 +17,7 @@ type OpAmp struct{ Base }
 func (opamp *OpAmp) New() {
 	opamp.ElementConfigBase = &mna.ElementConfigBase{
 		Pin: []string{"Vp", "Vn", "Vout"}, // 引脚：同相、反相、输出
-		Value: []any{
+		ValueInit: []any{
 			float64(15),  // 0: Vmax 正最大输出摆幅
 			float64(-15), // 1: Vmin 负最大输出摆幅
 			float64(1e5), // 2: G 开环增益（典型值）

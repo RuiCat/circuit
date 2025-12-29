@@ -7,8 +7,8 @@ type CurrentSource struct{ Base }
 
 func (currentSource *CurrentSource) New() {
 	currentSource.ElementConfigBase = &mna.ElementConfigBase{
-		Pin:   []string{"i+", "i-"},
-		Value: []any{float64(0.01)}, // 基础电流: 0:0.01A
+		Pin:       []string{"i+", "i-"},
+		ValueInit: []any{float64(0.01)}, // 基础电流: 0:0.01A
 	}
 }
 func (currentSource *CurrentSource) Init() mna.ValueMNA {

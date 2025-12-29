@@ -3,7 +3,7 @@ package mna
 // ElementConfigBase 基础配置
 type ElementConfigBase struct {
 	Pin       []string // 引脚名称
-	Value     []any    // 初始化数据
+	ValueInit []any    // 初始化数据
 	Current   []int    // 电流数据索引
 	OrigValue []int    // 数据备份索引
 	Voltage   []string // 电压源名称
@@ -20,7 +20,7 @@ func (base *ElementConfigBase) VoltageNum() int { return len(base.Voltage) }
 func (base *ElementConfigBase) InternalNum() int { return len(base.Internal) }
 
 // ValueNum 元件数据
-func (base *ElementConfigBase) ValueNum() int { return len(base.Value) }
+func (base *ElementConfigBase) ValueNum() int { return len(base.ValueInit) }
 
 // Graph 解析用数据
 type Graph struct {
@@ -117,8 +117,8 @@ func NewElementBase(confige *ElementConfigBase) (base *ElementBase) {
 		},
 	}
 	// 初始化默认数据
-	base.Graph.Value = make([]any, len(confige.Value))
-	copy(base.Graph.Value, confige.Value)
+	base.Graph.Value = make([]any, len(confige.ValueInit))
+	copy(base.Graph.Value, confige.ValueInit)
 	// 初始化默认记录
 	base.Graph.OrigValue = make(map[int]any)
 	for _, n := range confige.OrigValue {

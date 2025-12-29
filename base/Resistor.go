@@ -1,14 +1,16 @@
 package base
 
-import "circuit/mna"
+import (
+	"circuit/mna"
+)
 
 // Resistor 电阻
 type Resistor struct{ Base }
 
 func (resistor *Resistor) New() {
 	resistor.ElementConfigBase = &mna.ElementConfigBase{
-		Pin:   []string{"r1", "r2"},
-		Value: []any{float64(10000)}, // 基础电阻: 0:10kΩ
+		Pin:       []string{"r1", "r2"},
+		ValueInit: []any{float64(10000)}, // 基础电阻: 0:10kΩ
 	}
 }
 func (resistor *Resistor) Init() mna.ValueMNA {

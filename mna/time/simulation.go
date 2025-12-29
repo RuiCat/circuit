@@ -31,6 +31,7 @@ func TransientSimulation(cxt utils.Context, timeMNA *TimeMNA, mnaSolver mna.Upda
 	needLinearStamp := true
 	// 初始化所有元件状态
 	element.Callback(cxt, element.MarkReset, circuitElements...)
+	element.UpdateElements(mnaSolver, circuitElements)
 	// 主时间迭代循环
 	timeMNA.ResetTimeStepCount()
 	for !timeMNA.IsSimulationFinished() {
