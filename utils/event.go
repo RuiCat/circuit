@@ -6,6 +6,18 @@ type EventType uint16
 // EventMark 用于区分事件的标记
 type EventMark uint8
 
+// 接口回调类型
+const (
+	MarkReset            EventMark = iota // 元件重置
+	MarkStartIteration                    // 步长迭代开始
+	MarkStamp                             // 加盖线性贡献
+	MarkDoStep                            // 执行仿真
+	MarkCalculateCurrent                  // 电流计算
+	MarkStepFinished                      // 步长迭代结束
+	MarkCirLoad                           // 网表文件写入值
+	MarkCirExport                         // 网表文件导出值
+)
+
 // EventValue 事件值
 type EventValue interface {
 	Get() (value any)       // 获取值

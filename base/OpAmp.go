@@ -53,7 +53,7 @@ func (OpAmp) DoStep(mna mna.MNA, base mna.ValueMNA) {
 	out := base.GetFloat64(3)               // 输出电压
 	// 计算输入电压差
 	vd := vp - vn
-
+	vdabs := math.Abs(vd)
 	// 优化：动态计算增益，基于开环增益和电压差
 	// 使用开环增益G，但限制最大增益以避免数值问题
 	G := base.GetFloat64(2) // 开环增益
@@ -61,10 +61,10 @@ func (OpAmp) DoStep(mna mna.MNA, base mna.ValueMNA) {
 	// 动态增益计算：当vd很小时使用较大增益，vd较大时使用较小增益
 	// 这有助于快速收敛同时保持稳定性
 	var gain float64
-	if math.Abs(vd) < 1e-6 {
+	if vdabs < 1e-6 {
 		// 非常小的电压差，使用较大增益加速收敛
 		gain = 0.1
-	} else if math.Abs(vd) < 0.01 {
+	} else if vdabs < 0.01 {
 		// 较小电压差，使用中等增益
 		gain = 0.05
 	} else {
@@ -79,20 +79,14 @@ func (OpAmp) DoStep(mna mna.MNA, base mna.ValueMNA) {
 		adjustedGain := math.Min(0.001*G, maxGain)
 		gain = math.Max(gain, adjustedGain)
 	}
-
-	switch {
-	case math.Abs(vd) < 1e-9:
-		// 电压差非常小，认为已收敛
-	case vd > 0:
-		out += vd * gain
-		base.Converged()
-	case vd < 0:
-		out -= vd * gain
+	// 判断是否收敛
+	if vdabs > 1e-9 {
 		base.Converged()
 	}
+	out -= vd * gain
 	// 更新电压，限制在摆幅范围内
-	out = math.Max(out, base.GetFloat64(1))
 	out = math.Min(out, base.GetFloat64(0))
+	out = math.Max(out, base.GetFloat64(1))
 	mna.UpdateVoltageSource(base.VoltSource(0), out)
 	base.SetFloat64(3, out)
 

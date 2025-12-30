@@ -2,36 +2,36 @@ package base
 
 import (
 	"circuit/mna"
-	"fmt"
 	"math"
 )
 
-// Diode 二极管（改进版本）
+// Diode 二极管（基于CircuitJS1的精确实现）
 type Diode struct{ Base }
 
 func (diode *Diode) New() {
-	diode.ElementConfigBase = &mna.ElementConfigBase{
-		Pin: []string{"d1", "d2"},
+	config := &mna.ElementConfigBase{
+		Pin: []string{"anode", "cathode"},
 		ValueInit: []any{
-			float64(1e-14),  // 0: 反向饱和电流 Is (A)
-			float64(0),      // 1: 齐纳击穿电压 Vz (V) (0表示无齐纳击穿)
-			float64(1),      // 2: 发射系数 N
-			float64(0.1),    // 3: 串联电阻 Rs (Ω)
-			float64(300.15), // 4: 温度 T (K)
-			float64(0),      // 5: 上次电压差 V_old (V)
-			float64(0),      // 6: 尺度电压 N*Vt (V)
-			float64(0),      // 7: 1/(N*Vt) (1/V)
-			float64(0),      // 8: 热电压 Vt = kT/q (V)
-			float64(0),      // 9: 1/Vt (1/V)
-			float64(0),      // 10: 齐纳动态电阻 Rz (Ω)
-			float64(0),      // 11: 漏电流 = Is (A)
-			float64(0),      // 12: 正向临界电压 Vcrit (V)
-			float64(0),      // 13: 齐纳击穿临界电压 Vzcrit (V)
-			float64(0),      // 14: 最小电导 Gmin (S)
+			float64(1e-14),    // 0: 反向饱和电流 Is (A)
+			float64(0),        // 1: 齐纳击穿电压 Vz (V) (0表示无齐纳击穿)
+			float64(1),        // 2: 发射系数 N
+			float64(0.1),      // 3: 串联电阻 Rs (Ω)
+			float64(300.15),   // 4: 温度 T (K)
+			float64(0),        // 5: 上次电压差 V_old (V)
+			float64(0),        // 6: 尺度电压 N*Vt (V)
+			float64(0),        // 7: 1/(N*Vt) (1/V)
+			float64(0.025865), // 8: 热电压 Vt = kT/q (V) (27°C时的默认值)
+			float64(38.662),   // 9: 1/Vt (1/V)
+			float64(0),        // 10: 齐纳偏移量 zoffset (V)
+			float64(0),        // 11: 正向临界电压 vcrit (V)
+			float64(0),        // 12: 齐纳临界电压 vzcrit (V)
+			float64(0),        // 13: 漏电流 leakage (A)
+			float64(0),        // 14: 最小电导 Gmin (S)
 		},
 		Current:   []int{0},
 		OrigValue: []int{5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
 	}
+	diode.ElementConfigBase = config
 }
 
 func (diode *Diode) Init() mna.ValueMNA {
@@ -39,17 +39,15 @@ func (diode *Diode) Init() mna.ValueMNA {
 }
 
 func (Diode) Reset(base mna.ValueMNA) {
-	// 常数
-	k := 1.380649e-23   // 玻尔兹曼常数 (J/K)
-	q := 1.60217662e-19 // 电子电荷 (C)
-
 	// 获取参数
-	temp := base.GetFloat64(4) // 温度 (K)
 	Is := base.GetFloat64(0)   // 饱和电流 (A)
-	N := base.GetFloat64(2)    // 发射系数
 	Vz := base.GetFloat64(1)   // 齐纳电压 (V)
+	N := base.GetFloat64(2)    // 发射系数
+	temp := base.GetFloat64(4) // 温度 (K)
 
 	// 计算热电压 Vt = kT/q
+	k := 1.380649e-23   // 玻尔兹曼常数 (J/K)
+	q := 1.60217662e-19 // 电子电荷 (C)
 	Vt := k * temp / q
 	base.SetFloat64(8, Vt)
 
@@ -70,44 +68,33 @@ func (Diode) Reset(base mna.ValueMNA) {
 	}
 
 	// 设置漏电流
-	base.SetFloat64(11, Is)
+	base.SetFloat64(13, Is)
 
-	// 设置齐纳动态电阻（默认值，可根据需要调整）
-	Rz := 0.1 // 默认动态电阻
-	if Vz > 0 {
-		// 齐纳动态电阻通常随Vz增加而增加
-		Rz = 0.1 + 0.01*Vz
-	}
-	base.SetFloat64(10, Rz)
-
-	// 计算临界电压
-	// 正向临界电压 Vcrit：电流开始显著增加时的电压
-	sqrt2 := 1.4142135623730951
-	var Vcrit float64
+	// 计算临界电压（基于CircuitJS1算法）
+	// 正向临界电压 vcrit：电流为 vscale/sqrt(2) 时的电压
+	var vcrit float64
 	if vscale > 0 && Is > 0 {
-		denominator := sqrt2 * Is
-		if denominator > 0 {
-			Vcrit = vscale * math.Log(vscale/denominator)
-		} else {
-			Vcrit = 0.7 // 典型硅二极管正向电压
-		}
+		vcrit = vscale * math.Log(vscale/(math.Sqrt(2)*Is))
 	} else {
-		Vcrit = 0.7
+		vcrit = 0.7 // 默认值
 	}
-	base.SetFloat64(12, Vcrit)
+	base.SetFloat64(11, vcrit)
 
-	// 齐纳击穿临界电压 Vzcrit
-	// 当反向电压超过Vzcrit时，认为进入击穿区
-	var Vzcrit float64
-	if Vz > 0 {
-		// Vzcrit略小于Vz，表示开始进入击穿区
-		// 使用Vz的95%作为临界点
-		Vzcrit = Vz * 0.95
+	// 计算齐纳偏移量和临界电压
+	var zoffset, vzcrit float64
+	if Vz == 0 {
+		zoffset = 0
+		vzcrit = 0
 	} else {
-		// 无齐纳击穿，设置大值
-		Vzcrit = 1000.0
+		// 计算偏移量，使得在Vz时有-5mA电流
+		i := -0.005 // -5mA
+		zoffset = Vz - math.Log(-(1+i/Is))/base.GetFloat64(9)
+
+		// 齐纳临界电压
+		vzcrit = Vt * math.Log(Vt/(math.Sqrt(2)*Is))
 	}
-	base.SetFloat64(13, Vzcrit)
+	base.SetFloat64(10, zoffset)
+	base.SetFloat64(12, vzcrit)
 
 	// 计算最小电导防止奇异矩阵
 	Gmin := Is * 0.01
@@ -116,40 +103,79 @@ func (Diode) Reset(base mna.ValueMNA) {
 	}
 	base.SetFloat64(14, Gmin)
 
-	fmt.Printf("二极管参数重置: Is=%.1eA, Vz=%.2fV, N=%.2f, T=%.1fK, Vt=%.6fV, Vcrit=%.3fV, Vzcrit=%.3fV\n",
-		Is, Vz, N, temp, Vt, Vcrit, Vzcrit)
+	// 重置上次电压差
+	base.SetFloat64(5, 0)
 }
 
 func (Diode) DoStep(mna mna.MNA, base mna.ValueMNA) {
 	// 获取节点电压
 	v1 := mna.GetNodeVoltage(base.Nodes(0))
 	v2 := mna.GetNodeVoltage(base.Nodes(1))
-	V := v1 - v2 // 阳极-阴极电压
-	V_old := base.GetFloat64(5)
+	voltdiff := v1 - v2 // 阳极-阴极电压
+	lastvoltdiff := base.GetFloat64(5)
+	Vz := base.GetFloat64(1) // 齐纳电压
 
-	// 检查收敛性
-	if math.Abs(V-V_old) > 0.01 {
+	// 检查收敛性（基于CircuitJS1算法）
+	if math.Abs(voltdiff-lastvoltdiff) > 0.01 {
 		base.Converged()
 	}
 
-	// 限制电压步长以保证数值稳定性
-	V = limitDiodeStep(V, V_old, base)
-	base.SetFloat64(5, V)
+	// 对于齐纳二极管，实现平滑的分段模型：
+	// 1. 反向电压绝对值远小于齐纳电压：使用大电阻（近似开路）
+	// 2. 反向电压在齐纳电压附近：混合模型，平滑过渡
+	// 3. 反向电压远大于齐纳电压：使用完整的齐纳击穿模型
+	// 4. 正向偏置：使用常规二极管模型
+	if Vz > 0 && voltdiff < 0 {
+		// 反向偏置齐纳二极管
+		reverseVoltage := -voltdiff // 反向电压绝对值
 
-	// 获取最小电导
-	Gmin := base.GetFloat64(14)
+		// 在齐纳电压附近实现平滑过渡（Vz ± 0.1V）
+		if reverseVoltage < Vz-0.1 {
+			// 反向电压明显小于齐纳电压：使用大电阻模拟反向漏电流
+			// 使用非常大的电阻（100MΩ）模拟开路，但防止奇异矩阵
+			mna.StampResistor(base.Nodes(0), base.Nodes(1), 1e8)
+			// 不需要执行后续的复杂模型计算
+			base.SetFloat64(5, voltdiff)
+			return
+		} else if reverseVoltage < Vz+0.1 {
+			// 在齐纳电压附近：混合模型，平滑过渡
+			// 计算混合权重：0到1之间
+			weight := (reverseVoltage - (Vz - 0.1)) / 0.2
+			if weight < 0 {
+				weight = 0
+			}
+			if weight > 1 {
+				weight = 1
+			}
 
-	// 根据工作区域选择模型
-	Vz := base.GetFloat64(1)
-	if V >= 0 || Vz == 0 {
-		// 正向偏置或无齐纳击穿的二极管
-		modelForward(mna, base, V, Gmin)
-	} else {
-		// 反向偏置，可能进入齐纳击穿
-		modelReverse(mna, base, V, Gmin)
+			// 大电阻模型
+			mna.StampResistor(base.Nodes(0), base.Nodes(1), 1e8)
+
+			// 齐纳模型贡献（按权重混合）
+			voltdiff = limitDiodeStep(voltdiff, lastvoltdiff, base)
+			base.SetFloat64(5, voltdiff)
+
+			// 执行MNA建模，但按权重缩放贡献
+			doDiodeStepWeighted(mna, base, voltdiff, weight)
+
+			// 添加串联电阻贡献
+			Rs := base.GetFloat64(3)
+			if Rs > 0 {
+				mna.StampResistor(base.Nodes(0), base.Nodes(1), Rs)
+			}
+			return
+		}
+		// 反向电压明显大于齐纳电压：继续执行完整的齐纳模型
 	}
 
-	// 添加串联电阻贡献
+	// 限制电压步长
+	voltdiff = limitDiodeStep(voltdiff, lastvoltdiff, base)
+	base.SetFloat64(5, voltdiff)
+
+	// 执行MNA建模
+	doDiodeStep(mna, base, voltdiff)
+
+	// 添加串联电阻贡献（使用用户设置的原始值，不额外增加）
 	Rs := base.GetFloat64(3)
 	if Rs > 0 {
 		mna.StampResistor(base.Nodes(0), base.Nodes(1), Rs)
@@ -159,158 +185,184 @@ func (Diode) DoStep(mna mna.MNA, base mna.ValueMNA) {
 func (Diode) CalculateCurrent(mna mna.MNA, base mna.ValueMNA) {
 	v1 := mna.GetNodeVoltage(base.Nodes(0))
 	v2 := mna.GetNodeVoltage(base.Nodes(1))
-	V := v1 - v2
-	current := calculateCurrent(V, base)
+	voltdiff := v1 - v2
+	current := calculateDiodeCurrent(voltdiff, base)
 	mna.StampCurrentSource(base.Nodes(0), base.Nodes(1), -current)
 }
 
-// 辅助函数
-
-// limitDiodeStep 限制二极管电压步长
-func limitDiodeStep(Vnew, Vold float64, base mna.ValueMNA) float64 {
-	Vcrit := base.GetFloat64(12)
-	Vzcrit := base.GetFloat64(13)
+// limitDiodeStep 限制二极管电压步长（基于CircuitJS1算法）
+func limitDiodeStep(vnew, vold float64, base mna.ValueMNA) float64 {
 	vscale := base.GetFloat64(6)
+	vcrit := base.GetFloat64(11)
 	Vt := base.GetFloat64(8)
-	Vz := base.GetFloat64(1)
+	vzcrit := base.GetFloat64(12)
+	zoffset := base.GetFloat64(10)
 
-	// 正向电压限制
-	if Vnew > Vcrit && math.Abs(Vnew-Vold) > 2*vscale {
-		if Vold > 0 {
-			arg := 1 + (Vnew-Vold)/vscale
+	// 检查新电压；电流是否变化了e^2因子？
+	if vnew > vcrit && math.Abs(vnew-vold) > (vscale+vscale) {
+		if vold > 0 {
+			arg := 1 + (vnew-vold)/vscale
 			if arg > 0 {
-				Vnew = Vold + vscale*math.Log(arg)
+				// 调整vnew使得电流与上一次迭代的线性化模型相同
+				vnew = vold + vscale*math.Log(arg)
 			} else {
-				Vnew = Vcrit
+				vnew = vcrit
 			}
 		} else {
-			Vnew = vscale * math.Log(Vnew/vscale+1)
+			// 调整vnew使得电流与上一次迭代的线性化模型相同
+			// 防止vnew/vscale <= 0导致对数计算错误
+			if vnew > 0 && vscale > 0 {
+				ratio := vnew / vscale
+				if ratio > 1e-10 { // 防止数值下溢
+					vnew = vscale * math.Log(ratio)
+				} else {
+					vnew = vscale * math.Log(1e-10)
+				}
+			} else {
+				// 如果vnew <= 0，使用一个小的正数
+				vnew = vscale * math.Log(1e-10)
+			}
 		}
 		base.Converged()
-	}
+	} else if vnew < 0 && zoffset != 0 {
+		// 对于齐纳击穿，使用相同的逻辑但平移值，
+		// 并用齐纳特定值替换正常值以考虑齐纳击穿曲线的更陡指数
+		vnewTrans := -vnew - zoffset
+		voldTrans := -vold - zoffset
 
-	// 反向电压限制（齐纳击穿区）
-	if Vz > 0 && Vnew < -Vzcrit && math.Abs(Vnew-Vold) > 2*Vt {
-		// 在击穿区，限制电压变化
-		maxChange := 0.1 * Vz // 最大变化为Vz的10%
-		if Vnew < Vold-maxChange {
-			Vnew = Vold - maxChange
-			base.Converged()
-		} else if Vnew > Vold+maxChange {
-			Vnew = Vold + maxChange
+		if vnewTrans > vzcrit && math.Abs(vnewTrans-voldTrans) > (Vt+Vt) {
+			if voldTrans > 0 {
+				arg := 1 + (vnewTrans-voldTrans)/Vt
+				if arg > 0 {
+					vnewTrans = voldTrans + Vt*math.Log(arg)
+				} else {
+					vnewTrans = vzcrit
+				}
+			} else {
+				// 防止vnewTrans/Vt <= 0导致对数计算错误
+				if vnewTrans > 0 && Vt > 0 {
+					ratio := vnewTrans / Vt
+					if ratio > 1e-10 {
+						vnewTrans = Vt * math.Log(ratio)
+					} else {
+						vnewTrans = Vt * math.Log(1e-10)
+					}
+				} else {
+					vnewTrans = Vt * math.Log(1e-10)
+				}
+			}
 			base.Converged()
 		}
+		vnew = -(vnewTrans + zoffset)
 	}
-
-	return Vnew
+	return vnew
 }
 
-// modelForward 正向偏置模型
-func modelForward(mna mna.MNA, base mna.ValueMNA, V, Gmin float64) {
-	Is := base.GetFloat64(11)
-	coef := base.GetFloat64(7) // 1/(N*Vt)
-
-	// 标准二极管方程：I = Is * [exp(V/(N*Vt)) - 1]
-	expV := math.Exp(V * coef)
-
-	// 电导：dI/dV = Is * (1/(N*Vt)) * exp(V/(N*Vt))
-	Geq := Is*coef*expV + Gmin
-
-	// 等效电流源：Ieq = I(V) - Geq*V
-	I_V := Is * (expV - 1)
-	Ieq := I_V - Geq*V
-
-	mna.StampConductance(base.Nodes(0), base.Nodes(1), Geq)
-	mna.StampCurrentSource(base.Nodes(0), base.Nodes(1), Ieq)
-}
-
-// modelReverse 反向偏置模型（包含齐纳击穿）
-func modelReverse(mna mna.MNA, base mna.ValueMNA, V, Gmin float64) {
-	Is := base.GetFloat64(11)
+// doDiodeStep 执行二极管MNA建模（基于CircuitJS1算法）
+func doDiodeStep(mna mna.MNA, base mna.ValueMNA, voltdiff float64) {
+	leakage := base.GetFloat64(13) // 漏电流（饱和电流）
+	vdcoef := base.GetFloat64(7)   // 1/(N*Vt)
+	vzcoef := base.GetFloat64(9)   // 1/Vt
+	zoffset := base.GetFloat64(10)
 	Vz := base.GetFloat64(1)
-	coef := base.GetFloat64(7) // 1/(N*Vt)
-	Rz := base.GetFloat64(10)  // 齐纳动态电阻
-	Vzcrit := base.GetFloat64(13)
 
-	// 判断是否进入齐纳击穿
-	if Vz > 0 && V < -Vzcrit {
-		// 齐纳击穿区
-		// 使用分段线性模型：I = -(V + Vz) / Rz  (当 V < -Vz)
-		// 但为了平滑过渡，使用平滑函数
+	// 防止奇异矩阵或其他数值问题，在每个PN结上并联一个微小电导
+	// 使用更小的默认gmin值，避免过度影响电路
+	gmin := leakage * 0.01
+	if gmin < 1e-12 {
+		gmin = 1e-12
+	}
 
-		// 平滑过渡参数
-		Vsoft := 0.1 // 软化电压
+	// 只有在收敛困难时才增加gmin，且增加幅度要小
+	// 原始CircuitJS1代码中这个逻辑可能导致gmin过大
+	// 这里使用更保守的值
+	subIterations := base.GoodIterations()
+	if subIterations > 100 {
+		// 缓慢增加gmin，但最大值限制在1e-6
+		extraGmin := math.Exp(-12 * math.Log(10) * float64(1-subIterations/1000.))
+		if extraGmin > 1e-6 {
+			extraGmin = 1e-6
+		}
+		gmin += extraGmin
+	}
 
-		// 击穿电流
-		Vbreak := -Vz
-		I_break := -(V - Vbreak) / Rz
-
-		// 反向饱和电流（未击穿时）
-		I_rev := -Is * (1 - math.Exp(V*coef))
-
-		// 平滑过渡函数
-		// 当V远小于-Vz时，使用击穿模型
-		// 当V接近-Vz时，混合两种模型
-		transition := 1.0 / (1.0 + math.Exp((V+Vz)/Vsoft))
-		I_V := transition*I_break + (1-transition)*I_rev
-
-		// 计算电导（导数）
-		// dI_break/dV = -1/Rz
-		// dI_rev/dV = -Is*coef*exp(V*coef)
-		dI_break_dV := -1.0 / Rz
-		dI_rev_dV := -Is * coef * math.Exp(V*coef)
-
-		// 过渡函数的导数
-		s := math.Exp((V + Vz) / Vsoft)
-		dtransition_dV := -s / (Vsoft * math.Pow(1+s, 2))
-
-		Geq := transition*dI_break_dV + (1-transition)*dI_rev_dV +
-			dtransition_dV*(I_break-I_rev) + Gmin
-
-		// 等效电流源
-		Ieq := I_V - Geq*V
-
-		mna.StampConductance(base.Nodes(0), base.Nodes(1), Geq)
-		mna.StampCurrentSource(base.Nodes(0), base.Nodes(1), Ieq)
-
+	if voltdiff >= 0 || Vz == 0 {
+		// 常规二极管或正向偏置齐纳二极管
+		eval := math.Exp(voltdiff * vdcoef)
+		geq := vdcoef*leakage*eval + gmin
+		nc := (eval-1)*leakage - geq*voltdiff
+		mna.StampConductance(base.Nodes(0), base.Nodes(1), geq)
+		mna.StampCurrentSource(base.Nodes(0), base.Nodes(1), nc)
 	} else {
-		// 普通反向偏置（未击穿）
-		// I = -Is * (1 - exp(V/(N*Vt)))
-		expV := math.Exp(V * coef)
-		I_V := -Is * (1 - expV)
+		// 齐纳二极管
 
-		// 电导：dI/dV = -Is * coef * exp(V*coef)
-		Geq := -Is*coef*expV + Gmin
+		// 对于反向偏置齐纳二极管，使用类似于理想肖克利曲线的指数来模拟齐纳击穿曲线。
+		// （真实的击穿曲线不是简单的指数，但这个近似应该可以。）
 
-		// 等效电流源
-		Ieq := I_V - Geq*V
+		/*
+		 * I(Vd) = Is * (exp[Vd*C] - exp[(-Vd-Vz)*Cz] - 1 )
+		 *
+		 * geq 是 I'(Vd)
+		 * nc 是 I(Vd) + I'(Vd)*(-Vd)
+		 */
 
-		mna.StampConductance(base.Nodes(0), base.Nodes(1), Geq)
-		mna.StampCurrentSource(base.Nodes(0), base.Nodes(1), Ieq)
+		geq := leakage*(vdcoef*math.Exp(voltdiff*vdcoef)+vzcoef*math.Exp((-voltdiff-zoffset)*vzcoef)) + gmin
+
+		nc := leakage*(math.Exp(voltdiff*vdcoef)-
+			math.Exp((-voltdiff-zoffset)*vzcoef)-
+			1) + geq*(-voltdiff)
+
+		mna.StampConductance(base.Nodes(0), base.Nodes(1), geq)
+		mna.StampCurrentSource(base.Nodes(0), base.Nodes(1), nc)
 	}
 }
 
-// calculateCurrent 计算二极管电流
-func calculateCurrent(V float64, base mna.ValueMNA) float64 {
-	Is := base.GetFloat64(11)
+// doDiodeStepWeighted 执行加权二极管MNA建模
+func doDiodeStepWeighted(mna mna.MNA, base mna.ValueMNA, voltdiff, weight float64) {
+	leakage := base.GetFloat64(13) // 漏电流（饱和电流）
+	vdcoef := base.GetFloat64(7)   // 1/(N*Vt)
+	vzcoef := base.GetFloat64(9)   // 1/Vt
+	zoffset := base.GetFloat64(10)
 	Vz := base.GetFloat64(1)
-	coef := base.GetFloat64(7)
-	Rz := base.GetFloat64(10)
-	Vzcrit := base.GetFloat64(13)
 
-	if V >= 0 {
-		// 正向偏置
-		return Is * (math.Exp(V*coef) - 1)
-	} else if Vz > 0 && V < -Vzcrit {
-		// 齐纳击穿区
-		Vsoft := 0.1
-		Vbreak := -Vz
-		I_break := -(V - Vbreak) / Rz
-		I_rev := -Is * (1 - math.Exp(V*coef))
-		transition := 1.0 / (1.0 + math.Exp((V+Vz)/Vsoft))
-		return transition*I_break + (1-transition)*I_rev
-	} else {
-		// 反向偏置（未击穿）
-		return -Is * (1 - math.Exp(V*coef))
+	// 防止奇异矩阵或其他数值问题，在每个PN结上并联一个微小电导
+	gmin := leakage * 0.01
+	if gmin < 1e-12 {
+		gmin = 1e-12
 	}
+
+	if voltdiff >= 0 || Vz == 0 {
+		// 常规二极管或正向偏置齐纳二极管
+		eval := math.Exp(voltdiff * vdcoef)
+		geq := vdcoef*leakage*eval + gmin
+		nc := (eval-1)*leakage - geq*voltdiff
+		// 按权重缩放贡献
+		mna.StampConductance(base.Nodes(0), base.Nodes(1), geq*weight)
+		mna.StampCurrentSource(base.Nodes(0), base.Nodes(1), nc*weight)
+	} else {
+		// 齐纳二极管
+		geq := leakage*(vdcoef*math.Exp(voltdiff*vdcoef)+vzcoef*math.Exp((-voltdiff-zoffset)*vzcoef)) + gmin
+		nc := leakage*(math.Exp(voltdiff*vdcoef)-
+			math.Exp((-voltdiff-zoffset)*vzcoef)-
+			1) + geq*(-voltdiff)
+		// 按权重缩放贡献
+		mna.StampConductance(base.Nodes(0), base.Nodes(1), geq*weight)
+		mna.StampCurrentSource(base.Nodes(0), base.Nodes(1), nc*weight)
+	}
+}
+
+// calculateDiodeCurrent 计算二极管电流（基于CircuitJS1算法）
+func calculateDiodeCurrent(voltdiff float64, base mna.ValueMNA) float64 {
+	leakage := base.GetFloat64(13) // 漏电流（饱和电流）
+	vdcoef := base.GetFloat64(7)   // 1/(N*Vt)
+	vzcoef := base.GetFloat64(9)   // 1/Vt
+	zoffset := base.GetFloat64(10)
+	Vz := base.GetFloat64(1)
+
+	if voltdiff >= 0 || Vz == 0 {
+		return leakage * (math.Exp(voltdiff*vdcoef) - 1)
+	}
+	return leakage * (math.Exp(voltdiff*vdcoef) -
+		math.Exp((-voltdiff-zoffset)*vzcoef) -
+		1)
 }

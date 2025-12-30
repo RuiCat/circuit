@@ -1,10 +1,10 @@
 package time
 
 import (
-	"circuit/element"
 	"circuit/maths"
 	"circuit/mna"
 	"circuit/utils"
+	"circuit/utils/element"
 	"fmt"
 	"math"
 )
@@ -30,7 +30,7 @@ func TransientSimulation(cxt utils.Context, timeMNA *TimeMNA, mnaSolver mna.Upda
 	// 标记是否需要重新加盖线性元件（步长变化或首次迭代）
 	needLinearStamp := true
 	// 初始化所有元件状态
-	element.Callback(cxt, element.MarkReset, circuitElements...)
+	element.Callback(cxt, utils.MarkReset, circuitElements...)
 	element.UpdateElements(mnaSolver, circuitElements)
 	// 主时间迭代循环
 	timeMNA.ResetTimeStepCount()
@@ -53,14 +53,14 @@ func TransientSimulation(cxt utils.Context, timeMNA *TimeMNA, mnaSolver mna.Upda
 			mnaSolver.GetA().Base().Zero()
 			mnaSolver.GetZ().Base().Zero()
 			// 通知元件开始新迭代
-			element.Callback(cxt, element.MarkStartIteration, circuitElements...)
+			element.Callback(cxt, utils.MarkStartIteration, circuitElements...)
 			// 加盖线性元件贡献
-			element.Callback(cxt, element.MarkStamp, circuitElements...)
+			element.Callback(cxt, utils.MarkStamp, circuitElements...)
 			// 保存线性状态（用于后续回滚）
 			mnaSolver.Update()
 		} else {
 			// 重用已有的线性贡献，仅通知元件开始新迭代
-			element.Callback(cxt, element.MarkStartIteration, circuitElements...)
+			element.Callback(cxt, utils.MarkStartIteration, circuitElements...)
 		}
 		// 非线性迭代（牛顿-拉夫逊法）
 		newtonConverged := false
@@ -72,7 +72,7 @@ func TransientSimulation(cxt utils.Context, timeMNA *TimeMNA, mnaSolver mna.Upda
 				// 设置元件收敛状态为真（假设收敛）
 				timeMNA.SetElementConverged(true)
 				// 设置元件标记并执行回调
-				circuitElements[i].SetMark(element.MarkDoStep)
+				circuitElements[i].SetMark(utils.MarkDoStep)
 				cxt.Callback(circuitElements[i])
 				// 检查元件是否收敛
 				if !timeMNA.IsElementConverged() {
@@ -118,8 +118,8 @@ func TransientSimulation(cxt utils.Context, timeMNA *TimeMNA, mnaSolver mna.Upda
 				timeMNA.CurrentTime(), timeMNA.MaxNonlinearIter())
 		}
 		// 后处理：计算电流和更新元件状态
-		element.Callback(cxt, element.MarkCalculateCurrent, circuitElements...)
-		element.Callback(cxt, element.MarkStepFinished, circuitElements...)
+		element.Callback(cxt, utils.MarkCalculateCurrent, circuitElements...)
+		element.Callback(cxt, utils.MarkStepFinished, circuitElements...)
 		// 提取并验证节点电压
 		if !extractAndValidateVoltages(mnaSolver, nodesNum, voltages) {
 			return fmt.Errorf("检测到无效电压值（NaN/Inf）在时间 %.6e，停止仿真", timeMNA.CurrentTime())
@@ -163,7 +163,7 @@ func handleUnconvergedElements(cxt utils.Context, timeMNA *TimeMNA, mnaSolver mn
 			// 设置元件收敛状态为真
 			timeMNA.SetElementConverged(true)
 			// 执行元件计算
-			circuitElements[elemIdx].SetMark(element.MarkDoStep)
+			circuitElements[elemIdx].SetMark(utils.MarkDoStep)
 			cxt.Callback(circuitElements[elemIdx])
 			// 检查元件是否收敛
 			if timeMNA.IsElementConverged() {
