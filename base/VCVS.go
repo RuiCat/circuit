@@ -2,6 +2,8 @@ package base
 
 import "circuit/mna"
 
+const VCVSType ElementType = 10
+
 // VCVS 电压控制电压源
 type VCVS struct{ Base }
 

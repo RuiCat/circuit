@@ -2,6 +2,8 @@ package base
 
 import "circuit/mna"
 
+const CurrentSourceType ElementType = 1
+
 // CurrentSource 电流源
 type CurrentSource struct{ Base }
 

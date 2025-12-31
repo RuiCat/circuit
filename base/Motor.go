@@ -2,6 +2,8 @@ package base
 
 import "circuit/mna"
 
+const MotorType ElementType = 4
+
 // Motor 电机（直流电机实现）
 type Motor struct{ Base }
 

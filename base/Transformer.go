@@ -5,6 +5,8 @@ import (
 	"math"
 )
 
+const TransformerType ElementType = 8
+
 // Transformer 变压器
 type Transformer struct{ Base }
 

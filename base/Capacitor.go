@@ -4,6 +4,8 @@ import (
 	"circuit/mna"
 )
 
+const CapacitorType ElementType = 0
+
 // Capacitor 电容
 type Capacitor struct{ Base }
 

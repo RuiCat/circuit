@@ -5,6 +5,8 @@ import (
 	"math"
 )
 
+const TransistorType ElementType = 9
+
 // Transistor 晶体管
 type Transistor struct{ Base }
 

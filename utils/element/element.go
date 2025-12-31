@@ -2,7 +2,7 @@ package element
 
 import (
 	"circuit/mna"
-	"circuit/utils"
+	"circuit/utils/element/event"
 )
 
 // ElementValue 元件值
@@ -18,13 +18,13 @@ func (ele *ElementValue) ElementBase() *mna.ElementBase {
 
 // Element 元件实现接口
 type Element struct {
-	EleType utils.EventType
+	EleType event.EventType
 	Config  mna.ElementConfig
 	Element mna.Element
 }
 
 // NewElement 创建
-func NewElement(t utils.EventType, ele interface {
+func NewElement(t event.EventType, ele interface {
 	mna.ElementConfig
 	mna.Element
 }) *Element {
@@ -33,36 +33,36 @@ func NewElement(t utils.EventType, ele interface {
 }
 
 // Type 元件类型
-func (ele *Element) Type() utils.EventType {
+func (ele *Element) Type() event.EventType {
 	return ele.EleType
 }
 
 // Callback 转发事件
-func (ele *Element) Callback(event utils.EventValue) {
-	if val, ok := event.Get().(ElementValue); ok {
-		switch event.Mark() {
-		case utils.MarkStartIteration:
+func (ele *Element) Callback(eve event.EventValue) {
+	if val, ok := eve.Get().(ElementValue); ok {
+		switch eve.Mark() {
+		case event.MarkStartIteration:
 			ele.Element.StartIteration(val.MNA, val.Base)
-		case utils.MarkStamp:
+		case event.MarkStamp:
 			ele.Element.Stamp(val.MNA, val.Base)
-		case utils.MarkDoStep:
+		case event.MarkDoStep:
 			ele.Element.DoStep(val.MNA, val.Base)
-		case utils.MarkCalculateCurrent:
+		case event.MarkCalculateCurrent:
 			ele.Element.CalculateCurrent(val.MNA, val.Base)
-		case utils.MarkStepFinished:
+		case event.MarkStepFinished:
 			ele.Element.StepFinished(val.MNA, val.Base)
-		case utils.MarkReset:
+		case event.MarkReset:
 			ele.Config.Reset(val.Base)
-		case utils.MarkCirLoad:
+		case event.MarkCirLoad:
 			ele.Config.CirLoad(val.Base)
-		case utils.MarkCirExport:
+		case event.MarkCirExport:
 			ele.Config.CirExport(val.Base)
 		}
 	}
 }
 
 // EventValue 创建事件传递值
-func (ele *Element) EventValue() utils.EventValue {
+func (ele *Element) EventValue() event.EventValue {
 	// 初始化
 	return &EventValue{
 		types: ele.EleType,
@@ -74,23 +74,23 @@ func (ele *Element) EventValue() utils.EventValue {
 
 // EventValue 封装事件传递过程值
 type EventValue struct {
-	types     utils.EventType
+	types     event.EventType
 	Value     ElementValue
-	EventMark utils.EventMark
+	EventMark event.EventMark
 }
 
 // Type 元件类型
-func (val *EventValue) Type() utils.EventType {
+func (val *EventValue) Type() event.EventType {
 	return val.types
 }
 
 // Mark 事件标记
-func (val *EventValue) Mark() utils.EventMark {
+func (val *EventValue) Mark() event.EventMark {
 	return val.EventMark
 }
 
 // SetMark 事件标记
-func (val *EventValue) SetMark(mark utils.EventMark) {
+func (val *EventValue) SetMark(mark event.EventMark) {
 	val.EventMark = mark
 }
 

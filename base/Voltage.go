@@ -18,6 +18,8 @@ const (
 	WfNOISE    = 6 // 噪声波
 )
 
+const VoltageType ElementType = 11
+
 // Voltage 电压源
 type Voltage struct{ Base }
 

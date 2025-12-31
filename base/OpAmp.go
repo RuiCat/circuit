@@ -5,6 +5,8 @@ import (
 	"math"
 )
 
+const OpAmpType ElementType = 5
+
 // OpAmp 运算放大器（基于文章反正切非线性模型的实现）
 // 引脚定义：0-Vp(同相输入)、1-Vn(反相输入)、2-Vout(输出)
 // Value参数定义：

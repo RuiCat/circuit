@@ -2,6 +2,8 @@ package base
 
 import "circuit/mna"
 
+const InductorType ElementType = 3
+
 // Inductor 电感器
 type Inductor struct{ Base }
 

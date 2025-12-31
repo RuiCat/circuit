@@ -5,6 +5,8 @@ import (
 	"math"
 )
 
+const DiodeType ElementType = 2
+
 // Diode 二极管（基于CircuitJS1的精确实现）
 type Diode struct{ Base }
 

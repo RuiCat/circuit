@@ -1,4 +1,4 @@
-package utils
+package event
 
 // EventType 注册的事件类型标记
 type EventType uint16

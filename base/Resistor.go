@@ -4,6 +4,8 @@ import (
 	"circuit/mna"
 )
 
+const ResistorType ElementType = 6
+
 // Resistor 电阻
 type Resistor struct{ Base }
 

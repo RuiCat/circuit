@@ -2,6 +2,8 @@ package base
 
 import "circuit/mna"
 
+const SwitchType ElementType = 7
+
 // Switch 开关
 type Switch struct{ Base }
 
