@@ -1,18 +1,17 @@
 package base
 
 import (
+	"circuit/element"
 	"circuit/mna"
+	"circuit/utils"
 	"math"
 )
 
-const DiodeType ElementType = 2
-
-// Diode 二极管（基于CircuitJS1的精确实现）
-type Diode struct{ Base }
-
-func (diode *Diode) New() {
-	config := &mna.ElementConfigBase{
-		Pin: []string{"anode", "cathode"},
+// DiodeType 定义元件
+var DiodeType element.NodeType = element.AddElement(2, &Diode{
+	&element.Config{
+		Name: "d",
+		Pin:  []string{"anode", "cathode"},
 		ValueInit: []any{
 			float64(1e-14),    // 0: 反向饱和电流 Is (A)
 			float64(0),        // 1: 齐纳击穿电压 Vz (V) (0表示无齐纳击穿)
@@ -32,15 +31,16 @@ func (diode *Diode) New() {
 		},
 		Current:   []int{0},
 		OrigValue: []int{5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
-	}
-	diode.ElementConfigBase = config
-}
+	},
+})
 
-func (diode *Diode) Init() mna.ValueMNA {
-	return mna.NewElementBase(diode.ElementConfigBase)
-}
+// Diode 二极管（基于CircuitJS1的精确实现）
+type Diode struct{ *element.Config }
 
-func (Diode) Reset(base mna.ValueMNA) {
+func (Diode) CirLoad(element.NodeFace, utils.NetList)  {}
+func (Diode) CirExport(element.NodeFace) utils.NetList { return nil }
+
+func (Diode) Reset(base element.NodeFace) {
 	// 获取参数
 	Is := base.GetFloat64(0)   // 饱和电流 (A)
 	Vz := base.GetFloat64(1)   // 齐纳电压 (V)
@@ -109,17 +109,17 @@ func (Diode) Reset(base mna.ValueMNA) {
 	base.SetFloat64(5, 0)
 }
 
-func (Diode) DoStep(mna mna.MNA, base mna.ValueMNA) {
+func (Diode) DoStep(mna mna.MNA, time mna.Time, value element.NodeFace) {
 	// 获取节点电压
-	v1 := mna.GetNodeVoltage(base.Nodes(0))
-	v2 := mna.GetNodeVoltage(base.Nodes(1))
+	v1 := mna.GetNodeVoltage(value.GetNodes(0))
+	v2 := mna.GetNodeVoltage(value.GetNodes(1))
 	voltdiff := v1 - v2 // 阳极-阴极电压
-	lastvoltdiff := base.GetFloat64(5)
-	Vz := base.GetFloat64(1) // 齐纳电压
+	lastvoltdiff := value.GetFloat64(5)
+	Vz := value.GetFloat64(1) // 齐纳电压
 
 	// 检查收敛性（基于CircuitJS1算法）
 	if math.Abs(voltdiff-lastvoltdiff) > 0.01 {
-		base.Converged()
+		time.Converged()
 	}
 
 	// 对于齐纳二极管，实现平滑的分段模型：
@@ -135,9 +135,9 @@ func (Diode) DoStep(mna mna.MNA, base mna.ValueMNA) {
 		if reverseVoltage < Vz-0.1 {
 			// 反向电压明显小于齐纳电压：使用大电阻模拟反向漏电流
 			// 使用非常大的电阻（100MΩ）模拟开路，但防止奇异矩阵
-			mna.StampResistor(base.Nodes(0), base.Nodes(1), 1e8)
+			mna.StampResistor(value.GetNodes(0), value.GetNodes(1), 1e8)
 			// 不需要执行后续的复杂模型计算
-			base.SetFloat64(5, voltdiff)
+			value.SetFloat64(5, voltdiff)
 			return
 		} else if reverseVoltage < Vz+0.1 {
 			// 在齐纳电压附近：混合模型，平滑过渡
@@ -151,19 +151,19 @@ func (Diode) DoStep(mna mna.MNA, base mna.ValueMNA) {
 			}
 
 			// 大电阻模型
-			mna.StampResistor(base.Nodes(0), base.Nodes(1), 1e8)
+			mna.StampResistor(value.GetNodes(0), value.GetNodes(1), 1e8)
 
 			// 齐纳模型贡献（按权重混合）
-			voltdiff = limitDiodeStep(voltdiff, lastvoltdiff, base)
-			base.SetFloat64(5, voltdiff)
+			voltdiff = limitDiodeStep(voltdiff, lastvoltdiff, time, value)
+			value.SetFloat64(5, voltdiff)
 
 			// 执行MNA建模，但按权重缩放贡献
-			doDiodeStepWeighted(mna, base, voltdiff, weight)
+			doDiodeStepWeighted(mna, value, voltdiff, weight)
 
 			// 添加串联电阻贡献
-			Rs := base.GetFloat64(3)
+			Rs := value.GetFloat64(3)
 			if Rs > 0 {
-				mna.StampResistor(base.Nodes(0), base.Nodes(1), Rs)
+				mna.StampResistor(value.GetNodes(0), value.GetNodes(1), Rs)
 			}
 			return
 		}
@@ -171,34 +171,34 @@ func (Diode) DoStep(mna mna.MNA, base mna.ValueMNA) {
 	}
 
 	// 限制电压步长
-	voltdiff = limitDiodeStep(voltdiff, lastvoltdiff, base)
-	base.SetFloat64(5, voltdiff)
+	voltdiff = limitDiodeStep(voltdiff, lastvoltdiff, time, value)
+	value.SetFloat64(5, voltdiff)
 
 	// 执行MNA建模
-	doDiodeStep(mna, base, voltdiff)
+	doDiodeStep(mna, time, value, voltdiff)
 
 	// 添加串联电阻贡献（使用用户设置的原始值，不额外增加）
-	Rs := base.GetFloat64(3)
+	Rs := value.GetFloat64(3)
 	if Rs > 0 {
-		mna.StampResistor(base.Nodes(0), base.Nodes(1), Rs)
+		mna.StampResistor(value.GetNodes(0), value.GetNodes(1), Rs)
 	}
 }
 
-func (Diode) CalculateCurrent(mna mna.MNA, base mna.ValueMNA) {
-	v1 := mna.GetNodeVoltage(base.Nodes(0))
-	v2 := mna.GetNodeVoltage(base.Nodes(1))
+func (Diode) CalculateCurrent(mna mna.MNA, time mna.Time, value element.NodeFace) {
+	v1 := mna.GetNodeVoltage(value.GetNodes(0))
+	v2 := mna.GetNodeVoltage(value.GetNodes(1))
 	voltdiff := v1 - v2
-	current := calculateDiodeCurrent(voltdiff, base)
-	mna.StampCurrentSource(base.Nodes(0), base.Nodes(1), -current)
+	current := calculateDiodeCurrent(voltdiff, value)
+	mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), -current)
 }
 
 // limitDiodeStep 限制二极管电压步长（基于CircuitJS1算法）
-func limitDiodeStep(vnew, vold float64, base mna.ValueMNA) float64 {
-	vscale := base.GetFloat64(6)
-	vcrit := base.GetFloat64(11)
-	Vt := base.GetFloat64(8)
-	vzcrit := base.GetFloat64(12)
-	zoffset := base.GetFloat64(10)
+func limitDiodeStep(vnew, vold float64, time mna.Time, value element.NodeFace) float64 {
+	vscale := value.GetFloat64(6)
+	vcrit := value.GetFloat64(11)
+	Vt := value.GetFloat64(8)
+	vzcrit := value.GetFloat64(12)
+	zoffset := value.GetFloat64(10)
 
 	// 检查新电压；电流是否变化了e^2因子？
 	if vnew > vcrit && math.Abs(vnew-vold) > (vscale+vscale) {
@@ -225,7 +225,7 @@ func limitDiodeStep(vnew, vold float64, base mna.ValueMNA) float64 {
 				vnew = vscale * math.Log(1e-10)
 			}
 		}
-		base.Converged()
+		time.Converged()
 	} else if vnew < 0 && zoffset != 0 {
 		// 对于齐纳击穿，使用相同的逻辑但平移值，
 		// 并用齐纳特定值替换正常值以考虑齐纳击穿曲线的更陡指数
@@ -253,7 +253,7 @@ func limitDiodeStep(vnew, vold float64, base mna.ValueMNA) float64 {
 					vnewTrans = Vt * math.Log(1e-10)
 				}
 			}
-			base.Converged()
+			time.Converged()
 		}
 		vnew = -(vnewTrans + zoffset)
 	}
@@ -261,12 +261,12 @@ func limitDiodeStep(vnew, vold float64, base mna.ValueMNA) float64 {
 }
 
 // doDiodeStep 执行二极管MNA建模（基于CircuitJS1算法）
-func doDiodeStep(mna mna.MNA, base mna.ValueMNA, voltdiff float64) {
-	leakage := base.GetFloat64(13) // 漏电流（饱和电流）
-	vdcoef := base.GetFloat64(7)   // 1/(N*Vt)
-	vzcoef := base.GetFloat64(9)   // 1/Vt
-	zoffset := base.GetFloat64(10)
-	Vz := base.GetFloat64(1)
+func doDiodeStep(mna mna.MNA, time mna.Time, value element.NodeFace, voltdiff float64) {
+	leakage := value.GetFloat64(13) // 漏电流（饱和电流）
+	vdcoef := value.GetFloat64(7)   // 1/(N*Vt)
+	vzcoef := value.GetFloat64(9)   // 1/Vt
+	zoffset := value.GetFloat64(10)
+	Vz := value.GetFloat64(1)
 
 	// 防止奇异矩阵或其他数值问题，在每个PN结上并联一个微小电导
 	// 使用更小的默认gmin值，避免过度影响电路
@@ -278,7 +278,7 @@ func doDiodeStep(mna mna.MNA, base mna.ValueMNA, voltdiff float64) {
 	// 只有在收敛困难时才增加gmin，且增加幅度要小
 	// 原始CircuitJS1代码中这个逻辑可能导致gmin过大
 	// 这里使用更保守的值
-	subIterations := base.GoodIterations()
+	subIterations := time.GoodIterations()
 	if subIterations > 100 {
 		// 缓慢增加gmin，但最大值限制在1e-6
 		extraGmin := math.Exp(-12 * math.Log(10) * float64(1-subIterations/1000.))
@@ -293,8 +293,8 @@ func doDiodeStep(mna mna.MNA, base mna.ValueMNA, voltdiff float64) {
 		eval := math.Exp(voltdiff * vdcoef)
 		geq := vdcoef*leakage*eval + gmin
 		nc := (eval-1)*leakage - geq*voltdiff
-		mna.StampConductance(base.Nodes(0), base.Nodes(1), geq)
-		mna.StampCurrentSource(base.Nodes(0), base.Nodes(1), nc)
+		mna.StampConductance(value.GetNodes(0), value.GetNodes(1), geq)
+		mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), nc)
 	} else {
 		// 齐纳二极管
 
@@ -314,18 +314,18 @@ func doDiodeStep(mna mna.MNA, base mna.ValueMNA, voltdiff float64) {
 			math.Exp((-voltdiff-zoffset)*vzcoef)-
 			1) + geq*(-voltdiff)
 
-		mna.StampConductance(base.Nodes(0), base.Nodes(1), geq)
-		mna.StampCurrentSource(base.Nodes(0), base.Nodes(1), nc)
+		mna.StampConductance(value.GetNodes(0), value.GetNodes(1), geq)
+		mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), nc)
 	}
 }
 
 // doDiodeStepWeighted 执行加权二极管MNA建模
-func doDiodeStepWeighted(mna mna.MNA, base mna.ValueMNA, voltdiff, weight float64) {
-	leakage := base.GetFloat64(13) // 漏电流（饱和电流）
-	vdcoef := base.GetFloat64(7)   // 1/(N*Vt)
-	vzcoef := base.GetFloat64(9)   // 1/Vt
-	zoffset := base.GetFloat64(10)
-	Vz := base.GetFloat64(1)
+func doDiodeStepWeighted(mna mna.MNA, value element.NodeFace, voltdiff, weight float64) {
+	leakage := value.GetFloat64(13) // 漏电流（饱和电流）
+	vdcoef := value.GetFloat64(7)   // 1/(N*Vt)
+	vzcoef := value.GetFloat64(9)   // 1/Vt
+	zoffset := value.GetFloat64(10)
+	Vz := value.GetFloat64(1)
 
 	// 防止奇异矩阵或其他数值问题，在每个PN结上并联一个微小电导
 	gmin := leakage * 0.01
@@ -339,8 +339,8 @@ func doDiodeStepWeighted(mna mna.MNA, base mna.ValueMNA, voltdiff, weight float6
 		geq := vdcoef*leakage*eval + gmin
 		nc := (eval-1)*leakage - geq*voltdiff
 		// 按权重缩放贡献
-		mna.StampConductance(base.Nodes(0), base.Nodes(1), geq*weight)
-		mna.StampCurrentSource(base.Nodes(0), base.Nodes(1), nc*weight)
+		mna.StampConductance(value.GetNodes(0), value.GetNodes(1), geq*weight)
+		mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), nc*weight)
 	} else {
 		// 齐纳二极管
 		geq := leakage*(vdcoef*math.Exp(voltdiff*vdcoef)+vzcoef*math.Exp((-voltdiff-zoffset)*vzcoef)) + gmin
@@ -348,18 +348,18 @@ func doDiodeStepWeighted(mna mna.MNA, base mna.ValueMNA, voltdiff, weight float6
 			math.Exp((-voltdiff-zoffset)*vzcoef)-
 			1) + geq*(-voltdiff)
 		// 按权重缩放贡献
-		mna.StampConductance(base.Nodes(0), base.Nodes(1), geq*weight)
-		mna.StampCurrentSource(base.Nodes(0), base.Nodes(1), nc*weight)
+		mna.StampConductance(value.GetNodes(0), value.GetNodes(1), geq*weight)
+		mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), nc*weight)
 	}
 }
 
 // calculateDiodeCurrent 计算二极管电流（基于CircuitJS1算法）
-func calculateDiodeCurrent(voltdiff float64, base mna.ValueMNA) float64 {
-	leakage := base.GetFloat64(13) // 漏电流（饱和电流）
-	vdcoef := base.GetFloat64(7)   // 1/(N*Vt)
-	vzcoef := base.GetFloat64(9)   // 1/Vt
-	zoffset := base.GetFloat64(10)
-	Vz := base.GetFloat64(1)
+func calculateDiodeCurrent(voltdiff float64, value element.NodeFace) float64 {
+	leakage := value.GetFloat64(13) // 漏电流（饱和电流）
+	vdcoef := value.GetFloat64(7)   // 1/(N*Vt)
+	vzcoef := value.GetFloat64(9)   // 1/Vt
+	zoffset := value.GetFloat64(10)
+	Vz := value.GetFloat64(1)
 
 	if voltdiff >= 0 || Vz == 0 {
 		return leakage * (math.Exp(voltdiff*vdcoef) - 1)

@@ -1,10 +1,10 @@
 package time
 
 import (
+	"circuit/element"
 	"circuit/maths"
 	"circuit/mna"
-	"circuit/utils/element"
-	"circuit/utils/element/event"
+
 	"fmt"
 	"math"
 )
@@ -12,14 +12,13 @@ import (
 // TransientSimulation 执行瞬态仿真，使用元件回调函数和LU求解器实现迭代计算
 // 参数：
 //
-//	cxt: 上下文环境，用于事件传递和回调
 //	timeMNA: 时间管理和自适应步长控制器
 //	mnaSolver: MNA矩阵求解器（支持更新和回滚）
 //	circuitElements: 电路元件列表
 //	call: 每步成功后的回调函数，接收节点电压数组
-func TransientSimulation(cxt event.Context, timeMNA *TimeMNA, mnaSolver mna.UpdateMNA, circuitElements []event.EventValue, call func([]float64)) error {
+func TransientSimulation(timeMNA *TimeMNA, mnaSolver mna.UpdateMNA, circuitElements []element.NodeFace, call func([]float64)) error {
 	// 初始化阶段：获取电路规模并创建求解器
-	nodesNum, voltageSourcesNum := element.GetNum(circuitElements)
+	nodesNum, voltageSourcesNum := mnaSolver.GetNodeNum(), mnaSolver.GetVoltageSourcesNum()
 	// 创建LU分解器（根据矩阵稀疏性选择稠密或稀疏实现）
 	luSolver, err := maths.NewLU(nodesNum + voltageSourcesNum)
 	if err != nil {
@@ -30,8 +29,8 @@ func TransientSimulation(cxt event.Context, timeMNA *TimeMNA, mnaSolver mna.Upda
 	// 标记是否需要重新加盖线性元件（步长变化或首次迭代）
 	needLinearStamp := true
 	// 初始化所有元件状态
-	element.Callback(cxt, event.MarkReset, circuitElements...)
-	element.UpdateElements(mnaSolver, circuitElements)
+	element.CallMark(element.MarkReset, mnaSolver, timeMNA, circuitElements)
+	updateElements(mnaSolver, circuitElements)
 	// 主时间迭代循环
 	timeMNA.ResetTimeStepCount()
 	for !timeMNA.IsSimulationFinished() {
@@ -48,19 +47,19 @@ func TransientSimulation(cxt event.Context, timeMNA *TimeMNA, mnaSolver mna.Upda
 			// 需要重新加盖线性元件
 			needLinearStamp = false
 			// 还原求解状态为上一次收敛结果
-			element.RollbackElements(mnaSolver, circuitElements)
+			rollbackElements(mnaSolver, circuitElements)
 			// 清空矩阵和向量
 			mnaSolver.GetA().Base().Zero()
 			mnaSolver.GetZ().Base().Zero()
 			// 通知元件开始新迭代
-			element.Callback(cxt, event.MarkStartIteration, circuitElements...)
+			element.CallMark(element.MarkStartIteration, mnaSolver, timeMNA, circuitElements)
 			// 加盖线性元件贡献
-			element.Callback(cxt, event.MarkStamp, circuitElements...)
+			element.CallMark(element.MarkStamp, mnaSolver, timeMNA, circuitElements)
 			// 保存线性状态（用于后续回滚）
 			mnaSolver.Update()
 		} else {
 			// 重用已有的线性贡献，仅通知元件开始新迭代
-			element.Callback(cxt, event.MarkStartIteration, circuitElements...)
+			element.CallMark(element.MarkStartIteration, mnaSolver, timeMNA, circuitElements)
 		}
 		// 非线性迭代（牛顿-拉夫逊法）
 		newtonConverged := false
@@ -71,9 +70,8 @@ func TransientSimulation(cxt event.Context, timeMNA *TimeMNA, mnaSolver mna.Upda
 			for i := range circuitElements {
 				// 设置元件收敛状态为真（假设收敛）
 				timeMNA.SetElementConverged(true)
-				// 设置元件标记并执行回调
-				circuitElements[i].SetMark(event.MarkDoStep)
-				cxt.Callback(circuitElements[i])
+				// 执行元件计算
+				element.CallMark(element.MarkDoStep, mnaSolver, timeMNA, []element.NodeFace{circuitElements[i]})
 				// 检查元件是否收敛
 				if !timeMNA.IsElementConverged() {
 					// 记录未收敛元件
@@ -101,7 +99,7 @@ func TransientSimulation(cxt event.Context, timeMNA *TimeMNA, mnaSolver mna.Upda
 			}
 			// 处理未收敛的元件（单独迭代）
 			if len(timeMNA.UnconvergedElems()) > 0 {
-				if err := handleUnconvergedElements(cxt, timeMNA, mnaSolver, luSolver,
+				if err := handleUnconvergedElements(timeMNA, mnaSolver, luSolver,
 					circuitElements, timeMNA.UnconvergedElems()); err != nil {
 					return err
 				}
@@ -118,8 +116,8 @@ func TransientSimulation(cxt event.Context, timeMNA *TimeMNA, mnaSolver mna.Upda
 				timeMNA.CurrentTime(), timeMNA.MaxNonlinearIter())
 		}
 		// 后处理：计算电流和更新元件状态
-		element.Callback(cxt, event.MarkCalculateCurrent, circuitElements...)
-		element.Callback(cxt, event.MarkStepFinished, circuitElements...)
+		element.CallMark(element.MarkCalculateCurrent, mnaSolver, timeMNA, circuitElements)
+		element.CallMark(element.MarkStepFinished, mnaSolver, timeMNA, circuitElements)
 		// 提取并验证节点电压
 		if !extractAndValidateVoltages(mnaSolver, nodesNum, voltages) {
 			return fmt.Errorf("检测到无效电压值（NaN/Inf）在时间 %.6e，停止仿真", timeMNA.CurrentTime())
@@ -136,7 +134,7 @@ func TransientSimulation(cxt event.Context, timeMNA *TimeMNA, mnaSolver mna.Upda
 				return fmt.Errorf("时间推进失败: %v", err)
 			}
 			// 接受求解状态
-			element.UpdateElements(mnaSolver, circuitElements)
+			updateElements(mnaSolver, circuitElements)
 			// 重置计数
 			timeMNA.ResetTimeStepCount()
 			// 调用用户回调函数
@@ -151,24 +149,23 @@ func TransientSimulation(cxt event.Context, timeMNA *TimeMNA, mnaSolver mna.Upda
 }
 
 // handleUnconvergedElements 处理未收敛的元件，进行单独迭代
-func handleUnconvergedElements(cxt event.Context, timeMNA *TimeMNA, mnaSolver mna.UpdateMNA,
-	luSolver maths.LU, circuitElements []event.EventValue, unconvergedIndices []int) error {
+func handleUnconvergedElements(timeMNA *TimeMNA, mnaSolver mna.UpdateMNA,
+	luSolver maths.LU, circuitElements []element.NodeFace, unconvergedIndices []int) error {
 	// 对每个未收敛元件进行单独迭代
 	for _, elemIdx := range unconvergedIndices {
 		timeMNA.ResetElemIter()
 		// 还原求解状态
-		element.RollbackElements(mnaSolver, circuitElements)
+		rollbackElements(mnaSolver, circuitElements)
 		// 元件级迭代循环
 		for timeMNA.NextElemIter() {
 			// 设置元件收敛状态为真
 			timeMNA.SetElementConverged(true)
 			// 执行元件计算
-			circuitElements[elemIdx].SetMark(event.MarkDoStep)
-			cxt.Callback(circuitElements[elemIdx])
+			element.CallMark(element.MarkDoStep, mnaSolver, timeMNA, []element.NodeFace{circuitElements[elemIdx]})
 			// 检查元件是否收敛
 			if timeMNA.IsElementConverged() {
 				// 当元件收敛就记录求解状态
-				element.UpdateElements(mnaSolver, circuitElements)
+				updateElements(mnaSolver, circuitElements)
 				break // 元件收敛，退出迭代
 			}
 			// 重新求解MNA方程（元件状态变化可能影响矩阵）
@@ -191,7 +188,7 @@ func handleUnconvergedElements(cxt event.Context, timeMNA *TimeMNA, mnaSolver mn
 // extractAndValidateVoltages 从MNA求解器提取节点电压并验证有效性
 func extractAndValidateVoltages(mnaSolver mna.MNA, nodesNum int, voltages []float64) bool {
 	allValid := true
-	for i := 0; i < nodesNum; i++ {
+	for i := mna.NodeID(0); i < mna.NodeID(nodesNum); i++ {
 		voltages[i] = mnaSolver.GetNodeVoltage(i)
 		if math.IsNaN(voltages[i]) || math.IsInf(voltages[i], 0) {
 			allValid = false
@@ -219,4 +216,48 @@ func advanceTimeSimple(timeMNA *TimeMNA) error {
 	// 更新仿真时间
 	timeMNA.SetTime(nextTime)
 	return nil
+}
+
+// GetNum 计算节点和电压源数量
+func GetNum(circuitElements []element.NodeFace) (nodesNum, voltageSourcesNum int) {
+	nodeSet := make(map[mna.NodeID]struct{})
+	voltageSourceSet := 0
+
+	for _, elem := range circuitElements {
+		base := elem.Base()
+		// 收集外部节点
+		for i := 0; i < len(base.Nodes); i++ {
+			nodeID := elem.GetNodes(i)
+			if nodeID != mna.Gnd {
+				nodeSet[nodeID] = struct{}{}
+			}
+		}
+		// 收集内部节点
+		for i := 0; i < len(base.NodesInternal); i++ {
+			nodeID := elem.GetNodesInternal(i)
+			if nodeID != mna.Gnd {
+				nodeSet[nodeID] = struct{}{}
+			}
+		}
+		// 收集电压源
+		voltageSourceSet += len(base.VoltSource)
+	}
+
+	return len(nodeSet), voltageSourceSet
+}
+
+// updateElements 更新元件状态
+func updateElements(mnaSolver mna.UpdateMNA, circuitElements []element.NodeFace) {
+	mnaSolver.UpdateX()
+	for _, elem := range circuitElements {
+		elem.Base().Update()
+	}
+}
+
+// rollbackElements 回滚元件状态
+func rollbackElements(mnaSolver mna.UpdateMNA, circuitElements []element.NodeFace) {
+	mnaSolver.RollbackX()
+	for _, elem := range circuitElements {
+		elem.Base().Rollback()
+	}
 }

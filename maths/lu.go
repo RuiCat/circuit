@@ -70,7 +70,7 @@ func (lu *baseLU) selectPivot(k int) (int, float64, error) {
 	}
 
 	// 相对阈值判断矩阵奇异性（适配不同量级矩阵，1e-12为工程常用安全阈值）
-	threshold := maxAbsVal * 1e-12
+	threshold := math.Max(maxAbsVal*1e-12, 1e-12)
 	if maxAbsVal < threshold {
 		return 0, 0, errors.New("lu decomposition: matrix is singular or nearly singular")
 	}

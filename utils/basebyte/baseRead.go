@@ -17,93 +17,93 @@ func baseRead(r *Read, v reflect.Value) error {
 
 	switch v.Kind() {
 	case reflect.Bool:
-		val, err := r.Bool()
-		if err != nil {
-			return err
+		val := r.Bool()
+		if r.Error != nil {
+			return r.Error
 		}
 		v.SetBool(val)
 	case reflect.Int:
-		val, err := r.Int()
-		if err != nil {
-			return err
+		val := r.Int()
+		if r.Error != nil {
+			return r.Error
 		}
 		v.SetInt(int64(val))
 	case reflect.Int8:
-		val, err := r.Int8()
-		if err != nil {
-			return err
+		val := r.Int8()
+		if r.Error != nil {
+			return r.Error
 		}
 		v.SetInt(int64(val))
 	case reflect.Int16:
-		val, err := r.Int16()
-		if err != nil {
-			return err
+		val := r.Int16()
+		if r.Error != nil {
+			return r.Error
 		}
 		v.SetInt(int64(val))
 	case reflect.Int32:
-		val, err := r.Int32()
-		if err != nil {
-			return err
+		val := r.Int32()
+		if r.Error != nil {
+			return r.Error
 		}
 		v.SetInt(int64(val))
 	case reflect.Int64:
-		val, err := r.Int64()
-		if err != nil {
-			return err
+		val := r.Int64()
+		if r.Error != nil {
+			return r.Error
 		}
 		v.SetInt(val)
 	case reflect.Uint:
-		val, err := r.Uint()
-		if err != nil {
-			return err
+		val := r.Uint()
+		if r.Error != nil {
+			return r.Error
 		}
 		v.SetUint(uint64(val))
 	case reflect.Uint8:
-		val, err := r.Uint8()
-		if err != nil {
-			return err
+		val := r.Uint8()
+		if r.Error != nil {
+			return r.Error
 		}
 		v.SetUint(uint64(val))
 	case reflect.Uint16:
-		val, err := r.Uint16()
-		if err != nil {
-			return err
+		val := r.Uint16()
+		if r.Error != nil {
+			return r.Error
 		}
 		v.SetUint(uint64(val))
 	case reflect.Uint32:
-		val, err := r.Uint32()
-		if err != nil {
-			return err
+		val := r.Uint32()
+		if r.Error != nil {
+			return r.Error
 		}
 		v.SetUint(uint64(val))
 	case reflect.Uint64:
-		val, err := r.Uint64()
-		if err != nil {
-			return err
+		val := r.Uint64()
+		if r.Error != nil {
+			return r.Error
 		}
 		v.SetUint(val)
 	case reflect.Float32:
-		val, err := r.Float32()
-		if err != nil {
-			return err
+		val := r.Float32()
+		if r.Error != nil {
+			return r.Error
 		}
 		v.SetFloat(float64(val))
 	case reflect.Float64:
-		val, err := r.Float64()
-		if err != nil {
-			return err
+		val := r.Float64()
+		if r.Error != nil {
+			return r.Error
 		}
 		v.SetFloat(val)
 	case reflect.Complex64:
-		val, err := r.Complex64()
-		if err != nil {
-			return err
+		val := r.Complex64()
+		if r.Error != nil {
+			return r.Error
 		}
 		v.SetComplex(complex128(val))
 	case reflect.Complex128:
-		val, err := r.Complex128()
-		if err != nil {
-			return err
+		val := r.Complex128()
+		if r.Error != nil {
+			return r.Error
 		}
 		v.SetComplex(val)
 	case reflect.Ptr:
@@ -117,9 +117,9 @@ func baseRead(r *Read, v reflect.Value) error {
 			v.Set(reflect.MakeMap(t))
 		}
 
-		count, err := r.Int()
-		if err != nil {
-			return err
+		count := r.Int()
+		if r.Error != nil {
+			return r.Error
 		}
 
 		key := reflect.New(t.Key()).Elem()
@@ -135,9 +135,9 @@ func baseRead(r *Read, v reflect.Value) error {
 			v.SetMapIndex(key, value)
 		}
 	case reflect.String:
-		bytes, err := r.Bytes()
-		if err != nil {
-			return err
+		bytes := r.Bytes()
+		if r.Error != nil {
+			return r.Error
 		}
 		v.SetString(string(bytes))
 	case reflect.Array:
@@ -148,9 +148,9 @@ func baseRead(r *Read, v reflect.Value) error {
 			}
 		}
 	case reflect.Slice:
-		n, err := r.Int()
-		if err != nil {
-			return err
+		n := r.Int()
+		if r.Error != nil {
+			return r.Error
 		}
 		v.Set(reflect.MakeSlice(v.Type(), n, n))
 		for i := 0; i < n; i++ {
@@ -159,9 +159,9 @@ func baseRead(r *Read, v reflect.Value) error {
 			}
 		}
 	case reflect.Interface:
-		kindVal, err := r.Uint()
-		if err != nil {
-			return err
+		kindVal := r.Uint()
+		if r.Error != nil {
+			return r.Error
 		}
 		k := reflect.Kind(kindVal)
 

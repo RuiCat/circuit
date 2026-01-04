@@ -5,34 +5,44 @@ import (
 	"sort"
 )
 
-// denseMatrix 稠密矩阵实现（基于MatrixDataManager，全量存储所有元素）
+// denseMatrix 稠密矩阵实现，基于MatrixDataManager
+// 全量存储所有矩阵元素，适合小规模矩阵或稠密矩阵运算
+// 提供高效的随机访问和遍历性能
 type denseMatrix struct {
-	*MatrixDataManager // 嵌入矩阵数据管理器复用功能
+	*MatrixDataManager // 嵌入矩阵数据管理器，复用矩阵数据管理功能
 }
 
-// Base 获取底层
+// Base 获取底层矩阵实现
+// 返回：矩阵接口自身，用于类型断言和底层访问
 func (m *denseMatrix) Base() Matrix {
 	return m
 }
 
 // NewDenseMatrix 创建指定维度的空稠密矩阵
+// 参数rows: 矩阵行数，必须为非负整数
+// 参数cols: 矩阵列数，必须为非负整数
+// 返回：新创建的稠密矩阵实例，所有元素初始化为零
 func NewDenseMatrix(rows, cols int) Matrix {
 	return &denseMatrix{
 		MatrixDataManager: NewMatrixDataManager(rows, cols),
 	}
 }
 
-// BuildFromDense 从稠密矩阵构建（覆盖原有数据）
+// BuildFromDense 从二维切片构建稠密矩阵（覆盖原有数据）
+// 参数dense: 二维浮点数切片，必须与矩阵维度匹配
+// 功能：将二维切片数据复制到矩阵中，替换原有数据
 func (m *denseMatrix) BuildFromDense(dense [][]float64) {
 	m.MatrixDataManager.BuildFromDense(dense)
 }
 
 // Zero 清空矩阵为零矩阵
+// 将所有矩阵元素设置为零，保持矩阵维度不变
 func (m *denseMatrix) Zero() {
 	m.MatrixDataManager.Zero()
 }
 
 // Cols 返回矩阵列数
+// 返回：矩阵的列数，即每行元素的数量
 func (m *denseMatrix) Cols() int {
 	return m.MatrixDataManager.Cols()
 }
@@ -98,12 +108,15 @@ func (m *denseMatrix) MatrixVectorMultiply(x Vector) Vector {
 	return result
 }
 
-// NonZeroCount 统计非零元素数量
+// NonZeroCount 统计矩阵中非零元素的数量
+// 返回：矩阵中绝对值大于1e-16的元素个数
+// 用于评估矩阵的稀疏性和选择优化算法
 func (m *denseMatrix) NonZeroCount() int {
 	return m.MatrixDataManager.NonZeroCount()
 }
 
 // Rows 返回矩阵行数
+// 返回：矩阵的行数，即矩阵的高度
 func (m *denseMatrix) Rows() int {
 	return m.MatrixDataManager.Rows()
 }
@@ -134,21 +147,27 @@ func (m *denseMatrix) Resize(rows, cols int) {
 	m.MatrixDataManager.Resize(rows * cols)
 }
 
-// sparseMatrix 稀疏矩阵实现（CSR格式：Compressed Sparse Row）
-// 核心优化：仅存储非零元素，大幅节省内存（适合非零元素占比<10%的矩阵）
+// sparseMatrix 稀疏矩阵实现，采用CSR格式（Compressed Sparse Row）
+// 核心优化：仅存储非零元素，大幅节省内存空间
+// 适合非零元素占比小于10%的稀疏矩阵，提供高效的行遍历操作
 type sparseMatrix struct {
-	DataManager       // 非零元素值：与colInd一一对应
-	rows, cols  int   // 矩阵维度
-	rowPtr      []int // 行指针：rowPtr[i] = 第i行非零元素在colInd/values中的起始索引
-	colInd      []int // 列索引：存储非零元素的列号
+	DataManager       // 非零元素值存储，与colInd一一对应
+	rows, cols  int   // 矩阵维度：行数和列数
+	rowPtr      []int // 行指针数组：rowPtr[i]表示第i行非零元素在colInd和values中的起始索引
+	colInd      []int // 列索引数组：存储每个非零元素所在的列号
 }
 
-// Base 获取底层
+// Base 获取底层矩阵实现
+// 返回：矩阵接口自身，用于类型断言和底层访问
 func (m *sparseMatrix) Base() Matrix {
 	return m
 }
 
 // NewSparseMatrix 创建指定维度的空稀疏矩阵
+// 参数rows: 矩阵行数，必须为非负整数
+// 参数cols: 矩阵列数，必须为非负整数
+// 返回：新创建的稀疏矩阵实例，初始时没有非零元素
+// 注意：rowPtr数组长度为rows+1，rowPtr[rows]存储非零元素总数
 func NewSparseMatrix(rows, cols int) Matrix {
 	if rows < 0 || cols < 0 {
 		panic("invalid matrix dimensions: cannot be negative")
@@ -156,9 +175,9 @@ func NewSparseMatrix(rows, cols int) Matrix {
 	return &sparseMatrix{
 		rows:        rows,
 		cols:        cols,
-		rowPtr:      make([]int, rows+1), // rowPtr[rows] = 非零元素总数
-		colInd:      make([]int, 0),
-		DataManager: NewDataManager(0),
+		rowPtr:      make([]int, rows+1), // 初始化行指针数组，所有元素为0
+		colInd:      make([]int, 0),      // 初始列索引为空
+		DataManager: NewDataManager(0),   // 初始值存储为空
 	}
 }
 
@@ -318,7 +337,8 @@ func (m *sparseMatrix) Copy(a Matrix) {
 	}
 }
 
-// IsSquare 判断是否为方阵
+// IsSquare 判断稀疏矩阵是否为方阵
+// 返回：如果行数等于列数则返回true，否则返回false
 func (m *sparseMatrix) IsSquare() bool {
 	return m.rows == m.cols
 }
