@@ -10,7 +10,7 @@ import (
 var OpAmpType element.NodeType = element.AddElement(5, &OpAmp{
 	&element.Config{
 		Name: "opamp",
-		Pin:  []string{"Vp", "Vn", "Vout"},
+		Pin:  element.SetPin(element.PinLowVoltage, "Vp", "Vn", "Vout"),
 		ValueInit: []any{
 			float64(15),  // 0: Vmax 正最大输出摆幅
 			float64(-15), // 1: Vmin 负最大输出摆幅

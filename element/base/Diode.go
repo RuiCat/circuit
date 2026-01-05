@@ -11,7 +11,7 @@ import (
 var DiodeType element.NodeType = element.AddElement(2, &Diode{
 	&element.Config{
 		Name: "d",
-		Pin:  []string{"anode", "cathode"},
+		Pin:  element.SetPin(element.PinLowVoltage, "anode", "cathode"),
 		ValueInit: []any{
 			float64(1e-14),    // 0: 反向饱和电流 Is (A)
 			float64(0),        // 1: 齐纳击穿电压 Vz (V) (0表示无齐纳击穿)

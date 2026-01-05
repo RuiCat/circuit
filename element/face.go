@@ -6,6 +6,17 @@ import (
 	"log"
 )
 
+// PinType 元件类型
+type PinType uint8
+
+const (
+	PinLowVoltage  PinType = (1 << iota) // 弱电元件
+	PinHighVoltage                       // 强电元件
+	PinBoolean                           // 布尔元件
+	PinPneumatic                         // 气路元件
+	PinHydraulic                         // 油路元件
+)
+
 // elementFace 元件接口，组合了配置接口和元件实现接口
 // 这是内部使用的接口类型，用于统一管理元件的配置和行为
 type elementFace interface {
@@ -50,12 +61,12 @@ func NewElementVlaue(eleType NodeType, value ...any) NodeFace {
 		config := ele.GetConfig()
 		// 初始化节点数据结构
 		node := &Node{
-			NdoeType:      eleType,
-			NodeValue:     make([]any, config.ValueNum()),
-			OrigValue:     make(map[int]any),
-			Nodes:         make([]mna.NodeID, config.PinNum()),
-			VoltSource:    make([]mna.VoltageID, config.VoltageNum()),
-			NodesInternal: make([]mna.NodeID, config.InternalNum()),
+			NdoeType:     eleType,
+			NodeValue:    make([]any, config.ValueNum()),
+			OrigValue:    make(map[int]any),
+			Nodes:        make([]mna.NodeID, config.PinNum()),
+			VoltSource:   make([]mna.VoltageID, config.VoltageNum()),
+			NodeInternal: make([]mna.NodeID, config.InternalNum()),
 		}
 		// 初始化参数
 		copy(node.NodeValue, config.ValueInit)

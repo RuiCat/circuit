@@ -10,7 +10,7 @@ import (
 var MotorType element.NodeType = element.AddElement(4, &Motor{
 	&element.Config{
 		Name: "motor",
-		Pin:  []string{"m+", "m-"},
+		Pin:  element.SetPin(element.PinLowVoltage, "m+", "m-"),
 		ValueInit: []any{
 			float64(12),    // 0: 额定电压(V)
 			float64(1000),  // 1: 额定转速(RPM)

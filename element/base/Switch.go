@@ -9,7 +9,7 @@ import (
 var SwitchType element.NodeType = element.AddElement(7, &Switch{
 	&element.Config{
 		Name: "sw",
-		Pin:  []string{"sw1", "sw2"},
+		Pin:  element.SetPin(element.PinLowVoltage, "sw1", "sw2"),
 		ValueInit: []any{
 			int(0),        // 0: 开关状态 (0=关, 1=开)
 			float64(1e-6), // 1: 导通电阻

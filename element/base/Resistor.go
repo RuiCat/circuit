@@ -8,9 +8,9 @@ import (
 // ResistorType 定义元件
 var ResistorType element.NodeType = element.AddElement(6, &Resistor{
 	&element.Config{
-		Name:      "r",                   // 元件名称，网表文件中使用的标识符
-		Pin:       []string{"r1", "r2"},  // 引脚名称，电阻有两个引脚
-		ValueInit: []any{float64(10000)}, // 初始化数据：默认电阻值为10kΩ
+		Name:      "r",                                               // 元件名称，网表文件中使用的标识符
+		Pin:       element.SetPin(element.PinLowVoltage, "r1", "r2"), // 引脚名称，电阻有两个引脚
+		ValueInit: []any{float64(10000)},                             // 初始化数据：默认电阻值为10kΩ
 	},
 })
 

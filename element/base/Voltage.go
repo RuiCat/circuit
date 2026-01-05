@@ -22,7 +22,7 @@ const (
 var VoltageType element.NodeType = element.AddElement(11, &Voltage{
 	&element.Config{
 		Name: "v",
-		Pin:  []string{"v+", "v-"},
+		Pin:  element.SetPin(element.PinLowVoltage, "v+", "v-"),
 		ValueInit: []any{
 			int(WfDC),  // 0: 波形类型
 			float64(0), // 1: 偏置电压

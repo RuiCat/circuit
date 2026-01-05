@@ -233,7 +233,7 @@ func GetNum(circuitElements []element.NodeFace) (nodesNum, voltageSourcesNum int
 			}
 		}
 		// 收集内部节点
-		for i := 0; i < len(base.NodesInternal); i++ {
+		for i := 0; i < len(base.NodeInternal); i++ {
 			nodeID := elem.GetNodesInternal(i)
 			if nodeID != mna.Gnd {
 				nodeSet[nodeID] = struct{}{}

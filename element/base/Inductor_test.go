@@ -23,7 +23,7 @@ func TestInductor(t *testing.T) {
 
 	// 创建求解
 	mnaSolver := mna.NewUpdateMNA(time.GetNum(ele))
-	timeMNA, err := time.NewTimeMNA(0.1)
+	timeMNA, err := time.NewTimeMNA(1e-6)
 	if err != nil {
 		t.Fatalf("创建仿真时间失败 %s", err)
 	}

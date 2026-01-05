@@ -10,7 +10,7 @@ import (
 var TransistorType element.NodeType = element.AddElement(9, &Transistor{
 	&element.Config{
 		Name: "q",
-		Pin:  []string{"b", "c", "e"}, // 基极、集电极、发射极
+		Pin:  element.SetPin(element.PinLowVoltage, "b", "c", "e"), // 基极、集电极、发射极
 		ValueInit: []any{
 			bool(false),       // 0: PNP标志 (false=NPN, true=PNP)
 			float64(100),      // 1: 电流增益(hFE)

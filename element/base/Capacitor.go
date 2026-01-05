@@ -9,7 +9,7 @@ import (
 var CapacitorType element.NodeType = element.AddElement(0, &Capacitor{
 	&element.Config{
 		Name:      "c",
-		Pin:       []string{"c1", "c2"},
+		Pin:       element.SetPin(element.PinLowVoltage, "c1", "c2"),
 		ValueInit: []any{float64(1e-6), 0.0, 0.0, 0.0, 0.0}, // 0:C 1:G_eq 2:I_hist 3:V_diff 4:I_cap
 		Current:   []int{4},
 		OrigValue: []int{1, 2, 3, 4},
