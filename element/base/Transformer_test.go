@@ -13,10 +13,10 @@ func TestTransformer(t *testing.T) {
 	freq := 50.0
 	vAmp := 5.0
 	ele := []element.NodeFace{
-		element.NewElementVlaue(VoltageType, int(WfAC), 0.0, freq, 0.0, vAmp, 0.0, 0.0, 0.0),
-		element.NewElementVlaue(ResistorType, 10.0),
-		element.NewElementVlaue(TransformerType, 4.0, 1.0, 0.999),
-		element.NewElementVlaue(ResistorType, 1000.0), // 增大负载电阻减小压降
+		element.NewElementValue(VoltageType, int(WfAC), 0.0, freq, 0.0, vAmp, 0.0, 0.0, 0.0),
+		element.NewElementValue(ResistorType, 10.0),
+		element.NewElementValue(TransformerType, 4.0, 1.0, 0.999),
+		element.NewElementValue(ResistorType, 1000.0), // 增大负载电阻减小压降
 	}
 
 	// 设置引脚

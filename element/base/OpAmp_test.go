@@ -12,13 +12,13 @@ func TestOpAmp(t *testing.T) {
 	// 创建同相放大器电路：增益 = 1 + R2/R1
 	ele := []element.NodeFace{
 		// 输入电压源：直流 1V
-		element.NewElementVlaue(VoltageType, int(WfDC), 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0),
+		element.NewElementValue(VoltageType, int(WfDC), 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0),
 		// 电阻 R1 = 1kΩ
-		element.NewElementVlaue(ResistorType, 1000.0),
+		element.NewElementValue(ResistorType, 1000.0),
 		// 电阻 R2 = 2kΩ
-		element.NewElementVlaue(ResistorType, 2000.0),
+		element.NewElementValue(ResistorType, 2000.0),
 		// 运算放大器
-		element.NewElementVlaue(OpAmpType, 15.0, -15.0, 1e5),
+		element.NewElementValue(OpAmpType, 15.0, -15.0, 1e5),
 	}
 
 	// 设置引脚

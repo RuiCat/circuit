@@ -8,10 +8,13 @@ import (
 // updateMatrix 带缓存更新矩阵（基于稠密矩阵，支持缓存+回溯）
 // 核心优化：频繁修改先写缓存，批量刷盘，支持回滚，提升性能
 type updateMatrix struct {
-	Matrix                        // 嵌入稠密矩阵（底层存储）
-	bitmap    utils.Bitmap        // 位图：标记缓存修改位置（1=缓存有效）
-	cache     map[int][16]float64 // 缓存：块存储（key=块索引，value=16元素块）
-	blockSize int                 // 块大小（固定16，对齐CPU缓存）
+	Matrix                            // 嵌入稠密矩阵（底层存储）
+	bitmap        utils.Bitmap        // 位图：标记缓存修改位置（1=缓存有效）
+	cache         map[int][16]float64 // 缓存：块存储（key=块索引，value=16元素块）
+	blockSize     int                 // 块大小（固定16，对齐CPU缓存）
+	rowResultCols []int               // GetRow 缓冲区：列索引
+	rowResultVals []float64           // GetRow 缓冲区：值
+	rowResultVec  *denseVector        // GetRow 缓冲区：返回的向量
 }
 
 // NewUpdateMatrix 从基础矩阵创建更新矩阵（复制基础矩阵数据）
@@ -22,20 +25,27 @@ func NewUpdateMatrix(base Matrix) UpdateMatrix {
 	dm := NewDenseMatrix(rows, cols)
 	base.Copy(dm)
 	return &updateMatrix{
-		Matrix:    dm,
-		bitmap:    utils.NewBitmap(rows * cols), // 位图长度=矩阵元素总数
-		cache:     make(map[int][16]float64),
-		blockSize: 16,
+		Matrix:        dm,
+		bitmap:        utils.NewBitmap(rows * cols), // 位图长度=矩阵元素总数
+		cache:         make(map[int][16]float64),
+		blockSize:     16,
+		rowResultCols: make([]int, 0, cols),
+		rowResultVals: make([]float64, 0, cols),
+		rowResultVec:  NewDenseVector(0).(*denseVector),
 	}
 }
 
 // NewUpdateMatrixPtr 从基础矩阵指针创建更新矩阵
 func NewUpdateMatrixPtr(ptr Matrix) UpdateMatrix {
+	cols := ptr.Cols()
 	return &updateMatrix{
-		Matrix:    ptr,
-		bitmap:    utils.NewBitmap(ptr.Rows() * ptr.Cols()), // 位图长度=矩阵元素总数
-		cache:     make(map[int][16]float64),
-		blockSize: 16,
+		Matrix:        ptr,
+		bitmap:        utils.NewBitmap(ptr.Rows() * ptr.Cols()), // 位图长度=矩阵元素总数
+		cache:         make(map[int][16]float64),
+		blockSize:     16,
+		rowResultCols: make([]int, 0, cols),
+		rowResultVals: make([]float64, 0, cols),
+		rowResultVec:  NewDenseVector(0).(*denseVector),
 	}
 }
 
@@ -196,43 +206,40 @@ func (um *updateMatrix) Copy(a Matrix) {
 	}
 }
 
-// GetRow 获取指定行的非零元素（合并缓存+底层数据）
+// GetRow 获取指定行的非零元素（合并缓存+底层数据），利用缓冲区避免重复内存分配
 func (um *updateMatrix) GetRow(row int) ([]int, Vector) {
 	if row < 0 || row >= um.Rows() {
 		panic(fmt.Sprintf("row index out of range: %d (rows: %d)", row, um.Rows()))
 	}
-	// 读取底层行数据
-	baseCols, baseVec := um.Matrix.GetRow(row)
-	baseVals := baseVec.ToDense()
-	// 初始化结果（底层数据）
-	resultCols := make([]int, len(baseCols))
-	resultVals := make([]float64, len(baseVals))
-	copy(resultCols, baseCols)
-	copy(resultVals, baseVals)
-	// 合并缓存中该行的修改
-	for col := 0; col < um.Cols(); col++ {
-		if um.isBitSet(row, col) {
-			blockIdx, pos := um.getBlockIndexAndPosition(row, col)
-			if block, exists := um.cache[blockIdx]; exists {
-				cachedVal := block[pos]
-				// 检查该列是否已在底层数据中
-				found := false
-				for i, c := range resultCols {
-					if c == col {
-						resultVals[i] = cachedVal // 覆盖底层值
-						found = true
-						break
-					}
-				}
-				// 缓存值非零且不在底层，添加到结果
-				if !found && cachedVal != 0 {
-					resultCols = append(resultCols, col)
-					resultVals = append(resultVals, cachedVal)
-				}
-			}
+	// 1. 清空并重用缓冲区
+	um.rowResultCols = um.rowResultCols[:0]
+	um.rowResultVals = um.rowResultVals[:0]
+
+	// 2. 遍历该行的所有列，合并缓存和底层数据
+	for j := 0; j < um.Cols(); j++ {
+		var val float64
+		// 优先从缓存读取
+		if um.isBitSet(row, j) {
+			blockIdx, pos := um.getBlockIndexAndPosition(row, j)
+			// A block should exist if the bit is set
+			val = um.cache[blockIdx][pos]
+		} else {
+			// 缓存未命中，从底层矩阵读取
+			val = um.Matrix.Get(row, j)
+		}
+
+		// 仅添加非零元素到结果中
+		if val != 0 {
+			um.rowResultCols = append(um.rowResultCols, j)
+			um.rowResultVals = append(um.rowResultVals, val)
 		}
 	}
-	return resultCols, NewDenseVectorWithData(resultVals)
+
+	// 3. 直接返回内部缓冲区的切片和向量，以最大化性能
+	// 调用方不应修改返回的切片或向量
+	um.rowResultVec.DataManager.Data = um.rowResultVals
+	um.rowResultVec.DataManager.Len = len(um.rowResultVals)
+	return um.rowResultCols, um.rowResultVec
 }
 
 // MatrixVectorMultiply 矩阵向量乘法（使用当前可见数据：缓存+底层）

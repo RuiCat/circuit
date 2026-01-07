@@ -182,7 +182,7 @@ func (m *mna) StampRightSideSet(i NodeID, v float64) {
 // StampResistor 加盖电阻元件 (n1-n2, 阻值r)
 func (m *mna) StampResistor(n1, n2 NodeID, r float64) {
 	if r <= 0 || math.IsInf(r, 0) {
-		return // 无效电阻值
+		r = 1e-9
 	}
 	g := 1.0 / r // 电导
 	m.StampConductance(n1, n2, g)

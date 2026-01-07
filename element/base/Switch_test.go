@@ -12,9 +12,9 @@ func TestSwitch(t *testing.T) {
 	// 测试开关在导通和关断状态下的行为
 	ele := []element.NodeFace{
 		// 电压源参数：波形类型(WfDC), 偏置电压(0), 频率(0), 相位偏移(0), 最大电压(5), 占空比(0), 频率时间零点(0), 噪声值(0)
-		element.NewElementVlaue(VoltageType, int(WfDC)),
-		element.NewElementVlaue(ResistorType, 100.0),       // 负载电阻 100R
-		element.NewElementVlaue(SwitchType, 1, 1e-6, 1e12), // 开关：初始状态为导通，导通电阻1e-6Ω，关断电阻1e12Ω
+		element.NewElementValue(VoltageType, int(WfDC)),
+		element.NewElementValue(ResistorType, 100.0),       // 负载电阻 100R
+		element.NewElementValue(SwitchType, 1, 1e-6, 1e12), // 开关：初始状态为导通，导通电阻1e-6Ω，关断电阻1e12Ω
 	}
 
 	// 设置引脚

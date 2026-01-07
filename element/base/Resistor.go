@@ -24,10 +24,5 @@ type Resistor struct{ *element.Config }
 // 参数time: 仿真时间接口，当前未使用（电阻是线性时不变元件）
 // 参数value: 电阻元件节点接口，用于获取电阻值和节点连接信息
 func (Resistor) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
-	r := value.GetFloat64(0) // 获取电阻值（参数索引0）
-	if r > 0 {
-		// 调用MNA求解器的StampResistor方法，将电阻贡献添加到矩阵
-		// 电阻连接在节点0（r1）和节点1（r2）之间
-		mna.StampResistor(value.GetNodes(0), value.GetNodes(1), r)
-	}
+	mna.StampResistor(value.GetNodes(0), value.GetNodes(1), value.GetFloat64(0))
 }

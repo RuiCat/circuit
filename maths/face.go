@@ -15,8 +15,8 @@ type DataManager interface {
 	Increment(index int, value float64) // 增量更新指定索引处的元素值
 
 	// 数据操作和转换方法
-	Data() []float64    // 返回数据的切片副本
-	DataPtr() []float64 // 返回数据的切片引用（直接操作底层数据）
+	DataCopy() []float64 // 返回数据的切片副本
+	DataPtr() []float64  // 返回数据的切片引用（直接操作底层数据）
 
 	// 数据修改方法
 	Zero()                                       // 清空所有数据
@@ -92,9 +92,10 @@ type Matrix interface {
 	BuildFromDense(dense [][]float64) // 从稠密矩阵构建
 
 	// 数据修改方法
-	Zero()                 // 清空矩阵为零矩阵
-	Copy(a Matrix)         // 复制自身数据到目标矩阵a
-	Resize(rows, cols int) // 重置矩阵大小和数据（清空所有元素）
+	Zero()                   // 清空矩阵为零矩阵
+	Copy(a Matrix)           // 复制自身数据到目标矩阵a
+	Resize(rows, cols int)   // 重置矩阵大小和数据（清空所有元素）
+	SwapRows(row1, row2 int) // 交换两行
 
 	// 数学运算方法
 	MatrixVectorMultiply(x Vector) Vector // 矩阵向量乘法（返回A*x）

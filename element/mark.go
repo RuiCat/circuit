@@ -23,27 +23,27 @@ func CallMark(mark Mark, mna mna.MNA, time mna.Time, value []NodeFace) {
 	switch mark {
 	case MarkReset:
 		for _, v := range value {
-			ElementLitt[v.Base().NdoeType].Reset(v)
+			ElementLitt[v.Base().NodeType].Reset(v)
 		}
 	case MarkStartIteration:
 		for _, v := range value {
-			ElementLitt[v.Base().NdoeType].StartIteration(mna, time, v)
+			ElementLitt[v.Base().NodeType].StartIteration(mna, time, v)
 		}
 	case MarkStamp:
 		for _, v := range value {
-			ElementLitt[v.Base().NdoeType].Stamp(mna, time, v)
+			ElementLitt[v.Base().NodeType].Stamp(mna, time, v)
 		}
 	case MarkDoStep:
 		for _, v := range value {
-			ElementLitt[v.Base().NdoeType].DoStep(mna, time, v)
+			ElementLitt[v.Base().NodeType].DoStep(mna, time, v)
 		}
 	case MarkCalculateCurrent:
 		for _, v := range value {
-			ElementLitt[v.Base().NdoeType].CalculateCurrent(mna, time, v)
+			ElementLitt[v.Base().NodeType].CalculateCurrent(mna, time, v)
 		}
 	case MarkStepFinished:
 		for _, v := range value {
-			ElementLitt[v.Base().NdoeType].StepFinished(mna, time, v)
+			ElementLitt[v.Base().NodeType].StepFinished(mna, time, v)
 		}
 	default:
 		log.Fatalf("未知 CallMark 操作: %d", mark)

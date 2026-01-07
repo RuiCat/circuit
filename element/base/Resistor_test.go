@@ -10,8 +10,8 @@ import (
 func TestResistor(t *testing.T) {
 	// 元件列表
 	ele := []element.NodeFace{
-		element.NewElementVlaue(VoltageType, int(WfDC)), // 电压源参数：波形类型(WfDC), 偏置电压(0), 频率(0), 相位偏移(0), 最大电压(5), 占空比(0), 频率时间零点(0), 噪声值(0)
-		element.NewElementVlaue(ResistorType, 100.0),    // 电阻 100R
+		element.NewElementValue(VoltageType, int(WfDC)), // 电压源参数：波形类型(WfDC), 偏置电压(0), 频率(0), 相位偏移(0), 最大电压(5), 占空比(0), 频率时间零点(0), 噪声值(0)
+		element.NewElementValue(ResistorType, 100.0),    // 电阻 100R
 	}
 
 	// 设置引脚

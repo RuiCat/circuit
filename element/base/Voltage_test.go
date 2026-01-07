@@ -13,8 +13,8 @@ func TestVoltageSource(t *testing.T) {
 	t.Run("DCVoltage", func(t *testing.T) {
 		ele := []element.NodeFace{
 			// 直流电压源：5V
-			element.NewElementVlaue(VoltageType, int(WfDC), 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0),
-			element.NewElementVlaue(ResistorType, 100.0), // 负载电阻 100Ω
+			element.NewElementValue(VoltageType, int(WfDC), 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0),
+			element.NewElementValue(ResistorType, 100.0), // 负载电阻 100Ω
 		}
 
 		// 设置引脚
@@ -48,8 +48,8 @@ func TestVoltageSource(t *testing.T) {
 	t.Run("ACVoltage", func(t *testing.T) {
 		ele := []element.NodeFace{
 			// 交流电压源：幅值5V，频率1Hz
-			element.NewElementVlaue(VoltageType, int(WfAC), 0.0, 1.0, 0.0, 5.0, 0.0, 0.0, 0.0),
-			element.NewElementVlaue(ResistorType, 100.0),
+			element.NewElementValue(VoltageType, int(WfAC), 0.0, 1.0, 0.0, 5.0, 0.0, 0.0, 0.0),
+			element.NewElementValue(ResistorType, 100.0),
 		}
 
 		ele[0].SetNodePins(0, -1) // 交流电压源正极接节点0，负极接地
@@ -83,8 +83,8 @@ func TestVoltageSource(t *testing.T) {
 	t.Run("SquareWaveVoltage", func(t *testing.T) {
 		ele := []element.NodeFace{
 			// 方波电压源：幅值5V，频率1Hz，占空比50%
-			element.NewElementVlaue(VoltageType, int(WfSQUARE), 0.0, 1.0, 0.0, 5.0, 0.5, 0.0, 0.0),
-			element.NewElementVlaue(ResistorType, 100.0),
+			element.NewElementValue(VoltageType, int(WfSQUARE), 0.0, 1.0, 0.0, 5.0, 0.5, 0.0, 0.0),
+			element.NewElementValue(ResistorType, 100.0),
 		}
 
 		ele[0].SetNodePins(0, -1) // 方波电压源正极接节点0，负极接地

@@ -7,7 +7,7 @@ import (
 
 // denseVector 稠密向量实现（基于DataManager，全量存储所有元素）
 type denseVector struct {
-	DataManager // 嵌入DataManager复用功能
+	DataManager *dataManager // 嵌入DataManager复用功能
 }
 
 // Base 获取底层
@@ -18,14 +18,14 @@ func (v *denseVector) Base() Vector {
 // NewDenseVector 创建指定长度的空稠密向量
 func NewDenseVector(length int) Vector {
 	return &denseVector{
-		DataManager: NewDataManager(length),
+		DataManager: NewDataManager(length).(*dataManager),
 	}
 }
 
 // NewDenseVectorWithData 从切片创建稠密向量
 func NewDenseVectorWithData(data []float64) Vector {
 	return &denseVector{
-		DataManager: NewDataManagerWithData(data),
+		DataManager: NewDataManagerWithData(data).(*dataManager),
 	}
 }
 
@@ -34,7 +34,7 @@ func (v *denseVector) BuildFromDense(dense []float64) {
 	if len(dense) != v.Length() {
 		panic(fmt.Sprintf("dimension mismatch: len(dense)=%d, vector length=%d", len(dense), v.Length()))
 	}
-	v.ReplaceInPlace(0, dense...)
+	v.DataManager.ReplaceInPlace(0, dense...)
 }
 
 // Zero 清空向量为零向量
@@ -94,7 +94,7 @@ func (v *denseVector) String() string {
 
 // ToDense 转换为稠密切片（返回拷贝）
 func (v *denseVector) ToDense() []float64 {
-	return v.DataManager.Data()
+	return v.DataManager.DataCopy()
 }
 
 // DotProduct 计算与另一个向量的点积（维度不匹配panic）

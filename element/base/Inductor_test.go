@@ -11,9 +11,9 @@ import (
 func TestInductor(t *testing.T) {
 	ele := []element.NodeFace{
 		// 电压源参数：波形类型(WfDC), 偏置电压(0), 频率(0), 相位偏移(0), 最大电压(5), 占空比(0), 频率时间零点(0), 噪声值(0)
-		element.NewElementVlaue(VoltageType, int(WfDC)),
-		element.NewElementVlaue(ResistorType, 100.0), // 电阻 100R
-		element.NewElementVlaue(InductorType, 0.001), // 电感 1mH
+		element.NewElementValue(VoltageType, int(WfDC)),
+		element.NewElementValue(ResistorType, 100.0), // 电阻 100R
+		element.NewElementValue(InductorType, 0.001), // 电感 1mH
 	}
 
 	// 设置引脚

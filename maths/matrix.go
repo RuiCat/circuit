@@ -10,6 +10,9 @@ import (
 // 提供高效的随机访问和遍历性能
 type denseMatrix struct {
 	*MatrixDataManager // 嵌入矩阵数据管理器，复用矩阵数据管理功能
+	rowColsBuf         []int
+	rowValsBuf         []float64
+	rowResultVec       *denseVector
 }
 
 // Base 获取底层矩阵实现
@@ -25,6 +28,9 @@ func (m *denseMatrix) Base() Matrix {
 func NewDenseMatrix(rows, cols int) Matrix {
 	return &denseMatrix{
 		MatrixDataManager: NewMatrixDataManager(rows, cols),
+		rowColsBuf:        make([]int, 0, cols),
+		rowValsBuf:        make([]float64, 0, cols),
+		rowResultVec:      NewDenseVector(0).(*denseVector),
 	}
 }
 
@@ -38,7 +44,7 @@ func (m *denseMatrix) BuildFromDense(dense [][]float64) {
 // Zero 清空矩阵为零矩阵
 // 将所有矩阵元素设置为零，保持矩阵维度不变
 func (m *denseMatrix) Zero() {
-	m.MatrixDataManager.Zero()
+	m.DataManager.Zero()
 }
 
 // Cols 返回矩阵列数
@@ -77,9 +83,32 @@ func (m *denseMatrix) Get(row int, col int) float64 {
 }
 
 // GetRow 获取指定行的非零元素（返回：列索引切片+值向量）
+// 通过复用内部缓冲区实现高性能，调用方不应修改返回的切片或向量
 func (m *denseMatrix) GetRow(row int) ([]int, Vector) {
-	cols, values := m.MatrixDataManager.GetRow(row)
-	return cols, NewDenseVectorWithData(values)
+	if row < 0 || row >= m.Rows() {
+		panic(fmt.Sprintf("row index out of range: %d (rows: %d)", row, m.Rows()))
+	}
+
+	// 复用缓冲区
+	m.rowColsBuf = m.rowColsBuf[:0]
+	m.rowValsBuf = m.rowValsBuf[:0]
+
+	// 直接从底层数据切片中提取行数据
+	start := row * m.cols
+	end := start + m.cols
+	rowData := m.DataManager.Data[start:end]
+
+	for col, val := range rowData {
+		if val != 0 {
+			m.rowColsBuf = append(m.rowColsBuf, col)
+			m.rowValsBuf = append(m.rowValsBuf, val)
+		}
+	}
+
+	// 复用返回向量
+	m.rowResultVec.DataManager.Data = m.rowValsBuf
+	m.rowResultVec.DataManager.Len = len(m.rowValsBuf)
+	return m.rowColsBuf, m.rowResultVec
 }
 
 // Increment 增量更新矩阵元素（value累加，越界panic）
@@ -112,7 +141,7 @@ func (m *denseMatrix) MatrixVectorMultiply(x Vector) Vector {
 // 返回：矩阵中绝对值大于1e-16的元素个数
 // 用于评估矩阵的稀疏性和选择优化算法
 func (m *denseMatrix) NonZeroCount() int {
-	return m.MatrixDataManager.NonZeroCount()
+	return m.DataManager.NonZeroCount()
 }
 
 // Rows 返回矩阵行数
@@ -142,9 +171,30 @@ func (m *denseMatrix) Resize(rows, cols int) {
 		panic("invalid matrix dimensions: cannot be negative")
 	}
 	// 重置底层数据大小
-	m.MatrixDataManager.rows = rows
-	m.MatrixDataManager.cols = cols
-	m.MatrixDataManager.Resize(rows * cols)
+	m.rows = rows
+	m.cols = cols
+	m.DataManager.Resize(rows * cols)
+}
+
+// SwapRows 交换两行
+func (m *denseMatrix) SwapRows(row1, row2 int) {
+	if row1 < 0 || row1 >= m.rows || row2 < 0 || row2 >= m.rows {
+		panic(fmt.Sprintf("row index out of range: row1=%d, row2=%d, rows=%d", row1, row2, m.rows))
+	}
+	if row1 == row2 {
+		return
+	}
+
+	start1 := row1 * m.cols
+	row1Data := m.DataManager.DataPtr()[start1 : start1+m.cols]
+
+	start2 := row2 * m.cols
+	row2Data := m.DataManager.DataPtr()[start2 : start2+m.cols]
+
+	// 交换数据
+	for i := 0; i < m.cols; i++ {
+		row1Data[i], row2Data[i] = row2Data[i], row1Data[i]
+	}
 }
 
 // sparseMatrix 稀疏矩阵实现，采用CSR格式（Compressed Sparse Row）
@@ -435,5 +485,76 @@ func (m *sparseMatrix) Resize(rows, cols int) {
 	m.cols = cols
 	m.rowPtr = make([]int, rows+1)
 	m.colInd = m.colInd[:0]
-	m.DataManager.Resize(rows * cols)
+	m.DataManager.Resize(0)
+}
+
+// SwapRows 高效交换稀疏矩阵的两行
+// 通过直接操作CSR数据结构实现，避免了昂贵的删除和插入操作
+func (m *sparseMatrix) SwapRows(row1, row2 int) {
+	if row1 < 0 || row1 >= m.rows || row2 < 0 || row2 >= m.rows {
+		panic(fmt.Sprintf("row index out of range: row1=%d, row2=%d, rows=%d", row1, row2, m.rows))
+	}
+	if row1 == row2 {
+		return
+	}
+
+	// 保证 row1 < row2
+	if row1 > row2 {
+		row1, row2 = row2, row1
+	}
+
+	// 获取两行的数据切片
+	start1, end1 := m.rowPtr[row1], m.rowPtr[row1+1]
+	start2, end2 := m.rowPtr[row2], m.rowPtr[row2+1]
+	len1, len2 := end1-start1, end2-start2
+
+	// 如果两行非零元素数量相同，只需交换数据，无需移动
+	if len1 == len2 {
+		for i := 0; i < len1; i++ {
+			// 交换列索引
+			m.colInd[start1+i], m.colInd[start2+i] = m.colInd[start2+i], m.colInd[start1+i]
+			// 交换值
+			val1 := m.DataManager.Get(start1 + i)
+			val2 := m.DataManager.Get(start2 + i)
+			m.DataManager.Set(start1+i, val2)
+			m.DataManager.Set(start2+i, val1)
+		}
+		return
+	}
+
+	// 如果长度不同，需要移动中间的数据块
+	// 1. 缓存行数据和中间块数据
+	cols1 := make([]int, len1)
+	copy(cols1, m.colInd[start1:end1])
+	vals1 := m.DataManager.DataCopy()[start1:end1]
+
+	cols2 := make([]int, len2)
+	copy(cols2, m.colInd[start2:end2])
+	vals2 := m.DataManager.DataCopy()[start2:end2]
+
+	middleStart := end1
+	middleEnd := start2
+	lenMiddle := middleEnd - middleStart
+	middleCols := make([]int, lenMiddle)
+	copy(middleCols, m.colInd[middleStart:middleEnd])
+	middleVals := m.DataManager.DataCopy()[middleStart:middleEnd]
+
+	// 2. 将数据按新顺序写回
+	// row2 -> row1's original position
+	copy(m.colInd[start1:], cols2)
+	m.DataManager.ReplaceInPlace(start1, vals2...)
+	// middle block -> after row2's new data
+	newMiddleStart := start1 + len2
+	copy(m.colInd[newMiddleStart:], middleCols)
+	m.DataManager.ReplaceInPlace(newMiddleStart, middleVals...)
+	// row1 -> after middle block's new data
+	newRow1Start := newMiddleStart + lenMiddle
+	copy(m.colInd[newRow1Start:], cols1)
+	m.DataManager.ReplaceInPlace(newRow1Start, vals1...)
+
+	// 3. 更新rowPtr
+	delta := len2 - len1
+	for i := row1 + 1; i <= row2; i++ {
+		m.rowPtr[i] += delta
+	}
 }

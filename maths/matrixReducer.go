@@ -184,16 +184,32 @@ type sparseMatrixPruner struct {
 	colMapping     map[int]int   // 精简后列索引 → 原始列索引
 	reverseColMap  map[int]int   // 原始列索引 → 精简后列索引（内部辅助）
 	epsilon        float64       // 零值判断阈值（复用全局 Epsilon）
+
+	// 内存复用缓冲区
+	colIndBuf            []int
+	valuesBuf            []float64
+	nonZeroRowIndicesBuf []int
+	nonZeroColIndicesBuf []int
+	newRowPtrBuf         []int
+	colNonZeroCountBuf   []int
 }
 
 // NewSparseMatrixPruner 创建稀疏矩阵精简器
 func NewSparseMatrixPruner(mat *sparseMatrix) MatrixPruner {
+	nonZeroCount := mat.NonZeroCount()
 	return &sparseMatrixPruner{
 		originalMatrix: mat,
 		rowMapping:     make(map[int]int),
 		colMapping:     make(map[int]int),
 		reverseColMap:  make(map[int]int),
 		epsilon:        Epsilon,
+		// 初始化缓冲区，预估容量
+		colIndBuf:            make([]int, 0, nonZeroCount),
+		valuesBuf:            make([]float64, 0, nonZeroCount),
+		nonZeroRowIndicesBuf: make([]int, 0, mat.Rows()),
+		nonZeroColIndicesBuf: make([]int, 0, mat.Cols()),
+		newRowPtrBuf:         make([]int, 0, mat.Rows()+1),
+		colNonZeroCountBuf:   make([]int, 0, mat.Cols()),
 	}
 }
 
@@ -206,7 +222,7 @@ func (p *sparseMatrixPruner) RemoveZeroRows() Matrix {
 
 	origRows := p.originalMatrix.rows
 	origCols := p.originalMatrix.cols
-	var nonZeroRowIndices []int // 存储非零行的原始索引
+	nonZeroRowIndices := p.nonZeroRowIndicesBuf[:0] // 复用缓冲区
 
 	// 1. 筛选非零行（核心：通过 rowPtr 判断，无需遍历列）
 	for row := 0; row < origRows; row++ {
@@ -214,17 +230,28 @@ func (p *sparseMatrixPruner) RemoveZeroRows() Matrix {
 			nonZeroRowIndices = append(nonZeroRowIndices, row)
 		}
 	}
+	p.nonZeroRowIndicesBuf = nonZeroRowIndices // 更新切片头
 
-	// 2. 构建新的 CSR 结构
+	// 2. 构建新的 CSR 结构（复用缓冲区）
 	newRows := len(nonZeroRowIndices)
-	newRowPtr := make([]int, newRows+1)
-	newColInd := make([]int, 0, p.originalMatrix.NonZeroCount())
-	newValues := make([]float64, 0, p.originalMatrix.NonZeroCount())
+	// 复用 newRowPtr 缓冲区
+	if cap(p.newRowPtrBuf) < newRows+1 {
+		p.newRowPtrBuf = make([]int, newRows+1)
+	} else {
+		p.newRowPtrBuf = p.newRowPtrBuf[:newRows+1]
+	}
+	newRowPtr := p.newRowPtrBuf
+	// 清空并重用缓冲区，避免重新分配内存
+	p.colIndBuf = p.colIndBuf[:0]
+	p.valuesBuf = p.valuesBuf[:0]
 
 	// 3. 复制非零行数据，更新 rowPtr
 	dataPtr := p.originalMatrix.DataManager.DataPtr()
 	currentIdx := 0
-	p.rowMapping = make(map[int]int, newRows)
+	// 清空并复用 map
+	for k := range p.rowMapping {
+		delete(p.rowMapping, k)
+	}
 	for newRow, origRow := range nonZeroRowIndices {
 		p.rowMapping[newRow] = origRow // 记录行映射
 		newRowPtr[newRow] = currentIdx
@@ -232,8 +259,8 @@ func (p *sparseMatrixPruner) RemoveZeroRows() Matrix {
 		// 提取当前行的非零元素（利用 rowPtr 定位范围）
 		start := p.originalMatrix.rowPtr[origRow]
 		end := p.originalMatrix.rowPtr[origRow+1]
-		newColInd = append(newColInd, p.originalMatrix.colInd[start:end]...)
-		newValues = append(newValues, dataPtr[start:end]...)
+		p.colIndBuf = append(p.colIndBuf, p.originalMatrix.colInd[start:end]...)
+		p.valuesBuf = append(p.valuesBuf, dataPtr[start:end]...)
 
 		currentIdx += end - start
 	}
@@ -244,14 +271,18 @@ func (p *sparseMatrixPruner) RemoveZeroRows() Matrix {
 		rows:        newRows,
 		cols:        origCols,
 		rowPtr:      newRowPtr,
-		colInd:      newColInd,
-		DataManager: NewDataManagerWithData(newValues),
+		colInd:      p.colIndBuf,
+		DataManager: NewDataManagerWithData(p.valuesBuf),
 	}
 
 	// 缓存结果，清空列映射（列未变化）
 	p.prunedMatrix = prunedMat
-	p.colMapping = make(map[int]int)
-	p.reverseColMap = make(map[int]int)
+	for k := range p.colMapping {
+		delete(p.colMapping, k)
+	}
+	for k := range p.reverseColMap {
+		delete(p.reverseColMap, k)
+	}
 	return prunedMat
 }
 
@@ -265,15 +296,28 @@ func (p *sparseMatrixPruner) RemoveZeroCols() Matrix {
 	origCols := p.originalMatrix.cols
 
 	// 1. 统计每列的非零元素个数（O(nonZeroCount) 时间，高效）
-	colNonZeroCount := make([]int, origCols)
+	if cap(p.colNonZeroCountBuf) < origCols {
+		p.colNonZeroCountBuf = make([]int, origCols)
+	} else {
+		p.colNonZeroCountBuf = p.colNonZeroCountBuf[:origCols]
+		for i := range p.colNonZeroCountBuf { // 清零
+			p.colNonZeroCountBuf[i] = 0
+		}
+	}
+	colNonZeroCount := p.colNonZeroCountBuf
 	for _, col := range p.originalMatrix.colInd {
 		colNonZeroCount[col]++
 	}
 
 	// 2. 筛选非零列，构建列映射
-	var nonZeroColIndices []int // 原始非零列索引
-	p.colMapping = make(map[int]int)
-	p.reverseColMap = make(map[int]int)
+	nonZeroColIndices := p.nonZeroColIndicesBuf[:0] // 复用缓冲区
+	// 清空并复用 map
+	for k := range p.colMapping {
+		delete(p.colMapping, k)
+	}
+	for k := range p.reverseColMap {
+		delete(p.reverseColMap, k)
+	}
 	for newCol, origCol := range colNonZeroCount {
 		if origCol > 0 {
 			p.colMapping[len(nonZeroColIndices)] = newCol    // 新列→原始列
@@ -281,17 +325,36 @@ func (p *sparseMatrixPruner) RemoveZeroCols() Matrix {
 			nonZeroColIndices = append(nonZeroColIndices, newCol)
 		}
 	}
+	p.nonZeroColIndicesBuf = nonZeroColIndices // 更新切片头
 	newCols := len(nonZeroColIndices)
 	if newCols == 0 {
 		return NewSparseMatrix(origRows, 0) // 所有列都是零列
 	}
 
 	// 3. 构建新的 CSR 结构（更新 colInd 为新列索引）
-	newRowPtr := make([]int, origRows+1)
+	if cap(p.newRowPtrBuf) < origRows+1 {
+		p.newRowPtrBuf = make([]int, origRows+1)
+	} else {
+		p.newRowPtrBuf = p.newRowPtrBuf[:origRows+1]
+	}
+	newRowPtr := p.newRowPtrBuf
 	dataPtr := p.originalMatrix.DataManager.DataPtr()
 	copy(newRowPtr, p.originalMatrix.rowPtr) // rowPtr 长度不变，值直接复用
-	newColInd := make([]int, len(p.originalMatrix.colInd))
-	newValues := make([]float64, len(dataPtr))
+
+	nonZeroCount := len(p.originalMatrix.colInd)
+	if cap(p.colIndBuf) < nonZeroCount {
+		p.colIndBuf = make([]int, nonZeroCount)
+	} else {
+		p.colIndBuf = p.colIndBuf[:nonZeroCount]
+	}
+	newColInd := p.colIndBuf
+
+	if cap(p.valuesBuf) < nonZeroCount {
+		p.valuesBuf = make([]float64, nonZeroCount)
+	} else {
+		p.valuesBuf = p.valuesBuf[:nonZeroCount]
+	}
+	newValues := p.valuesBuf
 
 	// 4. 映射原始列索引到新列索引，复制非零元素
 	for i, origCol := range p.originalMatrix.colInd {
@@ -314,7 +377,9 @@ func (p *sparseMatrixPruner) RemoveZeroCols() Matrix {
 
 	// 缓存结果，清空行映射（行未变化）
 	p.prunedMatrix = prunedMat
-	p.rowMapping = make(map[int]int)
+	for k := range p.rowMapping {
+		delete(p.rowMapping, k)
+	}
 	return prunedMat
 }
 

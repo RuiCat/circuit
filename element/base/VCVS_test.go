@@ -12,10 +12,10 @@ func TestVCVS(t *testing.T) {
 
 	ele := []element.NodeFace{
 		// 直流电压源：5V
-		element.NewElementVlaue(VoltageType, int(WfDC), 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0),
+		element.NewElementValue(VoltageType, int(WfDC), 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0),
 
-		element.NewElementVlaue(VCVSType, 1.0),       // 控制电压源，增益为1.0
-		element.NewElementVlaue(ResistorType, 100.0), // 负载电阻 100Ω
+		element.NewElementValue(VCVSType, 1.0),       // 控制电压源，增益为1.0
+		element.NewElementValue(ResistorType, 100.0), // 负载电阻 100Ω
 
 	}
 

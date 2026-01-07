@@ -11,9 +11,9 @@ import (
 func TestDiode(t *testing.T) {
 	ele := []element.NodeFace{
 		// 直流电压源参数：波形类型(WfDC), 偏置电压(0), 频率(0), 相位偏移(0), 最大电压(5), 占空比(0), 频率时间零点(0), 噪声值(0)
-		element.NewElementVlaue(VoltageType, int(WfDC), 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0),
-		element.NewElementVlaue(ResistorType, 100.0),                     // 电阻 100R
-		element.NewElementVlaue(DiodeType, 1e-14, 0.0, 1.0, 0.1, 300.15), // 二极管：Is=1e-14A, Vz=0V, N=1, Rs=0.1Ω, T=300.15K
+		element.NewElementValue(VoltageType, int(WfDC), 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0),
+		element.NewElementValue(ResistorType, 100.0),                     // 电阻 100R
+		element.NewElementValue(DiodeType, 1e-14, 0.0, 1.0, 0.1, 300.15), // 二极管：Is=1e-14A, Vz=0V, N=1, Rs=0.1Ω, T=300.15K
 	}
 
 	// 设置引脚

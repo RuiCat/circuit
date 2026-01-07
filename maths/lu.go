@@ -97,43 +97,6 @@ func (lu *baseLU) init(matrix Matrix) {
 	}
 }
 
-// swapRows 手动交换矩阵的两行（通用方法，用于替代不存在的SwapRows方法）
-// 参数:
-//
-//	mat - 要交换行的矩阵
-//	row1, row2 - 要交换的行索引
-//
-// 功能:
-//
-//	交换矩阵mat的第row1行和第row2行的所有元素
-func (lu *baseLU) swapRows(mat Matrix, row1, row2 int) {
-	for j := 0; j < lu.n; j++ {
-		val1 := mat.Get(row1, j)
-		val2 := mat.Get(row2, j)
-		mat.Set(row1, j, val2)
-		mat.Set(row2, j, val1)
-	}
-}
-
-// swapRowsPartial 部分交换矩阵的两行（只交换前k列）
-// 参数:
-//
-//	mat - 要交换行的矩阵
-//	row1, row2 - 要交换的行索引
-//	k - 只交换前k列（0 <= k <= n）
-//
-// 功能:
-//
-//	交换矩阵mat的第row1行和第row2行的前k列元素
-func (lu *baseLU) swapRowsPartial(mat Matrix, row1, row2, k int) {
-	for j := 0; j < k; j++ {
-		val1 := mat.Get(row1, j)
-		val2 := mat.Get(row2, j)
-		mat.Set(row1, j, val2)
-		mat.Set(row2, j, val1)
-	}
-}
-
 // updatePermutation 更新置换向量（交换并同步更新逆置换）
 // 参数:
 //
@@ -206,9 +169,14 @@ func (lu *luDense) Decompose(matrix Matrix) error {
 		// 步骤2：行交换（如果找到的主元不在当前行）
 		if maxRow != k {
 			// 交换U矩阵的整行
-			lu.swapRows(lu.U, k, maxRow)
+			lu.U.SwapRows(k, maxRow)
 			// 交换L矩阵的前k-1列（只交换已填充的消元因子）
-			lu.swapRowsPartial(lu.L, k, maxRow, k)
+			for j := 0; j < k; j++ {
+				val1 := lu.L.Get(k, j)
+				val2 := lu.L.Get(maxRow, j)
+				lu.L.Set(k, j, val2)
+				lu.L.Set(maxRow, j, val1)
+			}
 			// 更新置换向量
 			lu.updatePermutation(k, maxRow)
 		}
@@ -334,10 +302,9 @@ func (lu *luSparse) Decompose(matrix Matrix) error {
 
 		// 步骤2：行交换
 		if maxRow != k {
-			// 交换U矩阵的整行
-			lu.swapRows(lu.U, k, maxRow)
-			// 交换L矩阵的前k-1列
-			lu.swapRowsPartial(lu.L, k, maxRow, k)
+			// 交换U和L矩阵的行（使用高效的接口方法）
+			lu.U.SwapRows(k, maxRow)
+			lu.L.SwapRows(k, maxRow) // 对于L，完全交换是安全的，因为j>=k的列是零
 			// 更新置换向量
 			lu.updatePermutation(k, maxRow)
 		}
@@ -415,21 +382,20 @@ func (lu *luSparse) SolveReuse(b, x Vector) error {
 	x.Zero()
 	for i := lu.n - 1; i >= 0; i-- {
 		sum := lu.Y.Get(i)
+		diag := lu.U.Get(i, i) // 显式获取对角线元素，提高可读性
+
+		// 检查对角线元素是否为零
+		if math.Abs(diag) < 1e-16 {
+			return errors.New("lu sparse solve: division by zero (U diagonal is zero)")
+		}
+
 		// 稀疏优化：仅遍历U[i]的非零列（j > i）
 		cols, vals := lu.U.GetRow(i)
-		var diag float64 // 存储对角线元素
 		for idx, j := range cols {
 			if j > i {
 				// 累加上三角部分
 				sum -= vals.Get(idx) * x.Get(j)
-			} else if j == i {
-				// 记录对角线元素
-				diag = vals.Get(idx)
 			}
-		}
-		// 检查对角线元素是否为零
-		if math.Abs(diag) < 1e-16 {
-			return errors.New("lu sparse solve: division by zero (U diagonal is zero)")
 		}
 		// 求解x[i] = sum / diag
 		x.Set(i, sum/diag)

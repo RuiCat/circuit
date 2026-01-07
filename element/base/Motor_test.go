@@ -11,9 +11,9 @@ import (
 func TestMotor(t *testing.T) {
 	ele := []element.NodeFace{
 		// 电压源参数：波形类型(WfDC), 偏置电压(0), 频率(0), 相位偏移(0), 最大电压(12), 占空比(0), 频率时间零点(0), 噪声值(0)
-		element.NewElementVlaue(VoltageType, int(WfDC), 0.0, 0.0, 0.0, 12.0, 0.0, 0.0, 0.0),
-		element.NewElementVlaue(ResistorType, 10.0),                                    // 限流电阻 10Ω
-		element.NewElementVlaue(MotorType, 12.0, 1000.0, 0.1, 0.01, 0.05, 0.001, 0.01), // 电机：额定电压12V, 额定转速1000RPM, 电枢电阻0.1Ω, 电感0.01H, 转矩常数0.05, 转动惯量0.001, 阻尼系数0.01
+		element.NewElementValue(VoltageType, int(WfDC), 0.0, 0.0, 0.0, 12.0, 0.0, 0.0, 0.0),
+		element.NewElementValue(ResistorType, 10.0),                                    // 限流电阻 10Ω
+		element.NewElementValue(MotorType, 12.0, 1000.0, 0.1, 0.01, 0.05, 0.001, 0.01), // 电机：额定电压12V, 额定转速1000RPM, 电枢电阻0.1Ω, 电感0.01H, 转矩常数0.05, 转动惯量0.001, 阻尼系数0.01
 	}
 
 	// 设置引脚

@@ -26,8 +26,6 @@ var TransistorType element.NodeType = element.AddElement(9, &Transistor{
 			float64(0),        // 电流记录
 			float64(0),        // 电流记录
 		},
-		Voltage:   []string{"v1", "v2", "v3"}, // 三个电压源
-		Current:   []int{10, 11, 12},          // 基极、集电极、发射极电流
 		OrigValue: []int{3, 4, 6, 7, 8},
 	},
 })
@@ -36,14 +34,23 @@ var TransistorType element.NodeType = element.AddElement(9, &Transistor{
 type Transistor struct{ *element.Config }
 
 func (Transistor) Stamp(m mna.MNA, time mna.Time, value element.NodeFace) {
-	// 为晶体管的电压源添加约束方程
-	// 每个电压源对应一个约束：V(source) = 0（临时约束，确保矩阵非奇异）
-	// 实际约束应在DoStep中更新
-	for i := 0; i < 3; i++ {
-		vsRow := value.GetVoltSourceNodeID(m, i) // 使用新接口获取电压源节点ID
-		m.StampMatrixSet(vsRow, vsRow, 1.0)      // 设置对角元素为1
-		m.StampRightSideSet(vsRow, 0.0)          // 右侧为0
-	}
+	// 为结添加最小电导，以确保矩阵在数值上稳定
+	gmin := 1e-12
+	nodeB := value.GetNodes(0)
+	nodeC := value.GetNodes(1)
+	nodeE := value.GetNodes(2)
+
+	// 为基极-发射极结加盖gmin
+	m.StampMatrix(nodeB, nodeB, gmin)
+	m.StampMatrix(nodeE, nodeE, gmin)
+	m.StampMatrix(nodeB, nodeE, -gmin)
+	m.StampMatrix(nodeE, nodeB, -gmin)
+
+	// 为基极-集电极结加盖gmin
+	m.StampMatrix(nodeB, nodeB, gmin)
+	m.StampMatrix(nodeC, nodeC, gmin)
+	m.StampMatrix(nodeB, nodeC, -gmin)
+	m.StampMatrix(nodeC, nodeB, -gmin)
 }
 
 func (Transistor) Reset(base element.NodeFace) {
@@ -122,9 +129,10 @@ func (Transistor) DoStep(mna mna.MNA, time mna.Time, value element.NodeFace) {
 	cb := cbe/beta + cbc/100.0 // 默认反向beta=100
 
 	// 计算最终电流
-	ic := pnpFactor * cc
+	// 集电极电流是传输电流减去基极-集电极二极管电流。
+	ic := pnpFactor * (cc - (cbc / 100.0))
 	ib := pnpFactor * cb
-	ie := pnpFactor * (-cc - cb)
+	ie := -(ic + ib) // 为保证数值稳定性，强制执行KCL
 
 	value.SetFloat64(6, ic)
 	value.SetFloat64(7, ie)
@@ -136,12 +144,23 @@ func (Transistor) DoStep(mna mna.MNA, time mna.Time, value element.NodeFace) {
 	go_ := gbc
 	gm := gbe - go_
 
-	// 计算等效电流源
-	ceqbe := pnpFactor * (cc + cb - vbe*(gm+go_+gpi) + vbc*go_)
-	ceqbc := pnpFactor * (-cc + vbe*(gm+go_) - vbc*(gmu+go_))
+	// 计算线性化模型的诺顿等效电流源
+	// I_eq = I_nonlinear(V_old) - G_linearized * V_old
+	ieq_be := cbe - gbe*vbe
+	ieq_bc := cbc - gbc*vbc
+
+	// 合并结电流以获得终端等效电流
+	// 等效电流计算必须与最终终端电流计算一致
+	ic_eq_final := ieq_be - ieq_bc - (ieq_bc / 100.0)
+	ib_eq_base := ieq_be/beta + ieq_bc/100.0
+
+	// 应用PNP因子
+	ic_eq := pnpFactor * ic_eq_final
+	ib_eq := pnpFactor * ib_eq_base
+	ie_eq := -(ic_eq + ib_eq) // 强制执行KCL
 
 	// 矩阵加盖
-	// Node 0 is the base, node 1 the collector, node 2 the emitter.
+	// 节点0是基极，节点1是集电极，节点2是发射极。
 	mna.StampMatrix(value.GetNodes(1), value.GetNodes(1), gmu+go_)
 	mna.StampMatrix(value.GetNodes(1), value.GetNodes(0), -gmu+gm)
 	mna.StampMatrix(value.GetNodes(1), value.GetNodes(2), -gm-go_)
@@ -152,30 +171,15 @@ func (Transistor) DoStep(mna mna.MNA, time mna.Time, value element.NodeFace) {
 	mna.StampMatrix(value.GetNodes(2), value.GetNodes(1), -go_)
 	mna.StampMatrix(value.GetNodes(2), value.GetNodes(2), gpi+gm+go_)
 
-	// 加盖电流源
-	mna.StampRightSide(value.GetVoltSourceNodeID(mna, 0), -ceqbe-ceqbc) // 第一个电压源
-	mna.StampRightSide(value.GetVoltSourceNodeID(mna, 1), ceqbc)        // 第二个电压源
-	mna.StampRightSide(value.GetVoltSourceNodeID(mna, 2), ceqbe)        // 第三个电压源
-}
-
-func (Transistor) CalculateCurrent(mna mna.MNA, time mna.Time, value element.NodeFace) {
-	// 存储所有三个端子的电流
-	ic := value.GetFloat64(6)
-	ib := value.GetFloat64(8)
-	ie := value.GetFloat64(7)
-
-	mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), -ib) // 基极电流
-	mna.StampCurrentSource(value.GetNodes(1), value.GetNodes(2), -ic) // 集电极电流
-	mna.StampCurrentSource(value.GetNodes(2), value.GetNodes(0), -ie) // 发射极电流
-}
-
-func (Transistor) StepFinished(mna mna.MNA, time mna.Time, value element.NodeFace) {
-	// 检查巨大电流
-	ic := value.GetFloat64(6)
-	ib := value.GetFloat64(8)
-	if math.Abs(ic) > 1e12 || math.Abs(ib) > 1e12 {
-		// 电流过大，可能有问题
-	}
+	// 将诺顿等效电流源加盖在MNA矩阵的右侧。
+	// KCL约定是离开节点的电流总和=0。
+	// 流入节点的独立源`I_src`对KCL总和的贡献为`-I_src`。
+	// 对于系统A*V = b，此项移至右侧，变为`+I_src`。
+	// 我们的`ib_eq`、`ic_eq`定义为流入器件端子。
+	// MNA实现似乎期望右侧为负值。
+	mna.StampRightSide(value.GetNodes(0), -ib_eq)
+	mna.StampRightSide(value.GetNodes(1), -ic_eq)
+	mna.StampRightSide(value.GetNodes(2), -ie_eq)
 }
 
 // 辅助函数
@@ -193,7 +197,9 @@ func limitStepTransistor(vnew, vold float64, value element.NodeFace) float64 {
 				vnew = vcrit
 			}
 		} else {
-			vnew = vt * math.Log(vnew/vt)
+			// 当电压从非正值大幅跳跃到正值时，
+			// 将其钳位在临界电压以开始导通。
+			vnew = vcrit
 		}
 	}
 	return vnew

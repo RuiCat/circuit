@@ -48,7 +48,7 @@ func AddElement(eleType NodeType, face elementFace) NodeType {
 // 返回：新创建的元件节点接口，如果类型未注册则返回nil
 // 功能：根据元件配置初始化节点数据结构，并调用元件的Reset方法进行初始化
 func NewElement(eleType NodeType) NodeFace {
-	return NewElementVlaue(eleType)
+	return NewElementValue(eleType)
 }
 
 // NewElement 根据元件类型创建新的元件实例
@@ -56,12 +56,12 @@ func NewElement(eleType NodeType) NodeFace {
 // 参数value: 元件的初始化参数
 // 返回：新创建的元件节点接口，如果类型未注册则返回nil
 // 功能：根据元件配置初始化节点数据结构，并调用元件的Reset方法进行初始化
-func NewElementVlaue(eleType NodeType, value ...any) NodeFace {
+func NewElementValue(eleType NodeType, value ...any) NodeFace {
 	if ele, ok := ElementLitt[eleType]; ok {
 		config := ele.GetConfig()
 		// 初始化节点数据结构
 		node := &Node{
-			NdoeType:     eleType,
+			NodeType:     eleType,
 			NodeValue:    make([]any, config.ValueNum()),
 			OrigValue:    make(map[int]any),
 			Nodes:        make([]mna.NodeID, config.PinNum()),
