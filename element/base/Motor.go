@@ -70,7 +70,7 @@ func (Motor) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
 	// 电枢电阻
 	ra := value.GetFloat64(2)
 	if ra > 0 {
-		mna.StampResistor(value.GetNodes(0), value.GetNodes(1), ra)
+		mna.StampImpedance(value.GetNodes(0), value.GetNodes(1), ra)
 	}
 
 	// 电枢电感
@@ -85,7 +85,7 @@ func (Motor) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
 			compResistance = la / dt
 		}
 		value.SetFloat64(10, compResistance)
-		mna.StampResistor(value.GetNodes(0), value.GetNodes(1), compResistance)
+		mna.StampImpedance(value.GetNodes(0), value.GetNodes(1), compResistance)
 	}
 
 	// 反电动势电压源

@@ -31,8 +31,8 @@ type OpAmp struct{ *element.Config }
 
 func (OpAmp) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
 	// 输入引脚连接到高阻抗（大电阻到地）
-	mna.StampResistor(-1, value.GetNodes(0), 1e16)
-	mna.StampResistor(-1, value.GetNodes(1), 1e16)
+	mna.StampImpedance(-1, value.GetNodes(0), 1e16)
+	mna.StampImpedance(-1, value.GetNodes(1), 1e16)
 	// 输出引脚通过电压源连接到地
 	mna.StampVoltageSource(value.GetNodes(2), -1, value.GetVoltSource(0), 0)
 }

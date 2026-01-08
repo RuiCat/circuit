@@ -1,33 +1,39 @@
 package maths
 
-import (
-	"fmt"
-	"math"
-)
-
-type denseMatrixPruner struct {
-	originalMatrix Matrix      // 原始稠密矩阵（只读，不修改）
-	prunedMatrix   Matrix      // 精简后的矩阵（缓存）
-	rowMapping     map[int]int // 新行索引 → 原始行索引
-	colMapping     map[int]int // 新列索引 → 原始列索引
-	epsilon        float64     // 零值判断阈值（默认复用全局Epsilon）
+// denseMatrixPruner 实现了 MatrixPruner 接口，用于移除稠密矩阵中的全零行和全零列。
+type denseMatrixPruner[T Number] struct {
+	originalMatrix Matrix[T]   // originalMatrix 存储原始的稠密矩阵，在处理过程中保持不变。
+	prunedMatrix   Matrix[T]   // prunedMatrix 缓存经过修剪（移除零行/列）后的结果矩阵。
+	rowMapping     map[int]int // rowMapping 存储新矩阵的行索引到原始矩阵行索引的映射。
+	colMapping     map[int]int // colMapping 存储新矩阵的列索引到原始矩阵列索引的映射。
+	epsilon        float64     // epsilon 用于判断一个数值是否接近于零的阈值。
 }
 
-// RemoveZeroRows 移除全零行（核心逻辑：筛选非零行，记录索引映射）
-func (p *denseMatrixPruner) RemoveZeroRows() Matrix {
+// NewMatrixPruner 创建并返回一个用于稠密矩阵的 MatrixPruner 实例。
+func NewMatrixPruner[T Number](mat Matrix[T]) MatrixPruner[T] {
+	return &denseMatrixPruner[T]{
+		originalMatrix: mat,
+		rowMapping:     make(map[int]int),
+		colMapping:     make(map[int]int),
+		epsilon:        Epsilon,
+	}
+}
+
+// RemoveZeroRows 从原始矩阵中移除所有全零行，并返回一个新的、不含全零行的稠密矩阵。
+// 它会更新内部的 prunedMatrix 和 rowMapping。
+func (p *denseMatrixPruner[T]) RemoveZeroRows() Matrix[T] {
 	if p.originalMatrix == nil {
 		return nil
 	}
 
 	originalRows := p.originalMatrix.Rows()
 	originalCols := p.originalMatrix.Cols()
-	var nonZeroRows []int // 存储非零行的原始索引
+	var nonZeroRows []int
 
-	// 1. 筛选非零行（判断行内所有元素是否全零）
 	for row := 0; row < originalRows; row++ {
 		isZeroRow := true
 		for col := 0; col < originalCols; col++ {
-			if math.Abs(p.originalMatrix.Get(row, col)) > p.epsilon {
+			if abs(p.originalMatrix.Get(row, col)) > p.epsilon {
 				isZeroRow = false
 				break
 			}
@@ -37,40 +43,41 @@ func (p *denseMatrixPruner) RemoveZeroRows() Matrix {
 		}
 	}
 
-	// 2. 构建精简矩阵和行映射
 	newRows := len(nonZeroRows)
-	prunedMat := NewDenseMatrix(newRows, originalCols)
+	// 创建一个新的稠密矩阵来存储结果
+	prunedMat := NewDenseMatrix[T](newRows, originalCols)
 	p.rowMapping = make(map[int]int, newRows)
 
+	// 填充新矩阵并记录行映射
 	for newRow, originalRow := range nonZeroRows {
-		p.rowMapping[newRow] = originalRow // 新行 → 原始行
-		// 复制非零行数据
+		p.rowMapping[newRow] = originalRow
 		for col := 0; col < originalCols; col++ {
 			prunedMat.Set(newRow, col, p.originalMatrix.Get(originalRow, col))
 		}
 	}
 
-	// 3. 缓存精简矩阵（列映射不变，清空列映射缓存）
+	p.prunedMatrix = prunedMat
+	// 缓存结果并清空列映射（因为此操作只影响行）
 	p.prunedMatrix = prunedMat
 	p.colMapping = make(map[int]int)
 	return prunedMat
 }
 
-// RemoveZeroCols 移除全零列（逻辑与行类似，遍历列判断）
-func (p *denseMatrixPruner) RemoveZeroCols() Matrix {
+// RemoveZeroCols 从原始矩阵中移除所有全零列，并返回一个新的、不含全零列的稠密矩阵。
+// 它会更新内部的 prunedMatrix 和 colMapping。
+func (p *denseMatrixPruner[T]) RemoveZeroCols() Matrix[T] {
 	if p.originalMatrix == nil {
 		return nil
 	}
 
 	originalRows := p.originalMatrix.Rows()
 	originalCols := p.originalMatrix.Cols()
-	var nonZeroCols []int // 存储非零列的原始索引
+	var nonZeroCols []int
 
-	// 1. 筛选非零列
 	for col := 0; col < originalCols; col++ {
 		isZeroCol := true
 		for row := 0; row < originalRows; row++ {
-			if math.Abs(p.originalMatrix.Get(row, col)) > p.epsilon {
+			if abs(p.originalMatrix.Get(row, col)) > p.epsilon {
 				isZeroCol = false
 				break
 			}
@@ -80,132 +87,116 @@ func (p *denseMatrixPruner) RemoveZeroCols() Matrix {
 		}
 	}
 
-	// 2. 构建精简矩阵和列映射
 	newCols := len(nonZeroCols)
-	prunedMat := NewDenseMatrix(originalRows, newCols)
+	prunedMat := NewDenseMatrix[T](originalRows, newCols)
 	p.colMapping = make(map[int]int, newCols)
 
 	for newCol, originalCol := range nonZeroCols {
-		p.colMapping[newCol] = originalCol // 新列 → 原始列
-		// 复制非零列数据
+		p.colMapping[newCol] = originalCol
 		for row := 0; row < originalRows; row++ {
 			prunedMat.Set(row, newCol, p.originalMatrix.Get(row, originalCol))
 		}
 	}
 
-	// 3. 缓存精简矩阵（行映射不变，清空行映射缓存）
+	p.prunedMatrix = prunedMat
+	// 缓存结果并清空行映射
 	p.prunedMatrix = prunedMat
 	p.rowMapping = make(map[int]int)
 	return prunedMat
 }
 
-// Compress 组合精简（先移除零行/零列，再移除另一维度的零元素）
-func (p *denseMatrixPruner) Compress(removeRowsFirst bool) Matrix {
+// Compress 依次移除全零行和全零列（或反序），返回一个完全压缩的矩阵。
+// removeRowsFirst 参数控制是先移除零行还是先移除零列。
+func (p *denseMatrixPruner[T]) Compress(removeRowsFirst bool) Matrix[T] {
 	if p.originalMatrix == nil {
 		return nil
 	}
 
-	var tempMat Matrix
-	// 第一步：按指定顺序移除第一个维度的零元素
+	var tempMat Matrix[T]
 	if removeRowsFirst {
-		tempMat = p.RemoveZeroRows() // 先删零行（列索引不变）
+		tempMat = p.RemoveZeroRows()
 	} else {
-		tempMat = p.RemoveZeroCols() // 先删零列（行索引不变）
+		tempMat = p.RemoveZeroCols()
 	}
 
-	// 第二步：基于第一步结果，移除第二个维度的零元素
-	tempPruner := &denseMatrixPruner{
+	tempPruner := &denseMatrixPruner[T]{
 		originalMatrix: tempMat,
 		rowMapping:     make(map[int]int),
 		colMapping:     make(map[int]int),
 		epsilon:        Epsilon,
 	}
-	var finalMat Matrix
+	var finalMat Matrix[T]
 
 	if removeRowsFirst {
-		// 先删零行 → 再删零列
 		finalMat = tempPruner.RemoveZeroCols()
-		// 关键修复：tempMat的列索引 = 原始矩阵的列索引，直接复用tempPruner的列映射
-		p.colMapping = tempPruner.GetColMapping() // 新列 → 原始列（正确映射）
+		p.colMapping = tempPruner.GetColMapping()
 	} else {
-		// 先删零列 → 再删零行
 		finalMat = tempPruner.RemoveZeroRows()
-		// 复用tempPruner的行映射（tempMat的行索引 = 原始矩阵的行索引）
 		p.rowMapping = tempPruner.GetRowMapping()
 	}
 
-	// 缓存最终精简矩阵
 	p.prunedMatrix = finalMat
 	return finalMat
 }
-func (p *denseMatrixPruner) GetRowMapping() map[int]int {
+
+// GetRowMapping 返回新矩阵行索引到原始矩阵行索引的映射。
+func (p *denseMatrixPruner[T]) GetRowMapping() map[int]int {
 	return p.rowMapping
 }
 
-func (p *denseMatrixPruner) GetColMapping() map[int]int {
+// GetColMapping 返回新矩阵列索引到原始矩阵列索引的映射。
+func (p *denseMatrixPruner[T]) GetColMapping() map[int]int {
 	return p.colMapping
 }
 
-func (p *denseMatrixPruner) GetOriginalRowIndex(newRow int) (int, bool) {
+// GetOriginalRowIndex 根据新矩阵的行索引查找其在原始矩阵中的对应行索引。
+func (p *denseMatrixPruner[T]) GetOriginalRowIndex(newRow int) (int, bool) {
 	originalRow, ok := p.rowMapping[newRow]
 	return originalRow, ok
 }
 
-func (p *denseMatrixPruner) GetOriginalColIndex(newCol int) (int, bool) {
+// GetOriginalColIndex 根据新矩阵的列索引查找其在原始矩阵中的对应列索引。
+func (p *denseMatrixPruner[T]) GetOriginalColIndex(newCol int) (int, bool) {
 	originalCol, ok := p.colMapping[newCol]
 	return originalCol, ok
 }
 
-func (p *denseMatrixPruner) GetPrunedMatrix() Matrix {
+// GetPrunedMatrix 返回最近一次修剪操作后缓存的结果矩阵。
+func (p *denseMatrixPruner[T]) GetPrunedMatrix() Matrix[T] {
 	return p.prunedMatrix
 }
 
-// SetEpsilon 自定义零值判断阈值（默认1e-16）
-func (p *denseMatrixPruner) SetEpsilon(epsilon float64) {
-	if epsilon > 0 {
-		p.epsilon = epsilon
-	}
+// sparseMatrixPruner 实现了 MatrixPruner 接口，用于高效地移除稀疏矩阵中的全零行和全零列。
+// 它利用稀疏矩阵的 CSR 结构，并使用缓冲区来最小化内存分配，提高性能。
+type sparseMatrixPruner[T Number] struct {
+	originalMatrix *sparseMatrix[T] // 原始稀疏矩阵。
+	prunedMatrix   Matrix[T]        // 缓存的修剪后矩阵。
+	rowMapping     map[int]int      // 新行 → 原始行 映射。
+	colMapping     map[int]int      // 新列 → 原始列 映射。
+	reverseColMap  map[int]int      // 原始列 → 新列 映射，用于加速列移除操作。
+	epsilon        float64          // 零值判断阈值。
+
+	// --- 性能优化缓冲区 ---
+	colIndBuf            []int // 存储修剪后矩阵的列索引。
+	valuesBuf            []T   // 存储修剪后矩阵的值。
+	nonZeroRowIndicesBuf []int // 存储非零行的原始索引。
+	nonZeroColIndicesBuf []int // 存储非零列的原始索引。
+	newRowPtrBuf         []int // 存储修剪后矩阵的行指针。
+	colNonZeroCountBuf   []int // 用于统计每列的非零元素数量。
 }
 
-func NewMatrixPruner(mat Matrix) MatrixPruner {
-	return &denseMatrixPruner{
-		originalMatrix: mat,
-		rowMapping:     make(map[int]int),
-		colMapping:     make(map[int]int),
-		epsilon:        Epsilon,
-	}
-}
-
-// sparseMatrixPruner 稀疏矩阵精简器（实现 MatrixPruner 接口）
-type sparseMatrixPruner struct {
-	originalMatrix *sparseMatrix // 原始稀疏矩阵（只读）
-	prunedMatrix   Matrix        // 精简后的矩阵（缓存）
-	rowMapping     map[int]int   // 精简后行索引 → 原始行索引
-	colMapping     map[int]int   // 精简后列索引 → 原始列索引
-	reverseColMap  map[int]int   // 原始列索引 → 精简后列索引（内部辅助）
-	epsilon        float64       // 零值判断阈值（复用全局 Epsilon）
-
-	// 内存复用缓冲区
-	colIndBuf            []int
-	valuesBuf            []float64
-	nonZeroRowIndicesBuf []int
-	nonZeroColIndicesBuf []int
-	newRowPtrBuf         []int
-	colNonZeroCountBuf   []int
-}
-
-// NewSparseMatrixPruner 创建稀疏矩阵精简器
-func NewSparseMatrixPruner(mat *sparseMatrix) MatrixPruner {
+// NewSparseMatrixPruner 创建并返回一个用于稀疏矩阵的 MatrixPruner 实例。
+// 它会预先分配合理大小的缓冲区以提高后续操作的性能。
+func NewSparseMatrixPruner[T Number](mat *sparseMatrix[T]) MatrixPruner[T] {
 	nonZeroCount := mat.NonZeroCount()
-	return &sparseMatrixPruner{
-		originalMatrix: mat,
-		rowMapping:     make(map[int]int),
-		colMapping:     make(map[int]int),
-		reverseColMap:  make(map[int]int),
-		epsilon:        Epsilon,
-		// 初始化缓冲区，预估容量
+	return &sparseMatrixPruner[T]{
+		originalMatrix:       mat,
+		rowMapping:           make(map[int]int),
+		colMapping:           make(map[int]int),
+		reverseColMap:        make(map[int]int),
+		epsilon:              Epsilon,
 		colIndBuf:            make([]int, 0, nonZeroCount),
-		valuesBuf:            make([]float64, 0, nonZeroCount),
+		valuesBuf:            make([]T, 0, nonZeroCount),
 		nonZeroRowIndicesBuf: make([]int, 0, mat.Rows()),
 		nonZeroColIndicesBuf: make([]int, 0, mat.Cols()),
 		newRowPtrBuf:         make([]int, 0, mat.Rows()+1),
@@ -213,50 +204,44 @@ func NewSparseMatrixPruner(mat *sparseMatrix) MatrixPruner {
 	}
 }
 
-// ------------------------------ MatrixPruner 接口实现 ------------------------------
-// RemoveZeroRows 移除全零行（利用 rowPtr 高效判断，O(rows + nonZeroCount) 时间）
-func (p *sparseMatrixPruner) RemoveZeroRows() Matrix {
+// RemoveZeroRows 高效地从稀疏矩阵中移除全零行。
+// 它通过检查 CSR 格式的 rowPtr 数组来快速识别空行，避免了逐元素扫描。
+func (p *sparseMatrixPruner[T]) RemoveZeroRows() Matrix[T] {
 	if p.originalMatrix == nil {
 		return nil
 	}
 
 	origRows := p.originalMatrix.rows
 	origCols := p.originalMatrix.cols
-	nonZeroRowIndices := p.nonZeroRowIndicesBuf[:0] // 复用缓冲区
+	nonZeroRowIndices := p.nonZeroRowIndicesBuf[:0]
 
-	// 1. 筛选非零行（核心：通过 rowPtr 判断，无需遍历列）
+	// 利用 rowPtr 快速找到所有非零行。如果 rowPtr[i] == rowPtr[i+1]，则第 i 行为空。
 	for row := 0; row < origRows; row++ {
 		if p.originalMatrix.rowPtr[row] != p.originalMatrix.rowPtr[row+1] {
 			nonZeroRowIndices = append(nonZeroRowIndices, row)
 		}
 	}
-	p.nonZeroRowIndicesBuf = nonZeroRowIndices // 更新切片头
+	p.nonZeroRowIndicesBuf = nonZeroRowIndices
 
-	// 2. 构建新的 CSR 结构（复用缓冲区）
 	newRows := len(nonZeroRowIndices)
-	// 复用 newRowPtr 缓冲区
 	if cap(p.newRowPtrBuf) < newRows+1 {
 		p.newRowPtrBuf = make([]int, newRows+1)
 	} else {
 		p.newRowPtrBuf = p.newRowPtrBuf[:newRows+1]
 	}
 	newRowPtr := p.newRowPtrBuf
-	// 清空并重用缓冲区，避免重新分配内存
 	p.colIndBuf = p.colIndBuf[:0]
 	p.valuesBuf = p.valuesBuf[:0]
 
-	// 3. 复制非零行数据，更新 rowPtr
 	dataPtr := p.originalMatrix.DataManager.DataPtr()
 	currentIdx := 0
-	// 清空并复用 map
 	for k := range p.rowMapping {
 		delete(p.rowMapping, k)
 	}
 	for newRow, origRow := range nonZeroRowIndices {
-		p.rowMapping[newRow] = origRow // 记录行映射
+		p.rowMapping[newRow] = origRow
 		newRowPtr[newRow] = currentIdx
 
-		// 提取当前行的非零元素（利用 rowPtr 定位范围）
 		start := p.originalMatrix.rowPtr[origRow]
 		end := p.originalMatrix.rowPtr[origRow+1]
 		p.colIndBuf = append(p.colIndBuf, p.originalMatrix.colInd[start:end]...)
@@ -266,8 +251,8 @@ func (p *sparseMatrixPruner) RemoveZeroRows() Matrix {
 	}
 	newRowPtr[newRows] = currentIdx
 
-	// 4. 构建精简后的稀疏矩阵
-	prunedMat := &sparseMatrix{
+	// 基于收集到的非零行数据构建新的稀疏矩阵
+	prunedMat := &sparseMatrix[T]{
 		rows:        newRows,
 		cols:        origCols,
 		rowPtr:      newRowPtr,
@@ -275,8 +260,8 @@ func (p *sparseMatrixPruner) RemoveZeroRows() Matrix {
 		DataManager: NewDataManagerWithData(p.valuesBuf),
 	}
 
-	// 缓存结果，清空列映射（列未变化）
 	p.prunedMatrix = prunedMat
+	// 清理列映射信息，因为此操作只影响行
 	for k := range p.colMapping {
 		delete(p.colMapping, k)
 	}
@@ -286,8 +271,9 @@ func (p *sparseMatrixPruner) RemoveZeroRows() Matrix {
 	return prunedMat
 }
 
-// RemoveZeroCols 移除全零列（先统计列非零数，再筛选非零列）
-func (p *sparseMatrixPruner) RemoveZeroCols() Matrix {
+// RemoveZeroCols 高效地从稀疏矩阵中移除全零列。
+// 它首先遍历所有非零元素来统计每列的非零计数，然后只重建包含非零元素的列。
+func (p *sparseMatrixPruner[T]) RemoveZeroCols() Matrix[T] {
 	if p.originalMatrix == nil {
 		return nil
 	}
@@ -295,12 +281,11 @@ func (p *sparseMatrixPruner) RemoveZeroCols() Matrix {
 	origRows := p.originalMatrix.rows
 	origCols := p.originalMatrix.cols
 
-	// 1. 统计每列的非零元素个数（O(nonZeroCount) 时间，高效）
 	if cap(p.colNonZeroCountBuf) < origCols {
 		p.colNonZeroCountBuf = make([]int, origCols)
 	} else {
 		p.colNonZeroCountBuf = p.colNonZeroCountBuf[:origCols]
-		for i := range p.colNonZeroCountBuf { // 清零
+		for i := range p.colNonZeroCountBuf {
 			p.colNonZeroCountBuf[i] = 0
 		}
 	}
@@ -309,9 +294,7 @@ func (p *sparseMatrixPruner) RemoveZeroCols() Matrix {
 		colNonZeroCount[col]++
 	}
 
-	// 2. 筛选非零列，构建列映射
-	nonZeroColIndices := p.nonZeroColIndicesBuf[:0] // 复用缓冲区
-	// 清空并复用 map
+	nonZeroColIndices := p.nonZeroColIndicesBuf[:0]
 	for k := range p.colMapping {
 		delete(p.colMapping, k)
 	}
@@ -320,18 +303,17 @@ func (p *sparseMatrixPruner) RemoveZeroCols() Matrix {
 	}
 	for newCol, origCol := range colNonZeroCount {
 		if origCol > 0 {
-			p.colMapping[len(nonZeroColIndices)] = newCol    // 新列→原始列
-			p.reverseColMap[newCol] = len(nonZeroColIndices) // 原始列→新列
+			p.colMapping[len(nonZeroColIndices)] = newCol
+			p.reverseColMap[newCol] = len(nonZeroColIndices)
 			nonZeroColIndices = append(nonZeroColIndices, newCol)
 		}
 	}
-	p.nonZeroColIndicesBuf = nonZeroColIndices // 更新切片头
+	p.nonZeroColIndicesBuf = nonZeroColIndices
 	newCols := len(nonZeroColIndices)
 	if newCols == 0 {
-		return NewSparseMatrix(origRows, 0) // 所有列都是零列
+		return NewSparseMatrix[T](origRows, 0)
 	}
 
-	// 3. 构建新的 CSR 结构（更新 colInd 为新列索引）
 	if cap(p.newRowPtrBuf) < origRows+1 {
 		p.newRowPtrBuf = make([]int, origRows+1)
 	} else {
@@ -339,7 +321,7 @@ func (p *sparseMatrixPruner) RemoveZeroCols() Matrix {
 	}
 	newRowPtr := p.newRowPtrBuf
 	dataPtr := p.originalMatrix.DataManager.DataPtr()
-	copy(newRowPtr, p.originalMatrix.rowPtr) // rowPtr 长度不变，值直接复用
+	copy(newRowPtr, p.originalMatrix.rowPtr)
 
 	nonZeroCount := len(p.originalMatrix.colInd)
 	if cap(p.colIndBuf) < nonZeroCount {
@@ -350,110 +332,95 @@ func (p *sparseMatrixPruner) RemoveZeroCols() Matrix {
 	newColInd := p.colIndBuf
 
 	if cap(p.valuesBuf) < nonZeroCount {
-		p.valuesBuf = make([]float64, nonZeroCount)
+		p.valuesBuf = make([]T, nonZeroCount)
 	} else {
 		p.valuesBuf = p.valuesBuf[:nonZeroCount]
 	}
 	newValues := p.valuesBuf
 
-	// 4. 映射原始列索引到新列索引，复制非零元素
+	newIdx := 0
 	for i, origCol := range p.originalMatrix.colInd {
-		newCol, ok := p.reverseColMap[origCol]
-		if !ok {
-			panic(fmt.Sprintf("invalid column index: %d (should be non-zero column)", origCol))
+		if newCol, ok := p.reverseColMap[origCol]; ok {
+			newColInd[newIdx] = newCol
+			newValues[newIdx] = dataPtr[i]
+			newIdx++
 		}
-		newColInd[i] = newCol
-		newValues[i] = dataPtr[i]
 	}
 
-	// 5. 构建精简后的稀疏矩阵
-	prunedMat := &sparseMatrix{
+	prunedMat := &sparseMatrix[T]{
 		rows:        origRows,
 		cols:        newCols,
 		rowPtr:      newRowPtr,
-		colInd:      newColInd,
-		DataManager: NewDataManagerWithData(newValues),
+		colInd:      newColInd[:newIdx],
+		DataManager: NewDataManagerWithData(newValues[:newIdx]),
 	}
 
-	// 缓存结果，清空行映射（行未变化）
 	p.prunedMatrix = prunedMat
+	// 清理行映射信息
 	for k := range p.rowMapping {
 		delete(p.rowMapping, k)
 	}
 	return prunedMat
 }
 
-// Compress 组合精简（先移除零行/零列，再移除另一维度零元素，保持稀疏特性）
-func (p *sparseMatrixPruner) Compress(removeRowsFirst bool) Matrix {
+// Compress 依次移除稀疏矩阵的全零行和全零列（或反序），返回一个完全压缩的矩阵。
+// 它会链接两次修剪操作的映射关系，以得到最终的新旧索引映射。
+func (p *sparseMatrixPruner[T]) Compress(removeRowsFirst bool) Matrix[T] {
 	if p.originalMatrix == nil {
 		return nil
 	}
 
-	var tempMat *sparseMatrix
-	// 第一步：按顺序移除第一个维度的零元素
+	var tempMat *sparseMatrix[T]
 	if removeRowsFirst {
-		// 先删零行
-		tempMat = p.RemoveZeroRows().(*sparseMatrix)
+		tempMat = p.RemoveZeroRows().(*sparseMatrix[T])
 	} else {
-		// 先删零列
-		tempMat = p.RemoveZeroCols().(*sparseMatrix)
+		tempMat = p.RemoveZeroCols().(*sparseMatrix[T])
 	}
 
-	// 第二步：基于临时结果，移除第二个维度的零元素
 	tempPruner := NewSparseMatrixPruner(tempMat)
-	var finalMat *sparseMatrix
+	var finalMat *sparseMatrix[T]
 	if removeRowsFirst {
-		// 再删零列（基于无零行的矩阵）
-		finalMat = tempPruner.RemoveZeroCols().(*sparseMatrix)
-		// 合并列映射：新列 → 临时列 → 原始列
+		finalMat = tempPruner.RemoveZeroCols().(*sparseMatrix[T])
 		p.colMapping = make(map[int]int)
 		for newCol, tempCol := range tempPruner.GetColMapping() {
-			// 临时列是第一步删零行后的列索引（与原始列索引一致）
 			originalCol := tempCol
 			p.colMapping[newCol] = originalCol
 		}
 	} else {
-		// 再删零行（基于无零列的矩阵）
-		finalMat = tempPruner.RemoveZeroRows().(*sparseMatrix)
-		// 合并行映射：新行 → 临时行 → 原始行
+		finalMat = tempPruner.RemoveZeroRows().(*sparseMatrix[T])
 		p.rowMapping = make(map[int]int)
 		for newRow, tempRow := range tempPruner.GetRowMapping() {
-			// 临时行是第一步删零列后的行索引（与原始行索引一致）
 			originalRow := tempRow
 			p.rowMapping[newRow] = originalRow
 		}
 	}
-	// 缓存最终结果
 	p.prunedMatrix = finalMat
 	return finalMat
 }
 
-// ------------------------------ 索引映射查询方法 ------------------------------
-func (p *sparseMatrixPruner) GetRowMapping() map[int]int {
+// GetRowMapping 返回新矩阵行索引到原始矩阵行索引的映射。
+func (p *sparseMatrixPruner[T]) GetRowMapping() map[int]int {
 	return p.rowMapping
 }
 
-func (p *sparseMatrixPruner) GetColMapping() map[int]int {
+// GetColMapping 返回新矩阵列索引到原始矩阵列索引的映射。
+func (p *sparseMatrixPruner[T]) GetColMapping() map[int]int {
 	return p.colMapping
 }
 
-func (p *sparseMatrixPruner) GetOriginalRowIndex(newRow int) (int, bool) {
+// GetOriginalRowIndex 根据新矩阵的行索引查找其在原始矩阵中的对应行索引。
+func (p *sparseMatrixPruner[T]) GetOriginalRowIndex(newRow int) (int, bool) {
 	origRow, ok := p.rowMapping[newRow]
 	return origRow, ok
 }
 
-func (p *sparseMatrixPruner) GetOriginalColIndex(newCol int) (int, bool) {
+// GetOriginalColIndex 根据新矩阵的列索引查找其在原始矩阵中的对应列索引。
+func (p *sparseMatrixPruner[T]) GetOriginalColIndex(newCol int) (int, bool) {
 	origCol, ok := p.colMapping[newCol]
 	return origCol, ok
 }
 
-func (p *sparseMatrixPruner) GetPrunedMatrix() Matrix {
+// GetPrunedMatrix 返回最近一次修剪操作后缓存的结果矩阵。
+func (p *sparseMatrixPruner[T]) GetPrunedMatrix() Matrix[T] {
 	return p.prunedMatrix
-}
-
-// SetEpsilon 自定义零值判断阈值（兼容接口）
-func (p *sparseMatrixPruner) SetEpsilon(epsilon float64) {
-	if epsilon > 0 {
-		p.epsilon = epsilon
-	}
 }

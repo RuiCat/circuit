@@ -51,7 +51,7 @@ func (Inductor) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
 	value.SetFloat64(2, G_eq)
 
 	// 加盖电导贡献
-	mna.StampConductance(value.GetNodes(0), value.GetNodes(1), G_eq)
+	mna.StampAdmittance(value.GetNodes(0), value.GetNodes(1), G_eq)
 }
 
 func (Inductor) DoStep(mna mna.MNA, time mna.Time, value element.NodeFace) {

@@ -20,7 +20,7 @@ func TransientSimulation(timeMNA *TimeMNA, mnaSolver mna.UpdateMNA, circuitEleme
 	// 初始化阶段：获取电路规模并创建求解器
 	nodesNum, voltageSourcesNum := mnaSolver.GetNodeNum(), mnaSolver.GetVoltageSourcesNum()
 	// 创建LU分解器（根据矩阵稀疏性选择稠密或稀疏实现）
-	luSolver, err := maths.NewLU(nodesNum + voltageSourcesNum)
+	luSolver, err := maths.NewLU[float64](nodesNum + voltageSourcesNum)
 	if err != nil {
 		return fmt.Errorf("LU分解器初始化失败: %v", err)
 	}
@@ -150,7 +150,7 @@ func TransientSimulation(timeMNA *TimeMNA, mnaSolver mna.UpdateMNA, circuitEleme
 
 // handleUnconvergedElements 处理未收敛的元件，进行单独迭代
 func handleUnconvergedElements(timeMNA *TimeMNA, mnaSolver mna.UpdateMNA,
-	luSolver maths.LU, circuitElements []element.NodeFace, unconvergedIndices []int) error {
+	luSolver maths.LU[float64], circuitElements []element.NodeFace, unconvergedIndices []int) error {
 	// 对每个未收敛元件进行单独迭代
 	for _, elemIdx := range unconvergedIndices {
 		timeMNA.ResetElemIter()

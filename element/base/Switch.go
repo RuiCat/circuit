@@ -30,7 +30,7 @@ func (Switch) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
 	} else {
 		resistance = value.GetFloat64(2) // 关断状态
 	}
-	mna.StampResistor(value.GetNodes(0), value.GetNodes(1), resistance)
+	mna.StampImpedance(value.GetNodes(0), value.GetNodes(1), resistance)
 }
 
 func (Switch) CalculateCurrent(mna mna.MNA, time mna.Time, value element.NodeFace) {

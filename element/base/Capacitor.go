@@ -35,7 +35,7 @@ func (Capacitor) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
 	}
 	G_eq := 2 * c / dt
 	value.SetFloat64(1, G_eq)
-	mna.StampConductance(value.GetNodes(0), value.GetNodes(1), G_eq)
+	mna.StampAdmittance(value.GetNodes(0), value.GetNodes(1), G_eq)
 }
 
 func (Capacitor) DoStep(mna mna.MNA, time mna.Time, value element.NodeFace) {

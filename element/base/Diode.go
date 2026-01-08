@@ -135,7 +135,7 @@ func (Diode) DoStep(mna mna.MNA, time mna.Time, value element.NodeFace) {
 		if reverseVoltage < Vz-0.1 {
 			// 反向电压明显小于齐纳电压：使用大电阻模拟反向漏电流
 			// 使用非常大的电阻（100MΩ）模拟开路，但防止奇异矩阵
-			mna.StampResistor(value.GetNodes(0), value.GetNodes(1), 1e8)
+			mna.StampImpedance(value.GetNodes(0), value.GetNodes(1), 1e8)
 			// 不需要执行后续的复杂模型计算
 			value.SetFloat64(5, voltdiff)
 			return
@@ -151,7 +151,7 @@ func (Diode) DoStep(mna mna.MNA, time mna.Time, value element.NodeFace) {
 			}
 
 			// 大电阻模型
-			mna.StampResistor(value.GetNodes(0), value.GetNodes(1), 1e8)
+			mna.StampImpedance(value.GetNodes(0), value.GetNodes(1), 1e8)
 
 			// 齐纳模型贡献（按权重混合）
 			voltdiff = limitDiodeStep(voltdiff, lastvoltdiff, time, value)
@@ -163,7 +163,7 @@ func (Diode) DoStep(mna mna.MNA, time mna.Time, value element.NodeFace) {
 			// 添加串联电阻贡献
 			Rs := value.GetFloat64(3)
 			if Rs > 0 {
-				mna.StampResistor(value.GetNodes(0), value.GetNodes(1), Rs)
+				mna.StampImpedance(value.GetNodes(0), value.GetNodes(1), Rs)
 			}
 			return
 		}
@@ -180,7 +180,7 @@ func (Diode) DoStep(mna mna.MNA, time mna.Time, value element.NodeFace) {
 	// 添加串联电阻贡献（使用用户设置的原始值，不额外增加）
 	Rs := value.GetFloat64(3)
 	if Rs > 0 {
-		mna.StampResistor(value.GetNodes(0), value.GetNodes(1), Rs)
+		mna.StampImpedance(value.GetNodes(0), value.GetNodes(1), Rs)
 	}
 }
 
@@ -293,7 +293,7 @@ func doDiodeStep(mna mna.MNA, time mna.Time, value element.NodeFace, voltdiff fl
 		eval := math.Exp(voltdiff * vdcoef)
 		geq := vdcoef*leakage*eval + gmin
 		nc := (eval-1)*leakage - geq*voltdiff
-		mna.StampConductance(value.GetNodes(0), value.GetNodes(1), geq)
+		mna.StampAdmittance(value.GetNodes(0), value.GetNodes(1), geq)
 		mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), nc)
 	} else {
 		// 齐纳二极管
@@ -314,7 +314,7 @@ func doDiodeStep(mna mna.MNA, time mna.Time, value element.NodeFace, voltdiff fl
 			math.Exp((-voltdiff-zoffset)*vzcoef)-
 			1) + geq*(-voltdiff)
 
-		mna.StampConductance(value.GetNodes(0), value.GetNodes(1), geq)
+		mna.StampAdmittance(value.GetNodes(0), value.GetNodes(1), geq)
 		mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), nc)
 	}
 }
@@ -339,7 +339,7 @@ func doDiodeStepWeighted(mna mna.MNA, value element.NodeFace, voltdiff, weight f
 		geq := vdcoef*leakage*eval + gmin
 		nc := (eval-1)*leakage - geq*voltdiff
 		// 按权重缩放贡献
-		mna.StampConductance(value.GetNodes(0), value.GetNodes(1), geq*weight)
+		mna.StampAdmittance(value.GetNodes(0), value.GetNodes(1), geq*weight)
 		mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), nc*weight)
 	} else {
 		// 齐纳二极管
@@ -348,7 +348,7 @@ func doDiodeStepWeighted(mna mna.MNA, value element.NodeFace, voltdiff, weight f
 			math.Exp((-voltdiff-zoffset)*vzcoef)-
 			1) + geq*(-voltdiff)
 		// 按权重缩放贡献
-		mna.StampConductance(value.GetNodes(0), value.GetNodes(1), geq*weight)
+		mna.StampAdmittance(value.GetNodes(0), value.GetNodes(1), geq*weight)
 		mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), nc*weight)
 	}
 }

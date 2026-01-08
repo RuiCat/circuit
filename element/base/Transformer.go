@@ -59,10 +59,10 @@ func (Transformer) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
 	value.SetFloat64(6, g22)
 
 	// 填充 MNA 矩阵 (等效电导)
-	mna.StampConductance(value.GetNodes(0), value.GetNodes(1), g11)
+	mna.StampAdmittance(value.GetNodes(0), value.GetNodes(1), g11)
 	mna.StampVCCS(value.GetNodes(0), value.GetNodes(1), value.GetNodes(2), value.GetNodes(3), g12)
 	mna.StampVCCS(value.GetNodes(2), value.GetNodes(3), value.GetNodes(0), value.GetNodes(1), g21)
-	mna.StampConductance(value.GetNodes(2), value.GetNodes(3), g22)
+	mna.StampAdmittance(value.GetNodes(2), value.GetNodes(3), g22)
 }
 
 func (t Transformer) StartIteration(mna mna.MNA, time mna.Time, value element.NodeFace) {

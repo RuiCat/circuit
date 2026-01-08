@@ -7,7 +7,7 @@ import (
 
 func TestSparseMatrixResize(t *testing.T) {
 	// 1. 创建一个稀疏矩阵并添加一些元素
-	sm := NewSparseMatrix(3, 3)
+	sm := NewSparseMatrix[float64](3, 3)
 	sm.Set(0, 0, 1.0)
 	sm.Set(1, 1, 2.0)
 	sm.Set(2, 2, 3.0)
@@ -45,7 +45,7 @@ func TestSparseMatrixResize(t *testing.T) {
 
 func TestDenseMatrixGetRow(t *testing.T) {
 	// 1. 创建一个具有零和非零值的稠密矩阵并设置一行
-	dm := NewDenseMatrix(3, 4)
+	dm := NewDenseMatrix[float64](3, 4)
 	dm.Set(1, 0, 10.0)
 	dm.Set(1, 1, 0.0) // 这应该被忽略
 	dm.Set(1, 2, 30.0)
