@@ -9,17 +9,15 @@ import (
 )
 
 func TestMotor(t *testing.T) {
-	ele := []element.NodeFace{
-		// 电压源参数：波形类型(WfDC), 偏置电压(0), 频率(0), 相位偏移(0), 最大电压(12), 占空比(0), 频率时间零点(0), 噪声值(0)
-		element.NewElementValue(VoltageType, int(WfDC), 0.0, 0.0, 0.0, 12.0, 0.0, 0.0, 0.0),
-		element.NewElementValue(ResistorType, 10.0),                                    // 限流电阻 10Ω
-		element.NewElementValue(MotorType, 12.0, 1000.0, 0.1, 0.01, 0.05, 0.001, 0.01), // 电机：额定电压12V, 额定转速1000RPM, 电枢电阻0.1Ω, 电感0.01H, 转矩常数0.05, 转动惯量0.001, 阻尼系数0.01
+	netlist := `
+	v1 1 -1 0 0 0 0 12
+	r1 1 0 10
+	motor1 0 -1 12.0 1000.0 0.1 0.01 0.05 0.001 0.01
+	`
+	ele, err := element.LoadNetlistFromString(netlist)
+	if err != nil {
+		t.Fatalf("加载网表失败: %s", err)
 	}
-
-	// 设置引脚
-	ele[0].SetNodePins(1, -1) // 电压源：正极接节点1，负极接地
-	ele[1].SetNodePins(1, 0)  // 电阻：一端接节点1，另一端接节点0
-	ele[2].SetNodePins(0, -1) // 电机：正极接节点0，负极接地
 
 	// 创建求解
 	mnaSolver := mna.NewUpdateMNA(time.GetNum(ele))

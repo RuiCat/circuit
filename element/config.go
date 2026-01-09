@@ -46,43 +46,47 @@ func (config *Config) GetConfig() *Config {
 // 参数base: 元件的节点接口，用于访问元件的底层数据
 func (config *Config) Reset(base NodeFace) {}
 
-// CirLoad 加载元件
-func (config *Config) CirLoad(node NodeFace, val utils.NetList) {
+// CirLoad 加载元件值 (不处理引脚)
+func (config *Config) CirLoad(node NodeFace, valueStrs utils.NetList) {
 	base := node.Base()
-	for i := range len(val) {
+	for i := 0; i < len(valueStrs) && i < len(config.ValueInit); i++ {
 		switch v := config.ValueInit[i].(type) {
 		case string:
-			base.NodeValue[i] = val.ParseString(i, v)
+			base.NodeValue[i] = valueStrs.ParseString(i, v)
 		case bool:
-			base.NodeValue[i] = val.ParseBool(i, v)
+			base.NodeValue[i] = valueStrs.ParseBool(i, v)
 		case int:
-			base.NodeValue[i] = val.ParseInt(i, v)
+			base.NodeValue[i] = valueStrs.ParseInt(i, v)
 		case int8:
-			base.NodeValue[i] = val.ParseInt8(i, v)
+			base.NodeValue[i] = valueStrs.ParseInt8(i, v)
 		case int16:
-			base.NodeValue[i] = val.ParseInt16(i, v)
+			base.NodeValue[i] = valueStrs.ParseInt16(i, v)
 		case int32:
-			base.NodeValue[i] = val.ParseInt32(i, v)
+			base.NodeValue[i] = valueStrs.ParseInt32(i, v)
 		case int64:
-			base.NodeValue[i] = val.ParseInt64(i, v)
+			base.NodeValue[i] = valueStrs.ParseInt64(i, v)
 		case uint:
-			base.NodeValue[i] = val.ParseUint(i, v)
+			base.NodeValue[i] = valueStrs.ParseUint(i, v)
 		case uint16:
-			base.NodeValue[i] = val.ParseUint16(i, v)
+			base.NodeValue[i] = valueStrs.ParseUint16(i, v)
 		case uint32:
-			base.NodeValue[i] = val.ParseUint32(i, v)
+			base.NodeValue[i] = valueStrs.ParseUint32(i, v)
 		case uint64:
-			base.NodeValue[i] = val.ParseUint64(i, v)
+			base.NodeValue[i] = valueStrs.ParseUint64(i, v)
 		case float32:
-			base.NodeValue[i] = val.ParseFloat32(i, v)
+			base.NodeValue[i] = valueStrs.ParseFloat32(i, v)
 		case float64:
-			base.NodeValue[i] = val.ParseFloat64(i, v)
+			base.NodeValue[i] = valueStrs.ParseFloat64(i, v)
+		case complex64:
+			base.NodeValue[i] = valueStrs.ParseComplex64(i, v)
+		case complex128:
+			base.NodeValue[i] = valueStrs.ParseComplex128(i, v)
 		case time.Duration:
-			base.NodeValue[i] = val.ParseDuration(i, v)
+			base.NodeValue[i] = valueStrs.ParseDuration(i, v)
 		case fmt.Stringer:
-			base.NodeValue[i] = val.ParseString(i, v.String())
+			base.NodeValue[i] = valueStrs.ParseString(i, v.String())
 		default:
-			base.NodeValue[i] = val.ParseString(i, fmt.Sprint(v))
+			base.NodeValue[i] = valueStrs.ParseString(i, fmt.Sprint(v))
 		}
 	}
 }

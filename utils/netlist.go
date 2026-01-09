@@ -54,6 +54,8 @@ func anyToString(v any) string {
 		return strconv.FormatFloat(float64(val), 'f', -1, 32)
 	case float64:
 		return strconv.FormatFloat(val, 'f', -1, 64)
+	case complex128:
+		return strconv.FormatComplex(val, 'f', -1, 128)
 	case time.Duration:
 		return val.String()
 	case fmt.Stringer:
@@ -206,6 +208,26 @@ func (value NetList) ParseDuration(i int, defaultValue time.Duration) time.Durat
 	if i < len(value) {
 		if val, err := time.ParseDuration(value[i]); err == nil {
 			return val
+		}
+	}
+	return defaultValue
+}
+
+// ParseComplex128 解析128位复数
+func (value NetList) ParseComplex128(i int, defaultValue complex128) complex128 {
+	if i < len(value) {
+		if val, err := strconv.ParseComplex(value[i], 128); err == nil {
+			return val
+		}
+	}
+	return defaultValue
+}
+
+// ParseComplex64 解析64位复数
+func (value NetList) ParseComplex64(i int, defaultValue complex64) complex64 {
+	if i < len(value) {
+		if val, err := strconv.ParseComplex(value[i], 64); err == nil {
+			return complex64(val)
 		}
 	}
 	return defaultValue

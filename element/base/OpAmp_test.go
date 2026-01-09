@@ -10,27 +10,17 @@ import (
 
 func TestOpAmp(t *testing.T) {
 	// 创建同相放大器电路：增益 = 1 + R2/R1
-	ele := []element.NodeFace{
-		// 输入电压源：直流 1V
-		element.NewElementValue(VoltageType, int(WfDC), 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0),
-		// 电阻 R1 = 1kΩ
-		element.NewElementValue(ResistorType, 1000.0),
-		// 电阻 R2 = 2kΩ
-		element.NewElementValue(ResistorType, 2000.0),
-		// 运算放大器
-		element.NewElementValue(OpAmpType, 15.0, -15.0, 1e5),
+	netlist := `
+	v1 0 -1 0 0 0 0 1
+	r1 1 -1 1000
+	r2 1 2 2000
+	opamp1 0 1 2 15 -15 1e5
+	`
+	ele, err := element.LoadNetlistFromString(netlist)
+	if err != nil {
+		t.Fatalf("加载网表失败: %s", err)
 	}
 
-	// 设置引脚
-	// 电压源：正极接节点0（输入），负极接地
-	ele[0].SetNodePins(0, -1)
-	// R1：一端接节点1（运放反相输入），另一端接地
-	ele[1].SetNodePins(1, -1)
-	// R2：一端接节点1（运放反相输入），另一端接节点2（运放输出）
-	ele[2].SetNodePins(1, 2)
-	// 运放：Vp接节点0（同相输入），Vn接节点1（反相输入），Vout接节点2（输出）
-	ele[3].SetNodePins(0, 1, 2)
-	ele[3].SetVoltSource(0, 1)
 	// 创建求解
 	mnaSolver := mna.NewUpdateMNA(time.GetNum(ele))
 	timeMNA, err := time.NewTimeMNA(0.001)

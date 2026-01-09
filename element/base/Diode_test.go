@@ -9,17 +9,15 @@ import (
 )
 
 func TestDiode(t *testing.T) {
-	ele := []element.NodeFace{
-		// 直流电压源参数：波形类型(WfDC), 偏置电压(0), 频率(0), 相位偏移(0), 最大电压(5), 占空比(0), 频率时间零点(0), 噪声值(0)
-		element.NewElementValue(VoltageType, int(WfDC), 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0),
-		element.NewElementValue(ResistorType, 100.0),                     // 电阻 100R
-		element.NewElementValue(DiodeType, 1e-14, 0.0, 1.0, 0.1, 300.15), // 二极管：Is=1e-14A, Vz=0V, N=1, Rs=0.1Ω, T=300.15K
+	netlist := `
+	v1 1 -1
+	r1 1 0 100
+	d1 0 -1 1e-14 0.0 1.0 0.1 300.15
+	`
+	ele, err := element.LoadNetlistFromString(netlist)
+	if err != nil {
+		t.Fatalf("加载网表失败: %s", err)
 	}
-
-	// 设置引脚
-	ele[0].SetNodePins(1, -1) // 电压源：正极接节点1，负极接地
-	ele[1].SetNodePins(1, 0)  // 电阻：一端接节点1，另一端接节点0
-	ele[2].SetNodePins(0, -1) // 二极管：阳极接节点0，阴极接地
 
 	// 创建求解
 	mnaSolver := mna.NewUpdateMNA(time.GetNum(ele))

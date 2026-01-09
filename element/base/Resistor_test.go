@@ -8,15 +8,15 @@ import (
 )
 
 func TestResistor(t *testing.T) {
-	// 元件列表
-	ele := []element.NodeFace{
-		element.NewElementValue(VoltageType, int(WfDC)), // 电压源参数：波形类型(WfDC), 偏置电压(0), 频率(0), 相位偏移(0), 最大电压(5), 占空比(0), 频率时间零点(0), 噪声值(0)
-		element.NewElementValue(ResistorType, 100.0),    // 电阻 100R
+	// 使用 LoadNetlistFromString 加载网表
+	netlist := `
+	v1 0 -1
+	r1 0 -1 100
+	`
+	ele, err := element.LoadNetlistFromString(netlist)
+	if err != nil {
+		t.Fatalf("LoadNetlistFromString 失败: %v", err)
 	}
-
-	// 设置引脚
-	ele[0].SetNodePins(0, -1) // 电压源：正极接节点1，负极接节点0
-	ele[1].SetNodePins(0, -1) // 电阻：一端接节点0，另一端接地
 
 	// 创建求解
 	mnaSolver := mna.NewUpdateMNA(time.GetNum(ele))

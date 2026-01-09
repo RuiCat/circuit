@@ -9,23 +9,15 @@ import (
 )
 
 func TestVCVS(t *testing.T) {
-
-	ele := []element.NodeFace{
-		// 直流电压源：5V
-		element.NewElementValue(VoltageType, int(WfDC), 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0),
-
-		element.NewElementValue(VCVSType, 1.0),       // 控制电压源，增益为1.0
-		element.NewElementValue(ResistorType, 100.0), // 负载电阻 100Ω
-
+	netlist := `
+	v1 0 -1
+	e1 0 -1 1 -1 1.0
+	r1 1 -1 100
+	`
+	ele, err := element.LoadNetlistFromString(netlist)
+	if err != nil {
+		t.Fatalf("加载网表失败: %s", err)
 	}
-
-	// 设置引脚
-	ele[0].SetNodePins(0, -1) // 电压源：正极接节点0，负极接地
-
-	ele[1].SetNodePins(0, -1, 1, -1) // VCVS：控制正接节点0，控制负接地，输出正接节点1，输出负接地
-	ele[1].SetVoltSource(0, 1)       // 设置电压源ID
-
-	ele[2].SetNodePins(1, -1) // 电阻：一端接节点1，另一端接地
 
 	mnaSolver := mna.NewUpdateMNA(time.GetNum(ele))
 	timeMNA, err := time.NewTimeMNA(0.1)

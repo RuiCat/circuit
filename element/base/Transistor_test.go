@@ -14,29 +14,18 @@ func TestTransistorCircuit(t *testing.T) {
 	vIn := 5.0       // 用于打开晶体管的输入电压
 	rbVal := 10000.0 // 10kOhm 基极电阻
 	rcVal := 1000.0  // 1kOhm 集电极电阻
-	beta := 100.0
 
-	ele := []element.NodeFace{
-		element.NewElementValue(VoltageType, int(WfDC), 0.0, nil, nil, vcc), // VCC - VS ID 0
-		element.NewElementValue(VoltageType, int(WfDC), 0.0, nil, nil, vIn), // 输入电压 - VS ID 1
-		element.NewElementValue(ResistorType, rbVal),
-		element.NewElementValue(ResistorType, rcVal),
-		element.NewElementValue(TransistorType, false, beta), // NPN晶体管 - VS ID 2, 3, 4
+	netlist := `
+	v1 0 -1 5.0
+	v2 1 -1 5.0
+	r1 1 2 10000.0
+	r2 0 3 1000.0
+	q1 2 3 -1 100.0
+	`
+	ele, err := element.LoadNetlistFromString(netlist)
+	if err != nil {
+		t.Fatalf("加载网表失败: %s", err)
 	}
-
-	// 引脚配置
-	// 节点0: VCC节点
-	// 节点1: 输入电压节点
-	// 节点2: 基极节点
-	// 节点3: 集电极节点
-	// 接地: -1
-	ele[0].SetNodePins(0, -1) // VCC连接到节点0和地
-	ele[1].SetNodePins(1, -1) // 输入电压连接到节点1和地
-	ele[0].SetVoltSource(0, 0)
-	ele[1].SetVoltSource(0, 1)
-	ele[2].SetNodePins(1, 2)     // Rb位于输入（节点1）和基极（节点2）之间
-	ele[3].SetNodePins(0, 3)     // Rc位于VCC（节点0）和集电极（节点3）之间
-	ele[4].SetNodePins(2, 3, -1) // 晶体管：基极(2)，集电极(3)，发射极(地)
 
 	// 创建求解器
 	mnaSolver := mna.NewUpdateMNA(time.GetNum(ele))
