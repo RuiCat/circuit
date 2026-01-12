@@ -13,7 +13,7 @@ func matrixEquals[T Number](a, b Matrix[T], tol float64) bool {
 	}
 	for i := 0; i < a.Rows(); i++ {
 		for j := 0; j < a.Cols(); j++ {
-			if abs(a.Get(i, j)-b.Get(i, j)) > tol {
+			if Abs(a.Get(i, j)-b.Get(i, j)) > tol {
 				fmt.Printf("Mismatch at (%d, %d): A=%v, B=%v", i, j, a.Get(i, j), b.Get(i, j))
 				return false
 			}
@@ -28,7 +28,7 @@ func vectorEquals[T Number](a, b Vector[T], tol float64) bool {
 		return false
 	}
 	for i := 0; i < a.Length(); i++ {
-		if abs(a.Get(i)-b.Get(i)) > tol {
+		if Abs(a.Get(i)-b.Get(i)) > tol {
 			fmt.Printf("Vector mismatch at index %d: a=%v, b=%v", i, a.Get(i), b.Get(i))
 			return false
 		}

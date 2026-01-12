@@ -50,7 +50,7 @@ func TestSwitch(t *testing.T) {
 	}
 
 	// 电压源电流应为-0.05A（通过100Ω电阻）
-	voltageSourceCurrent := mnaSolver.GetNodeCurrent(0)
+	voltageSourceCurrent := mnaSolver.GetVoltageSourceCurrent(0)
 	expectedCurrent := -0.05
 	if math.Abs(voltageSourceCurrent-expectedCurrent) > 1e-6 {
 		t.Errorf("电压源电流不正确: 期望 %vA, 实际 %vA", expectedCurrent, voltageSourceCurrent)
@@ -83,7 +83,7 @@ func TestSwitch(t *testing.T) {
 	}
 
 	// 电压源电流应非常小（关断状态漏电流）
-	voltageSourceCurrentOff := mnaSolver2.GetNodeCurrent(0)
+	voltageSourceCurrentOff := mnaSolver2.GetVoltageSourceCurrent(0)
 	// 漏电流应远小于导通电流
 	if math.Abs(voltageSourceCurrentOff) >= 1e-6 {
 		t.Errorf("开关关断时漏电流过大: %vA", voltageSourceCurrentOff)

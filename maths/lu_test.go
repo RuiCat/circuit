@@ -52,7 +52,7 @@ func TestLuDenseSolve(t *testing.T) {
 	tolerance := 1e-9
 
 	for i := 0; i < 3; i++ {
-		if abs(x.Get(i)-expected[i]) > tolerance {
+		if Abs(x.Get(i)-expected[i]) > tolerance {
 			t.Errorf("Element x[%d] is incorrect. Got %f, expected %f", i, x.Get(i), expected[i])
 		}
 	}
@@ -99,7 +99,7 @@ func TestLuDenseSolveComplex(t *testing.T) {
 
 	for i := 0; i < 2; i++ {
 		// 使用 abs 计算复数差的模
-		if abs(x.Get(i)-expected[i]) > tolerance {
+		if Abs(x.Get(i)-expected[i]) > tolerance {
 			t.Errorf("Element x[%d] is incorrect. Got %v, expected %v", i, x.Get(i), expected[i])
 		}
 	}

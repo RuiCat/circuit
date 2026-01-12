@@ -50,7 +50,7 @@ func TestCurrentSource(t *testing.T) {
 
 	// 验证电压源电流
 	// 电压源电流 = (5V - 3V)/100Ω = 0.02A，方向为负
-	voltageSourceCurrent := mnaSolver.GetNodeCurrent(0)
+	voltageSourceCurrent := mnaSolver.GetVoltageSourceCurrent(0)
 	expectedCurrent := -0.02
 	if math.Abs(voltageSourceCurrent-expectedCurrent) > 0.1 {
 		t.Errorf("电压源电流不正确: 期望 %v, 实际 %v", expectedCurrent, voltageSourceCurrent)

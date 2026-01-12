@@ -2,7 +2,6 @@ package maths
 
 import (
 	"fmt"
-	"math/cmplx"
 )
 
 // data 是一个可以容纳 float64 或 complex128 的泛型结构体。
@@ -54,24 +53,7 @@ func (d *data[T]) Inv() Data[T] {
 
 // Abs 返回 Data 的绝对值。
 func (d *data[T]) Abs() float64 {
-	switch v := any(d.value).(type) {
-	case float32:
-		if v < 0 {
-			return float64(-v)
-		}
-		return float64(v)
-	case float64:
-		if v < 0 {
-			return -v
-		}
-		return v
-	case complex64:
-		return cmplx.Abs(complex128(v))
-	case complex128:
-		return cmplx.Abs(v)
-	default:
-		panic("unsupported type for Abs")
-	}
+	return Abs(d.value)
 }
 
 // Get 返回底层值。

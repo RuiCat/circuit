@@ -40,7 +40,7 @@ func TestResistor(t *testing.T) {
 	}
 
 	// 电压源电流应为-0.05A（负号表示电流方向）
-	voltageSourceCurrent := mnaSolver.GetNodeCurrent(0)
+	voltageSourceCurrent := mnaSolver.GetVoltageSourceCurrent(0)
 	expectedCurrent := -0.05
 	if abs(voltageSourceCurrent-expectedCurrent) > 1e-6 {
 		t.Errorf("电压源电流不正确: 期望 %v, 实际 %v", expectedCurrent, voltageSourceCurrent)

@@ -137,10 +137,10 @@ func (v *denseVector[T]) MaxAbs() T {
 		var zero T
 		return zero
 	}
-	maxVal := abs(v.Get(0))
+	maxVal := Abs(v.Get(0))
 	maxIdx := 0
 	for i := 1; i < v.Length(); i++ {
-		if val := abs(v.Get(i)); val > maxVal {
+		if val := Abs(v.Get(i)); val > maxVal {
 			maxVal = val
 			maxIdx = i
 		}

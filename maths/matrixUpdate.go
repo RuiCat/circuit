@@ -291,8 +291,8 @@ func (um *updateMatrix[T]) NonZeroCount() int {
 				// 情况1：底层为零，缓存非零 → 新增非零
 				// 情况2：底层非零，缓存修改后仍非零 → 不重复统计
 				// 情况3：底层非零，缓存修改为零 → 减少统计
-				isBaseZero := abs(baseVal) < epsilon
-				isCachedZero := abs(cachedVal) < epsilon
+				isBaseZero := Abs(baseVal) < epsilon
+				isCachedZero := Abs(cachedVal) < epsilon
 				if isBaseZero && !isCachedZero {
 					count++
 				} else if !isBaseZero && isCachedZero {

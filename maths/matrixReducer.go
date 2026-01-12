@@ -33,7 +33,7 @@ func (p *denseMatrixPruner[T]) RemoveZeroRows() Matrix[T] {
 	for row := 0; row < originalRows; row++ {
 		isZeroRow := true
 		for col := 0; col < originalCols; col++ {
-			if abs(p.originalMatrix.Get(row, col)) > p.epsilon {
+			if Abs(p.originalMatrix.Get(row, col)) > p.epsilon {
 				isZeroRow = false
 				break
 			}
@@ -77,7 +77,7 @@ func (p *denseMatrixPruner[T]) RemoveZeroCols() Matrix[T] {
 	for col := 0; col < originalCols; col++ {
 		isZeroCol := true
 		for row := 0; row < originalRows; row++ {
-			if abs(p.originalMatrix.Get(row, col)) > p.epsilon {
+			if Abs(p.originalMatrix.Get(row, col)) > p.epsilon {
 				isZeroCol = false
 				break
 			}

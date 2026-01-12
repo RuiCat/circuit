@@ -71,7 +71,7 @@ func (lu *luBlock[T]) baseCaseLU(A Matrix[T]) error {
 	n := A.Rows()
 	for k := 0; k < n; k++ {
 		pivot := A.Get(k, k)
-		if abs(pivot) < Epsilon {
+		if Abs(pivot) < Epsilon {
 			return errors.New("matrix is singular or nearly singular")
 		}
 		for i := k + 1; i < n; i++ {
@@ -122,7 +122,7 @@ func solveUpperTriangular[T Number](B Matrix[T], U Matrix[T]) {
 				sum -= B.Get(i, k) * U.Get(k, j) // B(i,k) 已经是计算出的 X(i,k)
 			}
 			diag := U.Get(j, j)
-			if abs(diag) < Epsilon {
+			if Abs(diag) < Epsilon {
 				panic("solveUpperTriangular: matrix is singular")
 			}
 			B.Set(i, j, sum/diag)
@@ -176,7 +176,7 @@ func (lu *luBlock[T]) SolveReuse(b, x Vector[T]) error {
 			sum -= lu.A.Get(i, j) * x.Get(j)
 		}
 		diag := lu.A.Get(i, i)
-		if abs(diag) < Epsilon {
+		if Abs(diag) < Epsilon {
 			return errors.New("lu block solve: division by zero")
 		}
 		x.Set(i, sum/diag)

@@ -9,10 +9,10 @@ import (
 // updateMNA 实现了 UpdateMNA 接口，封装了一个标准的 MNA 求解器，
 // 并为其矩阵和向量提供了更新与回滚的功能。
 type updateMNA[T maths.Number] struct {
-	MNA                       // 嵌入MNA接口，继承所有MNA方法
-	A   maths.UpdateMatrix[T] // 可更新的求解矩阵A
-	Z   maths.UpdateVector[T] // 可更新的已知向量Z
-	X   maths.UpdateVector[T] // 可更新的未知向量X
+	MNAFace[T]                       // 嵌入MNA接口，继承所有MNA方法
+	A          maths.UpdateMatrix[T] // 可更新的求解矩阵A
+	Z          maths.UpdateVector[T] // 可更新的已知向量Z
+	X          maths.UpdateVector[T] // 可更新的未知向量X
 }
 
 // Update 将对矩阵A和向量Z的暂存修改应用到底层数据结构中。
@@ -49,7 +49,7 @@ func NewUpdateMNA(NodesNum, VoltageSourcesNum int) UpdateMNA {
 	Z := maths.NewUpdateVectorPtr(maths.NewDenseVector[float64](n))
 	X := maths.NewUpdateVectorPtr(maths.NewDenseVector[float64](n))
 	return &updateMNA[float64]{
-		MNA: &mna[float64]{
+		MNAFace: &mna[float64]{
 			A:                 A,
 			Z:                 Z,
 			X:                 X,
@@ -106,20 +106,18 @@ func (m *mna[T]) GetNodeNum() int           { return m.NodesNum }
 func (m *mna[T]) GetVoltageSourcesNum() int { return m.VoltageSourcesNum }
 
 // GetNodeVoltage 从解向量X中获取指定节点的电压。
-func (m *mna[T]) GetNodeVoltage(i NodeID) T {
+func (m *mna[T]) GetNodeVoltage(i NodeID) (zero T) {
 	if i > Gnd && int(i) < m.NodesNum {
 		return m.X.Get(int(i))
 	}
-	var zero T
 	return zero // 地节点或无效节点返回0
 }
 
-// GetNodeCurrent 从解向量X中获取流经指定电压源的电流。
-func (m *mna[T]) GetNodeCurrent(i VoltageID) T {
+// GetVoltageSourceCurrent 从解向量X中获取流经指定电压源的电流。
+func (m *mna[T]) GetVoltageSourceCurrent(i VoltageID) (zero T) {
 	if int(i) > -1 && int(i) < m.VoltageSourcesNum {
 		return m.X.Get(m.NodesNum + int(i))
 	}
-	var zero T
 	return zero // 无效ID返回0
 }
 

@@ -2,26 +2,31 @@ package maths
 
 import (
 	"math"
-	"math/cmplx"
 )
 
 // 补充必要常量（浮点精度阈值）
 const Epsilon = 1e-16
 
-// abs 是一个泛型函数，返回任何支持的 Number 类型的绝对值。
-func abs[T Number](v T) float64 {
-	// 通过类型断言检查具体类型
+// Abs 是一个泛型函数，返回任何支持的 Number 类型的绝对值。
+func Abs[T Number](v T) float64 {
 	switch x := any(v).(type) {
 	case float32:
-		return math.Abs(float64(x))
+		// 清除 float32 的符号位并直接转换为 float64
+		return float64(math.Float32frombits(math.Float32bits(x) &^ (1 << 31)))
 	case float64:
-		return math.Abs(x)
+		// 清除 float64 的符号位
+		return math.Float64frombits(math.Float64bits(x) &^ (1 << 63))
 	case complex64:
-		return cmplx.Abs(complex128(x))
+		// 直接计算复数的模（避免类型转换至 complex128）
+		r, i := float64(real(x)), float64(imag(x))
+		return math.Hypot(r, i)
 	case complex128:
-		return cmplx.Abs(x)
+		// 直接使用实部和虚部计算模
+		return math.Hypot(real(x), imag(x))
+	default:
+		// 约束确保不会执行到此处，安全回退
+		return 0
 	}
-	return 0
 }
 
 // Number 是一个约束，允许任何浮点或复数类型

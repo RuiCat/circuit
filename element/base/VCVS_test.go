@@ -48,7 +48,7 @@ func TestVCVS(t *testing.T) {
 
 	// 验证电压源电流
 	// 电压源电流应为-0.05A（5V/100Ω = 0.05A，方向为负）
-	voltageSourceCurrent := mnaSolver.GetNodeCurrent(1)
+	voltageSourceCurrent := mnaSolver.GetVoltageSourceCurrent(1)
 	expectedCurrent := -0.05
 	if math.Abs(voltageSourceCurrent-expectedCurrent) > 1e-6 {
 		t.Errorf("电压源电流不正确: 期望 %vA, 实际 %vA", expectedCurrent, voltageSourceCurrent)

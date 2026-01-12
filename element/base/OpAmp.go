@@ -87,6 +87,6 @@ func (OpAmp) DoStep(mna mna.MNA, time mna.Time, value element.NodeFace) {
 
 func (OpAmp) CalculateCurrent(mna mna.MNA, time mna.Time, value element.NodeFace) {
 	// 电压源的支路电流即为运放输出电流
-	iout := mna.GetNodeCurrent(value.GetVoltSource(0))
+	iout := mna.GetVoltageSourceCurrent(value.GetVoltSource(0))
 	value.SetFloat64(4, iout)
 }

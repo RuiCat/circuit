@@ -94,9 +94,9 @@ func (lu *luDense[T]) Decompose(matrix Matrix[T]) error {
 		// --- 部分主元选择 (Partial Pivoting) ---
 		// 在当前列 k 中，从对角线元素开始向下寻找绝对值最大的元素，以保证数值稳定性。
 		maxRow := k
-		maxAbsVal := abs(lu.U.Get(k, k))
+		maxAbsVal := Abs(lu.U.Get(k, k))
 		for i := k + 1; i < lu.n; i++ {
-			if v := abs(lu.U.Get(i, k)); v > maxAbsVal {
+			if v := Abs(lu.U.Get(i, k)); v > maxAbsVal {
 				maxAbsVal = v
 				maxRow = i
 			}
@@ -171,7 +171,7 @@ func (lu *luDense[T]) SolveReuse(b, x Vector[T]) error {
 			sum -= lu.U.Get(i, j) * x.Get(j)
 		}
 		diagVal := lu.U.Get(i, i)
-		if abs(diagVal) < Epsilon {
+		if Abs(diagVal) < Epsilon {
 			return errors.New("lu dense solve: division by zero (U diagonal is zero)")
 		}
 		x.Set(i, sum/diagVal)
@@ -199,9 +199,9 @@ func (lu *luSparse[T]) Decompose(matrix Matrix[T]) error {
 	for k := 0; k < lu.n; k++ {
 		// --- 部分主元选择 ---
 		maxRow := k
-		maxAbsVal := abs(lu.U.Get(k, k))
+		maxAbsVal := Abs(lu.U.Get(k, k))
 		for i := k + 1; i < lu.n; i++ {
-			if v := abs(lu.U.Get(i, k)); v > maxAbsVal {
+			if v := Abs(lu.U.Get(i, k)); v > maxAbsVal {
 				maxAbsVal = v
 				maxRow = i
 			}
@@ -225,7 +225,7 @@ func (lu *luSparse[T]) Decompose(matrix Matrix[T]) error {
 
 		for i := k + 1; i < lu.n; i++ {
 			valIK := lu.U.Get(i, k)
-			if abs(valIK) < Epsilon { // 如果 (i,k) 元素已为零，则跳过该行
+			if Abs(valIK) < Epsilon { // 如果 (i,k) 元素已为零，则跳过该行
 				continue
 			}
 
@@ -241,7 +241,7 @@ func (lu *luSparse[T]) Decompose(matrix Matrix[T]) error {
 				}
 				updatedVal := lu.U.Get(i, j) - factor*pivotVals.Get(idx)
 				// 维持稀疏性：如果更新后的值接近于零，则视其为零
-				if abs(updatedVal) < Epsilon {
+				if Abs(updatedVal) < Epsilon {
 					lu.U.Set(i, j, zero)
 				} else {
 					lu.U.Set(i, j, updatedVal)
@@ -279,7 +279,7 @@ func (lu *luSparse[T]) SolveReuse(b, x Vector[T]) error {
 		sum := lu.Y.Get(i)
 		diag := lu.U.Get(i, i)
 
-		if abs(diag) < Epsilon {
+		if Abs(diag) < Epsilon {
 			return errors.New("lu sparse solve: division by zero (U diagonal is zero)")
 		}
 

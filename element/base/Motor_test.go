@@ -48,7 +48,7 @@ func TestMotor(t *testing.T) {
 	}
 
 	// 验证电压源电流
-	voltageSourceCurrent := mnaSolver.GetNodeCurrent(0)
+	voltageSourceCurrent := mnaSolver.GetVoltageSourceCurrent(0)
 	// 电流应为负值（从电压源流出）
 	if voltageSourceCurrent >= 0 {
 		t.Errorf("电压源电流方向不正确: 应为负值，实际 %v", voltageSourceCurrent)

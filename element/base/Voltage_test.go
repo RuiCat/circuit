@@ -37,7 +37,7 @@ func TestVoltageSource(t *testing.T) {
 			t.Errorf("直流电压源输出电压不正确: 期望 %vV, 实际 %vV", expectedVoltage, node0Voltage)
 		}
 
-		current := mnaSolver.GetNodeCurrent(0)
+		current := mnaSolver.GetVoltageSourceCurrent(0)
 		expectedCurrent := -0.05 // 5V / 100Ω = 0.05A，方向为负
 		if math.Abs(current-expectedCurrent) > 1e-6 {
 			t.Errorf("直流电压源输出电流不正确: 期望 %vA, 实际 %vA", expectedCurrent, current)
@@ -72,7 +72,7 @@ func TestVoltageSource(t *testing.T) {
 		}
 
 		// 电流也应在合理范围内
-		current := mnaSolver.GetNodeCurrent(0)
+		current := mnaSolver.GetVoltageSourceCurrent(0)
 		expectedMaxCurrent := 0.05 // 5V / 100Ω = 0.05A
 		if math.Abs(current) > expectedMaxCurrent*1.1 {
 			t.Errorf("交流电压源输出电流超出范围: 实际 %vA，最大应为 %vA", current, expectedMaxCurrent)

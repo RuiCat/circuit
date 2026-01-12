@@ -49,7 +49,7 @@ func TestCapacitor(t *testing.T) {
 	}
 
 	// 电压源电流应为0A（电容开路，没有电流）
-	voltageSourceCurrent := mnaSolver.GetNodeCurrent(0)
+	voltageSourceCurrent := mnaSolver.GetVoltageSourceCurrent(0)
 	expectedCurrent := 0.0
 	if math.Abs(voltageSourceCurrent-expectedCurrent) > 0.1 {
 		t.Errorf("电压源电流不正确: 期望 %v, 实际 %v", expectedCurrent, voltageSourceCurrent)

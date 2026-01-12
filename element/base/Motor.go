@@ -59,7 +59,7 @@ func (Motor) StartIteration(mna mna.MNA, time mna.Time, value element.NodeFace) 
 			v1 := mna.GetNodeVoltage(value.GetNodes(0))
 			v2 := mna.GetNodeVoltage(value.GetNodes(1))
 			voltdiff := v1 - v2
-			current := mna.GetNodeCurrent(value.GetVoltSource(0))
+			current := mna.GetVoltageSourceCurrent(value.GetVoltSource(0))
 			curSourceValue := voltdiff/compResistance + current
 			value.SetFloat64(11, curSourceValue)
 		}
