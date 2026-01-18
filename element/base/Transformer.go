@@ -33,7 +33,7 @@ func (Transformer) Reset(base element.NodeFace) {
 	}
 }
 
-func (Transformer) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (Transformer) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	l1 := value.GetFloat64(0)
 	ratio := value.GetFloat64(1)
 	k := value.GetFloat64(2)
@@ -65,7 +65,7 @@ func (Transformer) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
 	mna.StampAdmittance(value.GetNodes(2), value.GetNodes(3), g22)
 }
 
-func (t Transformer) StartIteration(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (t Transformer) StartIteration(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 获取当前电压差
 	v1 := mna.GetNodeVoltage(value.GetNodes(0)) - mna.GetNodeVoltage(value.GetNodes(1))
 	v2 := mna.GetNodeVoltage(value.GetNodes(2)) - mna.GetNodeVoltage(value.GetNodes(3))
@@ -84,7 +84,7 @@ func (t Transformer) StartIteration(mna mna.MNA, time mna.Time, value element.No
 	value.SetFloat64(8, i2+g21*v1+g22*v2)
 }
 
-func (Transformer) DoStep(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (Transformer) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 将历史电流项加盖到 RHS 向量中
 	mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), value.GetFloat64(7))
 	mna.StampCurrentSource(value.GetNodes(2), value.GetNodes(3), value.GetFloat64(8))

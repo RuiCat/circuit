@@ -150,7 +150,7 @@ func (vmst *VmState) VmImaStep(count int) int32 {
 	var trap int32 = 0
 	pc := vmst.Core.PC
 
-	for icount := 0; icount < count; icount++ {
+	for range count {
 		// --- 1. 指令获取 (Instruction Fetch) ---
 		ofs_pc := pc - VmRamImageOffSet
 		// 检查PC是否在有效内存范围内

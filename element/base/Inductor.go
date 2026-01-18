@@ -19,7 +19,7 @@ var InductorType element.NodeType = element.AddElement(3, &Inductor{
 // Inductor 电感器
 type Inductor struct{ *element.Config }
 
-func (Inductor) StartIteration(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (Inductor) StartIteration(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	dt := time.TimeStep()
 	if dt <= 0 {
 		return
@@ -34,7 +34,7 @@ func (Inductor) StartIteration(mna mna.MNA, time mna.Time, value element.NodeFac
 	}
 }
 
-func (Inductor) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (Inductor) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	inductance := value.GetFloat64(0)
 	dt := time.TimeStep()
 	if dt <= 0 || inductance <= 0 {
@@ -54,12 +54,12 @@ func (Inductor) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
 	mna.StampAdmittance(value.GetNodes(0), value.GetNodes(1), G_eq)
 }
 
-func (Inductor) DoStep(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (Inductor) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	I_hist := value.GetFloat64(3)
 	mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), I_hist)
 }
 
-func (Inductor) CalculateCurrent(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (Inductor) CalculateCurrent(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	G_eq := value.GetFloat64(2)
 	if G_eq > 0 {
 		v1 := mna.GetNodeVoltage(value.GetNodes(0))

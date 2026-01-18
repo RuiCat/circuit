@@ -109,7 +109,7 @@ func (Diode) Reset(base element.NodeFace) {
 	base.SetFloat64(5, 0)
 }
 
-func (Diode) DoStep(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (Diode) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 获取节点电压
 	v1 := mna.GetNodeVoltage(value.GetNodes(0))
 	v2 := mna.GetNodeVoltage(value.GetNodes(1))
@@ -184,7 +184,7 @@ func (Diode) DoStep(mna mna.MNA, time mna.Time, value element.NodeFace) {
 	}
 }
 
-func (Diode) CalculateCurrent(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (Diode) CalculateCurrent(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	v1 := mna.GetNodeVoltage(value.GetNodes(0))
 	v2 := mna.GetNodeVoltage(value.GetNodes(1))
 	voltdiff := v1 - v2
@@ -261,7 +261,7 @@ func limitDiodeStep(vnew, vold float64, time mna.Time, value element.NodeFace) f
 }
 
 // doDiodeStep 执行二极管MNA建模（基于CircuitJS1算法）
-func doDiodeStep(mna mna.MNA, time mna.Time, value element.NodeFace, voltdiff float64) {
+func doDiodeStep(mna mna.Mna, time mna.Time, value element.NodeFace, voltdiff float64) {
 	leakage := value.GetFloat64(13) // 漏电流（饱和电流）
 	vdcoef := value.GetFloat64(7)   // 1/(N*Vt)
 	vzcoef := value.GetFloat64(9)   // 1/Vt
@@ -320,7 +320,7 @@ func doDiodeStep(mna mna.MNA, time mna.Time, value element.NodeFace, voltdiff fl
 }
 
 // doDiodeStepWeighted 执行加权二极管MNA建模
-func doDiodeStepWeighted(mna mna.MNA, value element.NodeFace, voltdiff, weight float64) {
+func doDiodeStepWeighted(mna mna.Mna, value element.NodeFace, voltdiff, weight float64) {
 	leakage := value.GetFloat64(13) // 漏电流（饱和电流）
 	vdcoef := value.GetFloat64(7)   // 1/(N*Vt)
 	vzcoef := value.GetFloat64(9)   // 1/Vt

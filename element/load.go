@@ -18,10 +18,10 @@ import (
 //
 //	[]NodeFace: 解析出的元件列表。
 //	error: 如果文件无法打开或解析出错，则返回错误。
-func LoadNetlist(filePath string) ([]NodeFace, error) {
+func LoadNetlist(filePath string) (_ []NodeFace, nodesNum int, voltageSourcesNum int, _ error) {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("无法打开文件 %s: %w", filePath, err)
+		return nil, 0, 0, fmt.Errorf("无法打开文件 %s: %w", filePath, err)
 	}
 	defer file.Close()
 	return parseNetlist(bufio.NewScanner(file))
@@ -36,7 +36,7 @@ func LoadNetlist(filePath string) ([]NodeFace, error) {
 //
 //	[]NodeFace: 解析出的元件列表。
 //	error: 如果解析出错，则返回错误。
-func LoadNetlistFromString(netlist string) ([]NodeFace, error) {
+func LoadNetlistFromString(netlist string) (_ []NodeFace, nodesNum int, voltageSourcesNum int, _ error) {
 	return parseNetlist(bufio.NewScanner(strings.NewReader(netlist)))
 }
 
@@ -53,7 +53,7 @@ func LoadNetlistFromString(netlist string) ([]NodeFace, error) {
 //
 //	[]NodeFace: 解析出的元件列表。
 //	error: 如果解析过程中出现任何错误，则返回错误。
-func parseNetlist(scanner *bufio.Scanner) ([]NodeFace, error) {
+func parseNetlist(scanner *bufio.Scanner) (_ []NodeFace, nodesNum int, voltageSourcesNum int, _ error) {
 	// tempElement 用于临时存储解析过程中的元件信息
 	type tempElement struct {
 		element  NodeFace // 元件实例
@@ -114,23 +114,23 @@ func parseNetlist(scanner *bufio.Scanner) ([]NodeFace, error) {
 		// 根据类型名称查找 NodeType
 		nodeType, ok := typeMap[typeName]
 		if !ok {
-			return nil, fmt.Errorf("第 %d 行: 未知的元件类型 '%s'", lineNumber, parts[0])
+			return nil, 0, 0, fmt.Errorf("第 %d 行: 未知的元件类型 '%s'", lineNumber, parts[0])
 		}
 
 		// 检查元件配置和引脚数量
 		config := nodeType.Config()
 		if config == nil {
-			return nil, fmt.Errorf("第 %d 行: 找不到元件类型的配置 '%s'", lineNumber, typeName)
+			return nil, 0, 0, fmt.Errorf("第 %d 行: 找不到元件类型的配置 '%s'", lineNumber, typeName)
 		}
 		pinNum := config.PinNum()
 		if len(parts)-1 < pinNum {
-			return nil, fmt.Errorf("第 %d 行: 元件 '%s' 引脚数量不足. 需要 %d, 得到 %d", lineNumber, parts[0], pinNum, len(parts)-1)
+			return nil, 0, 0, fmt.Errorf("第 %d 行: 元件 '%s' 引脚数量不足. 需要 %d, 得到 %d", lineNumber, parts[0], pinNum, len(parts)-1)
 		}
 
 		// 创建并加载元件
 		element := NewElementValue(nodeType)
 		if element == nil {
-			return nil, fmt.Errorf("第 %d 行: 无法创建元件 '%s'", lineNumber, typeName)
+			return nil, 0, 0, fmt.Errorf("第 %d 行: 无法创建元件 '%s'", lineNumber, typeName)
 		}
 
 		pinStrs := parts[1 : pinNum+1]
@@ -142,7 +142,7 @@ func parseNetlist(scanner *bufio.Scanner) ([]NodeFace, error) {
 		tempElements = append(tempElements, tempElement{element, pinStrs, lineNumber, parts[0]})
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("读取网表时出错: %w", err)
+		return nil, 0, 0, fmt.Errorf("读取网表时出错: %w", err)
 	}
 
 	// 第二遍扫描: 设置引脚连接并找出最大的节点ID
@@ -151,7 +151,7 @@ func parseNetlist(scanner *bufio.Scanner) ([]NodeFace, error) {
 		for i, pinStr := range te.pinStrs {
 			nodeIDVal, err := strconv.Atoi(pinStr)
 			if err != nil {
-				return nil, fmt.Errorf("第 %d 行: 无效的节点ID '%s'", te.line, pinStr)
+				return nil, 0, 0, fmt.Errorf("第 %d 行: 无效的节点ID '%s'", te.line, pinStr)
 			}
 			nodeID := mna.NodeID(nodeIDVal)
 			if nodeID > maxNodeID {
@@ -181,5 +181,5 @@ func parseNetlist(scanner *bufio.Scanner) ([]NodeFace, error) {
 		elements = append(elements, te.element)
 	}
 
-	return elements, nil
+	return elements, int(currentInternalNodeID), int(currentVoltageID), nil
 }

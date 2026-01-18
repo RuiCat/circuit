@@ -5,13 +5,13 @@ import (
 	"fmt"
 )
 
-// updateMatrix 为任何稠密矩阵实现提供了一个带缓存的装饰器，以优化频繁、临时的修改操作。
+// updateMatrix 为任矩阵实现提供了一个带缓存的装饰器，以优化频繁、临时的修改操作。
 // 它的核心思想是：写操作首先进入一个临时缓存，而不是直接修改底层矩阵。
 // 用户可以随后选择“提交”（Update）这些更改，将它们批量写入底层矩阵，
 // 或者“回滚”（Rollback），直接丢弃缓存中的所有更改。
 // 这种机制在需要进行探索性计算或需要撤销操作的场景下非常高效。
 type updateMatrix[T Number] struct {
-	Matrix[T]                     // Matrix 是底层的稠密矩阵，存储着“已提交”的稳定数据。
+	Matrix[T]                     // Matrix 是底层的矩阵，存储着“已提交”的稳定数据。
 	bitmap        utils.Bitmap    // bitmap 用于标记哪些矩阵元素在缓存中被修改过。每一位对应一个元素。
 	cache         map[int][16]T   // cache 是一个分块缓存。key 是块索引，value 是一个固定大小的数组（块）。
 	blockSize     int             // blockSize 定义了缓存块的大小，固定为16，这有助于利用CPU缓存行对齐。
@@ -25,7 +25,7 @@ type updateMatrix[T Number] struct {
 func NewUpdateMatrix[T Number](base Matrix[T]) UpdateMatrix[T] {
 	rows := base.Rows()
 	cols := base.Cols()
-	// 初始化底层的稠密矩阵，并将基础矩阵的数据复制过来。
+	// 初始化底层的矩阵，并将基础矩阵的数据复制过来。
 	dm := NewDenseMatrix[T](rows, cols)
 	base.Copy(dm)
 	return &updateMatrix[T]{

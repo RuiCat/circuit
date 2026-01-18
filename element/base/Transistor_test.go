@@ -1,10 +1,11 @@
 package base
 
 import (
+	"bufio"
 	"circuit/element"
 	"circuit/element/time"
-	"circuit/mna"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -22,27 +23,25 @@ func TestTransistorCircuit(t *testing.T) {
 	r2 0 3 1000.0
 	q1 2 3 -1 100.0
 	`
-	ele, err := element.LoadNetlistFromString(netlist)
+	scanner := bufio.NewScanner(strings.NewReader(netlist))
+	con, err := element.LoadContext(scanner)
 	if err != nil {
-		t.Fatalf("加载网表失败: %s", err)
+		t.Fatalf("加载上下文失败: %s", err)
 	}
-
-	// 创建求解器
-	mnaSolver := mna.NewUpdateMNA(time.GetNum(ele))
 	timeMNA, err := time.NewTimeMNA(0.1)
 	if err != nil {
 		t.Fatalf("创建仿真时间失败: %s", err)
 	}
 
 	// 运行瞬态仿真
-	if err := time.TransientSimulation(timeMNA, mnaSolver, ele, func(f []float64) {}); err != nil {
+	if err := time.TransientSimulation(timeMNA, con, func(f []float64) {}); err != nil {
 		t.Fatalf("瞬态仿真失败: %s", err)
 	}
 
 	// --- 验证 ---
 	// 晶体管应处于饱和模式。
-	baseVoltage := mnaSolver.GetNodeVoltage(2)
-	collectorVoltage := mnaSolver.GetNodeVoltage(3)
+	baseVoltage := con.GetNodeVoltage(2)
+	collectorVoltage := con.GetNodeVoltage(3)
 
 	// 对于硅晶体管，Vbe应约为0.7V。
 	// 我们期望基极电压接近此值。
@@ -59,7 +58,7 @@ func TestTransistorCircuit(t *testing.T) {
 
 	// 验证电流
 	// Ib = (V_in - V_be) / Rb = (5 - 0.7) / 10k = 0.43mA
-	transistor := ele[4]
+	transistor := con.Nodelist[4]
 	ib := transistor.GetFloat64(8)
 	expectedIb := (vIn - baseVoltage) / rbVal
 	if math.Abs(ib-expectedIb)/expectedIb > 0.1 { // 10% 容差

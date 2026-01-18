@@ -22,7 +22,11 @@ var SwitchType element.NodeType = element.AddElement(7, &Switch{
 // Switch 开关
 type Switch struct{ *element.Config }
 
-func (Switch) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (s *Switch) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
+	s.Stamp(mna, time, value)
+}
+
+func (Switch) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	state := value.GetInt(0)
 	var resistance float64
 	if state == 1 {
@@ -33,7 +37,7 @@ func (Switch) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
 	mna.StampImpedance(value.GetNodes(0), value.GetNodes(1), resistance)
 }
 
-func (Switch) CalculateCurrent(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (Switch) CalculateCurrent(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	state := value.GetInt(0)
 	var resistance float64
 	if state == 1 {

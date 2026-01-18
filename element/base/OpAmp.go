@@ -3,7 +3,6 @@ package base
 import (
 	"circuit/element"
 	"circuit/mna"
-	"math"
 )
 
 // OpAmpType 定义元件
@@ -29,63 +28,36 @@ var OpAmpType element.NodeType = element.AddElement(5, &OpAmp{
 // OpAmp 运算放大器（基于文章反正切非线性模型的实现）
 type OpAmp struct{ *element.Config }
 
-func (OpAmp) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (OpAmp) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 输入引脚连接到高阻抗（大电阻到地）
 	mna.StampImpedance(-1, value.GetNodes(0), 1e16)
 	mna.StampImpedance(-1, value.GetNodes(1), 1e16)
-	// 输出引脚通过电压源连接到地
-	mna.StampVoltageSource(value.GetNodes(2), -1, value.GetVoltSource(0), 0)
+	// 输出引脚通过压控电压源连接
+	gain := value.GetFloat64(2)
+	mna.StampVCVS(
+		value.GetNodes(2), -1, // Vout to Gnd
+		value.GetNodes(0), value.GetNodes(1), // controlled by Vp - Vn
+		value.GetVoltSource(0), gain,
+	)
 }
 
-func (OpAmp) DoStep(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (OpAmp) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 获取节点电压
 	vp := mna.GetNodeVoltage(value.GetNodes(0)) // 同相输入电压 (Vp)
 	vn := mna.GetNodeVoltage(value.GetNodes(1)) // 反相输入电压 (Vn)
-	out := value.GetFloat64(3)                  // 输出电压
+
 	// 计算输入电压差
 	vd := vp - vn
-	vdabs := math.Abs(vd)
-	// 优化：动态计算增益，基于开环增益和电压差
-	// 使用开环增益G，但限制最大增益以避免数值问题
-	G := value.GetFloat64(2) // 开环增益
 
-	// 动态增益计算：当vd很小时使用较大增益，vd较大时使用较小增益
-	// 这有助于快速收敛同时保持稳定性
-	var gain float64
-	if vdabs < 1e-6 {
-		// 非常小的电压差，使用较大增益加速收敛
-		gain = 0.1
-	} else if vdabs < 0.01 {
-		// 较小电压差，使用中等增益
-		gain = 0.05
-	} else {
-		// 较大电压差，使用较小增益保持稳定
-		gain = 0.01
-	}
-
-	// 进一步优化：根据开环增益调整
-	// 但限制增益范围避免数值问题
-	maxGain := 0.5
-	if G > 0 {
-		adjustedGain := math.Min(0.001*G, maxGain)
-		gain = math.Max(gain, adjustedGain)
-	}
-	// 判断是否收敛
-	if vdabs > 1e-9 {
-		time.Converged() // 标记为未收敛
-	}
-	out += vd * gain
-	// 更新电压，限制在摆幅范围内
-	out = math.Min(out, value.GetFloat64(0))
-	out = math.Max(out, value.GetFloat64(1))
-	mna.UpdateVoltageSource(value.GetVoltSource(0), out)
-	value.SetFloat64(3, out)
-
-	// 保存小信号增益用于调试
-	value.SetFloat64(5, gain)
+	// 更新内部状态值
+	// 改为使用VCVS模型后，DoStep不再需要计算和更新电压源
+	// MNA求解器会处理，我们只需在这里读取最终状态即可
+	vout := mna.GetNodeVoltage(value.GetNodes(2))
+	value.SetFloat64(3, vd)
+	value.SetFloat64(6, vout)
 }
 
-func (OpAmp) CalculateCurrent(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (OpAmp) CalculateCurrent(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 电压源的支路电流即为运放输出电流
 	iout := mna.GetVoltageSourceCurrent(value.GetVoltSource(0))
 	value.SetFloat64(4, iout)

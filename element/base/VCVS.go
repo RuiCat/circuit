@@ -18,7 +18,7 @@ var VCVSType element.NodeType = element.AddElement(10, &VCVS{
 // VCVS 电压控制电压源
 type VCVS struct{ *element.Config }
 
-func (VCVS) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (VCVS) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// VCVS: V_out = Gain * V_in
 	// 控制节点: value.GetNodes[0], value.GetNodes[1] (输入)
 	// 输出节点: value.GetNodes[2], value.GetNodes[3] (输出)

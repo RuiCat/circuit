@@ -22,6 +22,17 @@ func NewMatrixDataManager[T Number](rows, cols int) *MatrixDataManager[T] {
 	}
 }
 
+// NewMatrixDataManagerData 基于基础数据创建新的结构体
+// 参数 rows 和 cols 指定了矩阵的维度。
+// 参数 data 底层结构
+func NewMatrixDataManagerData[T Number](rows, cols int, data []T) *MatrixDataManager[T] {
+	return &MatrixDataManager[T]{
+		DataManager: NewDataManagerWithData(data), // 初始化一维数据切片
+		rows:        rows,
+		cols:        cols,
+	}
+}
+
 // Rows 返回矩阵的行数。
 func (mdm *MatrixDataManager[T]) Rows() int {
 	return mdm.rows

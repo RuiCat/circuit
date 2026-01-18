@@ -148,7 +148,7 @@ type NodeFace interface {
 	GetString(i int) string                          // 获取第i个逻辑值参数
 	GetNodes(i int) mna.NodeID                       // 获取第i个引脚对应的MNA节点索引
 	GetVoltSource(i int) mna.VoltageID               // 获取第i个电压源对应的MNA节点索引
-	GetVoltSourceNodeID(m mna.MNA, i int) mna.NodeID // 获取第i个电压源对应的MNA节点索引
+	GetVoltSourceNodeID(m mna.Mna, i int) mna.NodeID // 获取第i个电压源对应的MNA节点索引
 	GetNodesInternal(i int) mna.NodeID               // 获取第i个内部节点对应的MNA节点索引
 	SetFloat64(i int, v float64)                     // 设置第i个浮点数值参数
 	SetInt(i int, v int)                             // 设置第i个整数值参数
@@ -176,9 +176,9 @@ type ConfigFace interface {
 // ElementFace 元件实现接口，提供元件的动态行为实现
 // 所有元件类型都必须实现此接口，以定义其在仿真过程中的行为
 type ElementFace interface {
-	StartIteration(mna mna.MNA, time mna.Time, value NodeFace)   // 步长迭代开始时的回调
-	Stamp(mna mna.MNA, time mna.Time, value NodeFace)            // 加盖线性贡献到MNA矩阵
-	DoStep(mna mna.MNA, time mna.Time, value NodeFace)           // 执行仿真步长计算
-	CalculateCurrent(mna mna.MNA, time mna.Time, value NodeFace) // 计算元件电流
-	StepFinished(mna mna.MNA, time mna.Time, value NodeFace)     // 步长迭代结束时的回调
+	StartIteration(mna mna.Mna, time mna.Time, value NodeFace)   // 步长迭代开始时的回调
+	Stamp(mna mna.Mna, time mna.Time, value NodeFace)            // 加盖线性贡献到MNA矩阵
+	DoStep(mna mna.Mna, time mna.Time, value NodeFace)           // 执行仿真步长计算
+	CalculateCurrent(mna mna.Mna, time mna.Time, value NodeFace) // 计算元件电流
+	StepFinished(mna mna.Mna, time mna.Time, value NodeFace)     // 步长迭代结束时的回调
 }

@@ -48,7 +48,7 @@ func (node *Node) GetVoltSource(i int) mna.VoltageID {
 // GetVoltSourceNodeID 获取指定电压源对应的MNA节点索引
 // 参数i: 电压源索引（0-based）
 // 返回：对应电压源的MNA节点ID，如果索引无效则返回-1
-func (node *Node) GetVoltSourceNodeID(m mna.MNA, i int) mna.NodeID {
+func (node *Node) GetVoltSourceNodeID(m mna.Mna, i int) mna.NodeID {
 	if i >= 0 && i < len(node.VoltSource) {
 		return mna.NodeID(m.GetNodeNum()) + mna.NodeID(node.VoltSource[i])
 	}

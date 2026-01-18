@@ -1,10 +1,11 @@
 package base
 
 import (
+	"bufio"
 	"circuit/element"
 	"circuit/element/time"
-	"circuit/mna"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -15,13 +16,11 @@ func TestTransformer(t *testing.T) {
 	xfmr1 1 -1 2 -1 4.0 1.0 0.999
 	r2 2 -1 1000
 	`
-	ele, err := element.LoadNetlistFromString(netlist)
+	scanner := bufio.NewScanner(strings.NewReader(netlist))
+	con, err := element.LoadContext(scanner)
 	if err != nil {
-		t.Fatalf("加载网表失败: %s", err)
+		t.Fatalf("加载上下文失败: %s", err)
 	}
-
-	// 创建求解
-	mnaSolver := mna.NewUpdateMNA(time.GetNum(ele))
 	timeMNA, err := time.NewTimeMNA(0.1)
 	if err != nil {
 		t.Fatalf("创建仿真时间失败 %s", err)
@@ -30,10 +29,10 @@ func TestTransformer(t *testing.T) {
 	var maxV1, maxV2 float64
 
 	// 4. 执行仿真
-	time.TransientSimulation(timeMNA, mnaSolver, ele, func(voltages []float64) {
+	time.TransientSimulation(timeMNA, con, func(voltages []float64) {
 		// 记录节点 1 和 节点 2 的最大绝对值（峰值）
-		v1 := math.Abs(mnaSolver.GetNodeVoltage(1))
-		v2 := math.Abs(mnaSolver.GetNodeVoltage(2))
+		v1 := math.Abs(con.GetNodeVoltage(1))
+		v2 := math.Abs(con.GetNodeVoltage(2))
 		if v1 > maxV1 {
 			maxV1 = v1
 		}

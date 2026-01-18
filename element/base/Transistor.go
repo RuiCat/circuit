@@ -33,7 +33,7 @@ var TransistorType element.NodeType = element.AddElement(9, &Transistor{
 // Transistor 晶体管
 type Transistor struct{ *element.Config }
 
-func (Transistor) Stamp(m mna.MNA, time mna.Time, value element.NodeFace) {
+func (Transistor) Stamp(m mna.Mna, time mna.Time, value element.NodeFace) {
 	// 为结添加最小电导，以确保矩阵在数值上稳定
 	gmin := 1e-12
 	nodeB := value.GetNodes(0)
@@ -68,7 +68,7 @@ func (Transistor) Reset(base element.NodeFace) {
 	base.SetFloat64(9, 1e-12)
 }
 
-func (Transistor) DoStep(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (Transistor) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 从电路节点获取电压
 	v1 := mna.GetNodeVoltage(value.GetNodes(0)) // 基极
 	v2 := mna.GetNodeVoltage(value.GetNodes(1)) // 集电极

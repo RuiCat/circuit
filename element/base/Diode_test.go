@@ -1,10 +1,11 @@
 package base
 
 import (
+	"bufio"
 	"circuit/element"
 	"circuit/element/time"
-	"circuit/mna"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -14,20 +15,18 @@ func TestDiode(t *testing.T) {
 	r1 1 0 100
 	d1 0 -1 1e-14 0.0 1.0 0.1 300.15
 	`
-	ele, err := element.LoadNetlistFromString(netlist)
+	scanner := bufio.NewScanner(strings.NewReader(netlist))
+	con, err := element.LoadContext(scanner)
 	if err != nil {
-		t.Fatalf("加载网表失败: %s", err)
+		t.Fatalf("加载上下文失败: %s", err)
 	}
-
-	// 创建求解
-	mnaSolver := mna.NewUpdateMNA(time.GetNum(ele))
 	timeMNA, err := time.NewTimeMNA(0.1)
 	if err != nil {
 		t.Fatalf("创建仿真时间失败 %s", err)
 	}
 
 	// 求解
-	if err := time.TransientSimulation(timeMNA, mnaSolver, ele, func(voltages []float64) {
+	if err := time.TransientSimulation(timeMNA, con, func(voltages []float64) {
 		// 可以在这里记录电压变化
 	}); err != nil {
 		t.Fatalf("仿真失败 %s", err)
@@ -35,8 +34,8 @@ func TestDiode(t *testing.T) {
 
 	// 验证二极管正向导通特性
 	// 在直流电压下，二极管应导通，节点0电压应接近节点1电压减去二极管压降
-	node1Voltage := mnaSolver.GetNodeVoltage(1)
-	node0Voltage := mnaSolver.GetNodeVoltage(0)
+	node1Voltage := con.GetNodeVoltage(1)
+	node0Voltage := con.GetNodeVoltage(0)
 
 	// 二极管正向压降大约为0.7V，但实际值取决于电流
 	// 对于5V电源和100Ω电阻，电流约为(5-0.7)/100 = 0.043A

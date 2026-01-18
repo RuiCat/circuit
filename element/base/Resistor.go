@@ -23,6 +23,6 @@ type Resistor struct{ *element.Config }
 // 参数mna: MNA求解器接口，用于访问和修改MNA矩阵
 // 参数time: 仿真时间接口，当前未使用（电阻是线性时不变元件）
 // 参数value: 电阻元件节点接口，用于获取电阻值和节点连接信息
-func (Resistor) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (Resistor) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	mna.StampImpedance(value.GetNodes(0), value.GetNodes(1), value.GetFloat64(0))
 }

@@ -17,6 +17,6 @@ var CurrentSourceType element.NodeType = element.AddElement(1, &CurrentSource{
 // CurrentSource 电流源
 type CurrentSource struct{ *element.Config }
 
-func (CurrentSource) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (CurrentSource) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), value.GetFloat64(0))
 }

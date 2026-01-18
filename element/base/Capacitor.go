@@ -19,7 +19,7 @@ var CapacitorType element.NodeType = element.AddElement(0, &Capacitor{
 // Capacitor 电容
 type Capacitor struct{ *element.Config }
 
-func (Capacitor) StartIteration(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (Capacitor) StartIteration(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	dt := time.TimeStep()
 	c := value.GetFloat64(0)
 	v_prev := value.GetFloat64(3)
@@ -27,7 +27,7 @@ func (Capacitor) StartIteration(mna mna.MNA, time mna.Time, value element.NodeFa
 	value.SetFloat64(2, I_hist)
 }
 
-func (Capacitor) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (Capacitor) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	dt := time.TimeStep()
 	c := value.GetFloat64(0)
 	if dt <= 0 || c <= 0 {
@@ -38,12 +38,12 @@ func (Capacitor) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
 	mna.StampAdmittance(value.GetNodes(0), value.GetNodes(1), G_eq)
 }
 
-func (Capacitor) DoStep(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (Capacitor) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	I_hist := value.GetFloat64(2)
 	mna.StampCurrentSource(value.GetNodes(1), value.GetNodes(0), I_hist)
 }
 
-func (Capacitor) CalculateCurrent(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (Capacitor) CalculateCurrent(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	v1 := mna.GetNodeVoltage(value.GetNodes(0))
 	v2 := mna.GetNodeVoltage(value.GetNodes(1))
 	v_diff := v1 - v2

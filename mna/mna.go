@@ -6,64 +6,74 @@ import (
 	"math/cmplx"
 )
 
-// updateMNA 实现了 UpdateMNA 接口，封装了一个标准的 MNA 求解器，
+// MnaUpdate 扩展了 MNA 接口，提供了对MNA矩阵和向量进行更新与回滚的功能。
+// 这对于需要迭代计算或状态管理的仿真（如时域分析）至关重要。
+type MnaUpdate = UpdateFace[float64]
+
+// Mna (Modified Nodal Analysis) 接口定义了构建和操作电路方程（Ax=Z）所需的核心功能。
+// 它通过一系列“加盖”(Stamp)操作来构建Mna矩阵，并最终求解得到节点电压和支路电流。
+type Mna = MNAFace[float64]
+
+// MnaUpdateType 实现了 UpdateMNA 接口，封装了一个标准的 MNA 求解器，
 // 并为其矩阵和向量提供了更新与回滚的功能。
-type updateMNA[T maths.Number] struct {
-	MNAFace[T]                       // 嵌入MNA接口，继承所有MNA方法
-	A          maths.UpdateMatrix[T] // 可更新的求解矩阵A
-	Z          maths.UpdateVector[T] // 可更新的已知向量Z
-	X          maths.UpdateVector[T] // 可更新的未知向量X
+type MnaUpdateType[T maths.Number] struct {
+	*MnaType[T]                       // 嵌入MNA接口，继承所有MNA方法
+	A           maths.UpdateMatrix[T] // 可更新的求解矩阵A
+	Z           maths.UpdateVector[T] // 可更新的已知向量Z
+	X           maths.Vector[T]       // 可更新的未知向量X
+	LastX       maths.Vector[T]       // 上一个未知向量X
+}
+
+// NewMnaUpdate 创建一个带更新功能的MNA求解器实例。
+//
+//	NodesNum: 电路节点数量（不含地节点）。
+//	VoltageSourcesNum: 独立电压源和受控源的总数量。
+//	返回:一个新的 UpdateMNA 实例。
+func NewMnaUpdate(NodesNum, VoltageSourcesNum int) MnaUpdate {
+	n := NodesNum + VoltageSourcesNum // 总方程数量
+	// 创建可更新的矩阵和向量
+	mna := &MnaUpdateType[float64]{
+		MnaType: &MnaType[float64]{
+			NodesNum:          NodesNum,
+			VoltageSourcesNum: VoltageSourcesNum,
+		},
+		A:     maths.NewUpdateMatrixPtr(maths.NewDenseMatrix[float64](n, n)),
+		Z:     maths.NewUpdateVectorPtr(maths.NewDenseVector[float64](n)),
+		X:     maths.NewDenseVector[float64](n),
+		LastX: maths.NewDenseVector[float64](n),
+	}
+	mna.MnaType.A = mna.A
+	mna.MnaType.Z = mna.Z
+	mna.MnaType.X = mna.X
+	return mna
 }
 
 // Update 将对矩阵A和向量Z的暂存修改应用到底层数据结构中。
-func (mna *updateMNA[T]) Update() {
+func (mna *MnaUpdateType[T]) Update() {
 	mna.A.Update()
 	mna.Z.Update()
 }
 
 // Rollback 丢弃对矩阵A和向量Z的暂存修改，将其恢复到上次更新或初始状态。
-func (mna *updateMNA[T]) Rollback() {
+func (mna *MnaUpdateType[T]) Rollback() {
 	mna.A.Rollback()
 	mna.Z.Rollback()
 }
 
 // UpdateX 将对解向量X的暂存修改应用到底层数据结构中。
-func (mna *updateMNA[T]) UpdateX() {
-	mna.X.Update()
+func (mna *MnaUpdateType[T]) UpdateX() {
+	mna.X, mna.LastX = mna.LastX, mna.X
+	mna.MnaType.X = mna.X
 }
 
 // RollbackX 丢弃对解向量X的暂存修改。
-func (mna *updateMNA[T]) RollbackX() {
-	mna.X.Rollback()
+func (mna *MnaUpdateType[T]) RollbackX() {
+	mna.X, mna.LastX = mna.LastX, mna.X
+	mna.MnaType.X = mna.LastX
 }
 
-// NewUpdateMNA 创建一个带更新功能的MNA求解器实例。
-//
-//	NodesNum: 电路节点数量（不含地节点）。
-//	VoltageSourcesNum: 独立电压源和受控源的总数量。
-//	返回:一个新的 UpdateMNA 实例。
-func NewUpdateMNA(NodesNum, VoltageSourcesNum int) UpdateMNA {
-	n := NodesNum + VoltageSourcesNum // 总方程数量
-	// 创建可更新的矩阵和向量
-	A := maths.NewUpdateMatrixPtr(maths.NewDenseMatrix[float64](n, n))
-	Z := maths.NewUpdateVectorPtr(maths.NewDenseVector[float64](n))
-	X := maths.NewUpdateVectorPtr(maths.NewDenseVector[float64](n))
-	return &updateMNA[float64]{
-		MNAFace: &mna[float64]{
-			A:                 A,
-			Z:                 Z,
-			X:                 X,
-			NodesNum:          NodesNum,
-			VoltageSourcesNum: VoltageSourcesNum,
-		},
-		A: A,
-		Z: Z,
-		X: X,
-	}
-}
-
-// mna 结构体是 MNA 接口的基础实现，包含了求解电路所需的核心矩阵和向量。
-type mna[T maths.Number] struct {
+// MnaType 结构体是 MNA 接口的基础实现，包含了求解电路所需的核心矩阵和向量。
+type MnaType[T maths.Number] struct {
 	A                 maths.Matrix[T] // 求解矩阵A
 	Z                 maths.Vector[T] // 已知向量Z
 	X                 maths.Vector[T] // 未知向量X (解)
@@ -71,14 +81,14 @@ type mna[T maths.Number] struct {
 	VoltageSourcesNum int             // 独立电压源和受控源的总数量
 }
 
-// NewMNA 创建一个基础MNA求解器实例。
+// NewMna 创建一个基础MNA求解器实例。
 //
 //	nodesNum: 电路节点数量（不含地节点）。
 //	vsNum: 独立电压源和受控源的总数量。
 //	返回:一个新的 MNA 实例。
-func NewMNA(nodesNum, vsNum int) MNA {
+func NewMna(nodesNum, vsNum int) Mna {
 	n := nodesNum + vsNum // 总方程数量
-	return &mna[float64]{
+	return &MnaType[float64]{
 		A:                 maths.NewDenseMatrix[float64](n, n),
 		Z:                 maths.NewDenseVector[float64](n),
 		X:                 maths.NewDenseVector[float64](n),
@@ -89,12 +99,12 @@ func NewMNA(nodesNum, vsNum int) MNA {
 
 // ------------------------------ 矩阵/向量访问 ------------------------------
 
-func (m *mna[T]) GetA() maths.Matrix[T] { return m.A }
-func (m *mna[T]) GetZ() maths.Vector[T] { return m.Z }
-func (m *mna[T]) GetX() maths.Vector[T] { return m.X }
+func (m *MnaType[T]) GetA() maths.Matrix[T] { return m.A }
+func (m *MnaType[T]) GetZ() maths.Vector[T] { return m.Z }
+func (m *MnaType[T]) GetX() maths.Vector[T] { return m.X }
 
 // Zero 将MNA系统（矩阵A、向量Z和X）重置为零。
-func (m *mna[T]) Zero() {
+func (m *MnaType[T]) Zero() {
 	m.A.Zero()
 	m.Z.Zero()
 	m.X.Zero()
@@ -102,11 +112,11 @@ func (m *mna[T]) Zero() {
 
 // ------------------------------ 系统信息查询 ------------------------------
 
-func (m *mna[T]) GetNodeNum() int           { return m.NodesNum }
-func (m *mna[T]) GetVoltageSourcesNum() int { return m.VoltageSourcesNum }
+func (m *MnaType[T]) GetNodeNum() int           { return m.NodesNum }
+func (m *MnaType[T]) GetVoltageSourcesNum() int { return m.VoltageSourcesNum }
 
 // GetNodeVoltage 从解向量X中获取指定节点的电压。
-func (m *mna[T]) GetNodeVoltage(i NodeID) (zero T) {
+func (m *MnaType[T]) GetNodeVoltage(i NodeID) (zero T) {
 	if i > Gnd && int(i) < m.NodesNum {
 		return m.X.Get(int(i))
 	}
@@ -114,7 +124,7 @@ func (m *mna[T]) GetNodeVoltage(i NodeID) (zero T) {
 }
 
 // GetVoltageSourceCurrent 从解向量X中获取流经指定电压源的电流。
-func (m *mna[T]) GetVoltageSourceCurrent(i VoltageID) (zero T) {
+func (m *MnaType[T]) GetVoltageSourceCurrent(i VoltageID) (zero T) {
 	if int(i) > -1 && int(i) < m.VoltageSourcesNum {
 		return m.X.Get(m.NodesNum + int(i))
 	}
@@ -124,28 +134,28 @@ func (m *mna[T]) GetVoltageSourceCurrent(i VoltageID) (zero T) {
 // ------------------------------ MNA矩阵操作 ------------------------------
 
 // StampMatrix 将一个值加到矩阵A的(i,j)元素上。地节点索引将被忽略。
-func (m *mna[T]) StampMatrix(i, j NodeID, value T) {
+func (m *MnaType[T]) StampMatrix(i, j NodeID, value T) {
 	if i > Gnd && j > Gnd {
 		m.A.Increment(int(i), int(j), value)
 	}
 }
 
 // StampMatrixSet 直接设置矩阵A的(i,j)元素的值。地节点索引将被忽略。
-func (m *mna[T]) StampMatrixSet(i, j NodeID, v T) {
+func (m *MnaType[T]) StampMatrixSet(i, j NodeID, v T) {
 	if i > Gnd && j > Gnd {
 		m.A.Set(int(i), int(j), v)
 	}
 }
 
 // StampRightSide 将一个值加到向量Z的第i个元素上。地节点索引将被忽略。
-func (m *mna[T]) StampRightSide(i NodeID, value T) {
+func (m *MnaType[T]) StampRightSide(i NodeID, value T) {
 	if i > Gnd {
 		m.Z.Increment(int(i), value)
 	}
 }
 
 // StampRightSideSet 直接设置向量Z的第i个元素的值。地节点索引将被忽略。
-func (m *mna[T]) StampRightSideSet(i NodeID, v T) {
+func (m *MnaType[T]) StampRightSideSet(i NodeID, v T) {
 	if i > Gnd {
 		m.Z.Set(int(i), v)
 	}
@@ -154,7 +164,7 @@ func (m *mna[T]) StampRightSideSet(i NodeID, v T) {
 // ------------------------------ 无源元件加盖 ------------------------------
 
 // StampImpedance 为阻抗元件添加MNA加盖。内部通过计算电导 y=1/z 并调用 StampAdmittance 来实现。
-func (m *mna[T]) StampImpedance(n1, n2 NodeID, z T) {
+func (m *MnaType[T]) StampImpedance(n1, n2 NodeID, z T) {
 	var y T
 	switch v := any(z).(type) {
 	case float64:
@@ -182,7 +192,7 @@ func (m *mna[T]) StampImpedance(n1, n2 NodeID, z T) {
 }
 
 // StampAdmittance 为导纳元件添加MNA加盖，通过修改矩阵A的四个相关元素来反映其对电路的贡献。
-func (m *mna[T]) StampAdmittance(n1, n2 NodeID, y T) {
+func (m *MnaType[T]) StampAdmittance(n1, n2 NodeID, y T) {
 	m.StampMatrix(n1, n1, y)
 	m.StampMatrix(n2, n2, y)
 	m.StampMatrix(n1, n2, -y)
@@ -192,13 +202,13 @@ func (m *mna[T]) StampAdmittance(n1, n2 NodeID, y T) {
 // ------------------------------ 独立源加盖 ------------------------------
 
 // StampCurrentSource 为独立电流源添加MNA加盖。它通过在向量Z的相应位置上加/减电流值来修改节点方程。
-func (m *mna[T]) StampCurrentSource(n1, n2 NodeID, i T) {
+func (m *MnaType[T]) StampCurrentSource(n1, n2 NodeID, i T) {
 	m.StampRightSide(n1, -i)
 	m.StampRightSide(n2, i)
 }
 
 // StampVoltageSource 为独立电压源添加MNA加盖。该操作会引入一个新的电流未知量，并修改矩阵A和向量Z以建立电压约束方程。
-func (m *mna[T]) StampVoltageSource(n1, n2 NodeID, vs VoltageID, v T) {
+func (m *MnaType[T]) StampVoltageSource(n1, n2 NodeID, vs VoltageID, v T) {
 	if vs < 0 {
 		return
 	}
@@ -216,7 +226,7 @@ func (m *mna[T]) StampVoltageSource(n1, n2 NodeID, vs VoltageID, v T) {
 // ------------------------------ 受控源加盖 ------------------------------
 
 // StampVCCS 为电压控制电流源(VCCS)添加MNA加盖。它修改矩阵A中的四个元素，以建立输出电流和控制电压之间的跨导关系。
-func (m *mna[T]) StampVCCS(cn1, cn2, vn1, vn2 NodeID, gain T) {
+func (m *MnaType[T]) StampVCCS(cn1, cn2, vn1, vn2 NodeID, gain T) {
 	m.StampMatrix(cn1, vn1, gain)
 	m.StampMatrix(cn1, vn2, -gain)
 	m.StampMatrix(cn2, vn1, -gain)
@@ -224,7 +234,7 @@ func (m *mna[T]) StampVCCS(cn1, cn2, vn1, vn2 NodeID, gain T) {
 }
 
 // StampCCCS 为电流控制电流源(CCCS)添加MNA加盖。它通过修改矩阵A的两个元素来反映控制电流对输出节点的影响。
-func (m *mna[T]) StampCCCS(cn1, cn2 NodeID, cs VoltageID, gain T) {
+func (m *MnaType[T]) StampCCCS(cn1, cn2 NodeID, cs VoltageID, gain T) {
 	if cs < 0 {
 		return
 	}
@@ -234,7 +244,7 @@ func (m *mna[T]) StampCCCS(cn1, cn2 NodeID, cs VoltageID, gain T) {
 }
 
 // StampVCVS 为电压控制电压源(VCVS)添加MNA加盖。它引入一个新的电流未知量，并通过修改矩阵A中的一行和两列来建立电压增益关系。
-func (m *mna[T]) StampVCVS(on1, on2, cn1, cn2 NodeID, vs VoltageID, gain T) {
+func (m *MnaType[T]) StampVCVS(on1, on2, cn1, cn2 NodeID, vs VoltageID, gain T) {
 	if vs < 0 {
 		return
 	}
@@ -253,7 +263,7 @@ func (m *mna[T]) StampVCVS(on1, on2, cn1, cn2 NodeID, vs VoltageID, gain T) {
 }
 
 // StampCCVS 为电流控制电压源(CCVS)添加MNA加盖。它引入一个新的电流未知量，并通过修改矩阵A中的一行和两列来建立跨阻关系。
-func (m *mna[T]) StampCCVS(on1, on2 NodeID, cs, vs VoltageID, gain T) {
+func (m *MnaType[T]) StampCCVS(on1, on2 NodeID, cs, vs VoltageID, gain T) {
 	if vs < 0 {
 		return
 	}
@@ -274,7 +284,7 @@ func (m *mna[T]) StampCCVS(on1, on2 NodeID, cs, vs VoltageID, gain T) {
 // ------------------------------ 辅助方法 ------------------------------
 
 // UpdateVoltageSource 更新一个已存在的电压源的电压值。此操作仅修改向量Z中对应的项。
-func (m *mna[T]) UpdateVoltageSource(vs VoltageID, v T) {
+func (m *MnaType[T]) UpdateVoltageSource(vs VoltageID, v T) {
 	if vs < 0 {
 		return
 	}
@@ -283,7 +293,7 @@ func (m *mna[T]) UpdateVoltageSource(vs VoltageID, v T) {
 }
 
 // IncrementVoltageSource 在一个已存在的电压源的电压值上增加一个增量。此操作仅修改向量Z中对应的项。
-func (m *mna[T]) IncrementVoltageSource(vs VoltageID, v T) {
+func (m *MnaType[T]) IncrementVoltageSource(vs VoltageID, v T) {
 	if vs < 0 {
 		return
 	}
@@ -292,7 +302,7 @@ func (m *mna[T]) IncrementVoltageSource(vs VoltageID, v T) {
 }
 
 // String 返回MNA求解器内部状态（矩阵A, 向量Z, X）的字符串表示。
-func (m *mna[T]) String() string {
-	return fmt.Sprintf("MNA Matrix (rows=%d, cols=%d):\n%snZ ector:\n%snX ector:\n%s",
+func (m *MnaType[T]) String() string {
+	return fmt.Sprintf("MNA Matrix (rows=%d, cols=%d):\n%snZ ector:\n%s\nnX ector:\n%s",
 		m.A.Rows(), m.A.Cols(), m.A.String(), m.Z.String(), m.X.String())
 }

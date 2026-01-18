@@ -12,47 +12,13 @@ type VoltageID int
 // Gnd 表示电路的接地节点，其电位为零。
 const Gnd NodeID = -1
 
-// UpdateFace 扩展了 MNAFace 接口，增加了在迭代计算（如时域分析）中管理状态变更的能力。
-// 它提供了对MNA矩阵、已知向量和解向量进行修改、应用和回滚的方法，
-// 从而支持高效的增量式更新，避免完全重构方程组。
-type UpdateFace[T maths.Number] interface {
-	MNAFace[T]
-	Update()    // Update 将暂存的修改应用到矩阵A和向量Z。
-	Rollback()  // Rollback 丢弃暂存的修改，恢复A和Z。
-	UpdateX()   // UpdateX 将暂存的修改应用到解向量X。
-	RollbackX() // RollbackX 丢弃对X的暂存修改。
-}
-
-// MNAFace (Modified Nodal Analysis Interface) 定义了构建和操作电路MNA方程（Ax=Z）所需的核心功能。
-// 它提供了一系列“加盖”(Stamp)方法，用于根据电路元件的特性来填充MNA矩阵A和向量Z。
-// 此外，它还提供了查询节点电压、支路电流以及系统矩阵的方法。
-type MNAFace[T maths.Number] interface {
-	// String 返回MNA求解器的内部状态的字符串表示，包括矩阵A、向量Z和解向量X，主要用于调试。
-	String() string
-
-	// GetA 返回MNA方程 (Ax=Z) 中的矩阵A。
-	GetA() maths.Matrix[T]
-
-	// GetZ 返回MNA方程 (Ax=Z) 中的已知向量Z。
-	GetZ() maths.Vector[T]
-
-	// GetX 返回MNA方程 (Ax=Z) 的解向量X，其中包含节点电压和支路电流。
-	GetX() maths.Vector[T]
-
-	// Zero 将MNA系统（矩阵A、向量Z和X）重置为零，以便重新构建电路方程。
-	Zero()
-
+// Stamp 加盖接口
+type Stamp[T maths.Number] interface {
 	// GetNodeVoltage 从解向量X中获取并返回指定节点的电压。如果节点为地(Gnd)，则返回0。
 	GetNodeVoltage(id NodeID) T
 
 	// GetVoltageSourceCurrent 从解向量X中获取并返回流经指定电压源的电流。如果ID无效，则返回0。
 	GetVoltageSourceCurrent(i VoltageID) T
-
-	// GetNodeNum 获取电路中独立节点的数量（不包括地节点）。
-	GetNodeNum() int
-
-	// GetVoltageSourcesNum 获取电路中电压源和受控源的总数，这决定了MNA矩阵的扩展维度。
-	GetVoltageSourcesNum() int
 
 	// StampMatrix 将一个值加到矩阵A的(i,j)元素上。地节点相关的操作将被忽略。
 	StampMatrix(i, j NodeID, value T)
@@ -135,10 +101,41 @@ type MNAFace[T maths.Number] interface {
 	IncrementVoltageSource(id VoltageID, increment T)
 }
 
-// UpdateMNA 扩展了 MNA 接口，提供了对MNA矩阵和向量进行更新与回滚的功能。
-// 这对于需要迭代计算或状态管理的仿真（如时域分析）至关重要。
-type UpdateMNA = UpdateFace[float64]
+// UpdateFace 扩展了 MNAFace 接口，增加了在迭代计算（如时域分析）中管理状态变更的能力。
+// 它提供了对MNA矩阵、已知向量和解向量进行修改、应用和回滚的方法，
+// 从而支持高效的增量式更新，避免完全重构方程组。
+type UpdateFace[T maths.Number] interface {
+	MNAFace[T]
+	Update()    // Update 将暂存的修改应用到矩阵A和向量Z。
+	Rollback()  // Rollback 丢弃暂存的修改，恢复A和Z。
+	UpdateX()   // UpdateX 将暂存的修改应用到解向量X。
+	RollbackX() // RollbackX 丢弃对X的暂存修改。
+}
 
-// MNA (Modified Nodal Analysis) 接口定义了构建和操作电路方程（Ax=Z）所需的核心功能。
-// 它通过一系列“加盖”(Stamp)操作来构建MNA矩阵，并最终求解得到节点电压和支路电流。
-type MNA = MNAFace[float64]
+// MNAFace (Modified Nodal Analysis Interface) 定义了构建和操作电路MNA方程（Ax=Z）所需的核心功能。
+// 它提供了一系列“加盖”(Stamp)方法，用于根据电路元件的特性来填充MNA矩阵A和向量Z。
+// 此外，它还提供了查询节点电压、支路电流以及系统矩阵的方法。
+type MNAFace[T maths.Number] interface {
+	// Stamp 加盖接口
+	Stamp[T]
+	// String 返回MNA求解器的内部状态的字符串表示，包括矩阵A、向量Z和解向量X，主要用于调试。
+	String() string
+
+	// GetA 返回MNA方程 (Ax=Z) 中的矩阵A。
+	GetA() maths.Matrix[T]
+
+	// GetZ 返回MNA方程 (Ax=Z) 中的已知向量Z。
+	GetZ() maths.Vector[T]
+
+	// GetX 返回MNA方程 (Ax=Z) 的解向量X，其中包含节点电压和支路电流。
+	GetX() maths.Vector[T]
+
+	// Zero 将MNA系统（矩阵A、向量Z和X）重置为零，以便重新构建电路方程。
+	Zero()
+
+	// GetNodeNum 获取电路中独立节点的数量（不包括地节点）。
+	GetNodeNum() int
+
+	// GetVoltageSourcesNum 获取电路中电压源和受控源的总数，这决定了MNA矩阵的扩展维度。
+	GetVoltageSourcesNum() int
+}

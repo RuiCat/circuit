@@ -48,7 +48,7 @@ func (Voltage) Reset(base element.NodeFace) {
 	}
 }
 
-func (Voltage) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (Voltage) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	waveform := value.GetInt(0)
 	if waveform == WfDC {
 		voltage := value.GetFloat64(4) + value.GetFloat64(1) // MaxVoltage + Bias
@@ -58,7 +58,7 @@ func (Voltage) Stamp(mna mna.MNA, time mna.Time, value element.NodeFace) {
 	}
 }
 
-func (Voltage) DoStep(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (Voltage) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	waveform := value.GetInt(0)
 	if waveform != WfDC {
 		voltage := getVoltage(value, time)
@@ -66,7 +66,7 @@ func (Voltage) DoStep(mna mna.MNA, time mna.Time, value element.NodeFace) {
 	}
 }
 
-func (Voltage) StepFinished(mna mna.MNA, time mna.Time, value element.NodeFace) {
+func (Voltage) StepFinished(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 更新噪声值
 	if value.GetInt(0) == WfNOISE {
 		value.SetFloat64(7, (rand.NormFloat64()*2-1)*value.GetFloat64(4)+value.GetFloat64(1))

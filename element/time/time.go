@@ -513,7 +513,7 @@ func (t *TimeMNA) UpdateHistory(newState, newDer []float64) error {
 
 // CalculateMNAResidual 基于MNA方程计算残差范数和解向量范数
 // 参数：mnaSolver - MNA矩阵求解器（提供A、Z、X）
-func (t *TimeMNA) CalculateMNAResidual(mnaSolver mna.MNA) error {
+func (t *TimeMNA) CalculateMNAResidual(mnaSolver mna.Mna) error {
 	if mnaSolver == nil {
 		return errors.New("MNA求解器不能为空")
 	}
@@ -674,7 +674,7 @@ func (t *TimeMNA) IsNonlinIterExhausted() bool {
 // ------------------------------
 
 // initializeIfNeeded 初始化历史数据（如果需要）
-func (t *TimeMNA) initializeIfNeeded(mnaSolver mna.MNA, derFunc DerivativeFunc) error {
+func (t *TimeMNA) initializeIfNeeded(mnaSolver mna.Mna, derFunc DerivativeFunc) error {
 	if t.historyInited {
 		return nil
 	}
@@ -728,7 +728,7 @@ func (t *TimeMNA) performPredictionCorrection(derFunc DerivativeFunc) ([]float64
 }
 
 // estimateAndAdjustStep 估计误差并调整步长
-func (t *TimeMNA) estimateAndAdjustStep(predState, corrState []float64, mnaSolver mna.MNA) error {
+func (t *TimeMNA) estimateAndAdjustStep(predState, corrState []float64, mnaSolver mna.Mna) error {
 	// 估计局部截断误差（LTE）
 	if err := t.EstimateLTE(predState, corrState); err != nil {
 		return fmt.Errorf("LTE估计失败: %v", err)
@@ -751,7 +751,7 @@ func (t *TimeMNA) estimateAndAdjustStep(predState, corrState []float64, mnaSolve
 //
 //	mnaSolver - MNA矩阵求解器（用于获取A/Z/X，计算残差）
 //	derFunc   - 多变量导数计算函数（dx/dt）
-func (t *TimeMNA) AdvanceTimeStep(mnaSolver mna.MNA, derFunc DerivativeFunc) error {
+func (t *TimeMNA) AdvanceTimeStep(mnaSolver mna.Mna, derFunc DerivativeFunc) error {
 	// 检查仿真状态
 	if t.IsSimulationFinished() {
 		return errors.New("仿真已完成，无需继续推进")

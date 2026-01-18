@@ -116,16 +116,16 @@ func (config *Config) ValueNum() int { return len(config.ValueInit) }
 // 具体元件类型可以通过重写这些方法来实现自定义行为
 
 // StartIteration 步长迭代开始时的回调（空实现）
-func (Config) StartIteration(mna mna.MNA, time mna.Time, value NodeFace) {}
+func (Config) StartIteration(mna mna.Mna, time mna.Time, value NodeFace) {}
 
 // Stamp 加盖线性贡献到MNA矩阵（空实现）
-func (Config) Stamp(mna mna.MNA, time mna.Time, value NodeFace) {}
+func (Config) Stamp(mna mna.Mna, time mna.Time, value NodeFace) {}
 
 // DoStep 执行仿真步长计算（空实现）
-func (Config) DoStep(mna mna.MNA, time mna.Time, value NodeFace) {}
+func (Config) DoStep(mna mna.Mna, time mna.Time, value NodeFace) {}
 
 // CalculateCurrent 计算元件电流（空实现）
-func (Config) CalculateCurrent(mna mna.MNA, time mna.Time, value NodeFace) {}
+func (Config) CalculateCurrent(mna mna.Mna, time mna.Time, value NodeFace) {}
 
 // StepFinished 步长迭代结束时的回调（空实现）
-func (Config) StepFinished(mna mna.MNA, time mna.Time, value NodeFace) {}
+func (Config) StepFinished(mna mna.Mna, time mna.Time, value NodeFace) {}
