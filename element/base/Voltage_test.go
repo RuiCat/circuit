@@ -21,12 +21,12 @@ func TestVoltageSource(t *testing.T) {
 		if err != nil {
 			t.Fatalf("加载上下文失败: %s", err)
 		}
-		timeMNA, err := time.NewTimeMNA(0.1)
+		con.Time, err = time.NewTimeMNA(0.1)
 		if err != nil {
 			t.Fatalf("创建仿真时间失败 %s", err)
 		}
 
-		if err := time.TransientSimulation(timeMNA, con, func(voltages []float64) {}); err != nil {
+		if err := time.TransientSimulation(con, func(voltages []float64) {}); err != nil {
 			t.Fatalf("仿真失败 %s", err)
 		}
 
@@ -55,12 +55,12 @@ func TestVoltageSource(t *testing.T) {
 		if err != nil {
 			t.Fatalf("加载上下文失败: %s", err)
 		}
-		timeMNA, err := time.NewTimeMNA(0.01) // 较小时间步长用于交流
+		con.Time, err = time.NewTimeMNA(0.01) // 较小时间步长用于交流
 		if err != nil {
 			t.Fatalf("创建仿真时间失败 %s", err)
 		}
 
-		if err := time.TransientSimulation(timeMNA, con, func(voltages []float64) {}); err != nil {
+		if err := time.TransientSimulation(con, func(voltages []float64) {}); err != nil {
 			t.Fatalf("仿真失败 %s", err)
 		}
 
@@ -89,12 +89,12 @@ func TestVoltageSource(t *testing.T) {
 		if err != nil {
 			t.Fatalf("加载上下文失败: %s", err)
 		}
-		timeMNA, err := time.NewTimeMNA(0.01)
+		con.Time, err = time.NewTimeMNA(0.01)
 		if err != nil {
 			t.Fatalf("创建仿真时间失败 %s", err)
 		}
 
-		if err := time.TransientSimulation(timeMNA, con, func(voltages []float64) {}); err != nil {
+		if err := time.TransientSimulation(con, func(voltages []float64) {}); err != nil {
 			t.Fatalf("仿真失败 %s", err)
 		}
 

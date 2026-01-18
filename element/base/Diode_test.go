@@ -20,13 +20,13 @@ func TestDiode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("加载上下文失败: %s", err)
 	}
-	timeMNA, err := time.NewTimeMNA(0.1)
+	con.Time, err = time.NewTimeMNA(0.1)
 	if err != nil {
 		t.Fatalf("创建仿真时间失败 %s", err)
 	}
 
 	// 求解
-	if err := time.TransientSimulation(timeMNA, con, func(voltages []float64) {
+	if err := time.TransientSimulation(con, func(voltages []float64) {
 		// 可以在这里记录电压变化
 	}); err != nil {
 		t.Fatalf("仿真失败 %s", err)

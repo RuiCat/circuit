@@ -28,13 +28,13 @@ func TestTransistorCircuit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("加载上下文失败: %s", err)
 	}
-	timeMNA, err := time.NewTimeMNA(0.1)
+	con.Time, err = time.NewTimeMNA(0.1)
 	if err != nil {
 		t.Fatalf("创建仿真时间失败: %s", err)
 	}
 
 	// 运行瞬态仿真
-	if err := time.TransientSimulation(timeMNA, con, func(f []float64) {}); err != nil {
+	if err := time.TransientSimulation(con, func(f []float64) {}); err != nil {
 		t.Fatalf("瞬态仿真失败: %s", err)
 	}
 

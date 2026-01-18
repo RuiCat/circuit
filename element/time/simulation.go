@@ -11,13 +11,9 @@ import (
 // TransientSimulation 执行瞬态仿真，使用元件回调函数和LU求解器实现迭代计算
 // 参数：
 //
-//	timeMNA: 时间管理和自适应步长控制器
 //	con: 包含电路所有信息的上下文
 //	call: 每步成功后的回调函数，接收节点电压数组
-func TransientSimulation(timeMNA *TimeMNA, con *element.Context, call func([]float64)) error {
-	// 将 timeMNA 设置到上下文中
-	con.Time = timeMNA
-
+func TransientSimulation(con *element.Context, call func([]float64)) error {
 	// 初始化阶段：获取电路规模并创建求解器
 	nodesNum, voltageSourcesNum := con.GetNodeNum(), con.GetVoltageSourcesNum()
 	// 创建LU分解器
@@ -32,14 +28,14 @@ func TransientSimulation(timeMNA *TimeMNA, con *element.Context, call func([]flo
 	// 初始化所有元件状态
 	con.CallMark(element.MarkReset)
 	// 主时间迭代循环
-	timeMNA.ResetTimeStepCount()
-	for !timeMNA.IsSimulationFinished() {
+	con.ResetTimeStepCount()
+	for !con.IsSimulationFinished() {
 		// 检查是否超过最大时间步数
-		if !timeMNA.IncrementTimeStepCount() {
-			return fmt.Errorf("达到最大时间步数限制 %d，仿真可能陷入无限循环", timeMNA.maxTimeSteps)
+		if !con.IncrementTimeStepCount() {
+			return fmt.Errorf("达到最大时间步数限制 %f，仿真可能陷入无限循环", con.Time.MaxTimeStep())
 		}
 		// 重置当前时间步的非线性迭代状态
-		timeMNA.ResetNonlinearIter()
+		con.ResetNonlinearIter()
 		// 回滚到线性状态（丢弃非线性迭代的修改）
 		con.A.Rollback()
 		con.Z.Rollback()
@@ -64,123 +60,91 @@ func TransientSimulation(timeMNA *TimeMNA, con *element.Context, call func([]flo
 		}
 		// 非线性迭代（牛顿-拉夫逊法）
 		newtonConverged := false
-		for timeMNA.NextNonlinearIter() {
-			// 清空未收敛元件列表
-			timeMNA.ResetUnconvergedList()
+		for con.NextNonlinearIter() {
 			// 遍历所有非线性元件，计算其贡献
-			for i, elem := range con.Nodelist {
-				// 设置元件收敛状态为真（假设收敛）
-				timeMNA.SetElementConverged(true)
-				// 执行元件计算
-				element.ElementLitt[elem.Base().NodeType].DoStep(con, timeMNA, elem)
-				// 检查元件是否收敛
-				if !timeMNA.IsElementConverged() {
-					// 记录未收敛元件
-					timeMNA.AddUnconvergedElem(i)
-				}
-			}
+			con.CallMark(element.MarkDoStep)
 			// 求解MNA方程
 			if err := luSolver.Decompose(con.GetA()); err != nil {
-				return fmt.Errorf("矩阵分解失败（时间=%.6e，步长=%.6e）: %v",
-					timeMNA.CurrentTime(), timeMNA.CurrentStep(), err)
+				return fmt.Errorf("矩阵分解失败（时间=%.6e，步长=%.6e）: %v", con.CurrentTime(), con.CurrentStep(), err)
 			}
 			// 执行前向替换和后向替换
 			if err := luSolver.SolveReuse(con.GetZ(), con.GetX()); err != nil {
-				return fmt.Errorf("方程求解失败（时间=%.6e）: %v", timeMNA.CurrentTime(), err)
+				return fmt.Errorf("方程求解失败（时间=%.6e）: %v", con.CurrentTime(), err)
 			}
 			// 计算残差并检查收敛
-			if err := timeMNA.CalculateMNAResidual(con); err != nil {
+			if err := con.CalculateMNAResidual(con); err != nil {
 				return fmt.Errorf("残差计算失败: %v", err)
 			}
-			timeMNA.CheckResidualConvergence()
 			// 检查全局收敛条件
-			if timeMNA.IsConverged() {
+			con.CheckResidualConvergence()
+			if con.IsConverged() {
 				newtonConverged = true
 				break // 牛顿迭代收敛，退出内层循环
 			}
-			// 处理未收敛的元件（单独迭代）
-			if len(timeMNA.UnconvergedElems()) > 0 {
-				if err := handleUnconvergedElements(timeMNA, con, luSolver, timeMNA.UnconvergedElems()); err != nil {
-					return err
+			// 重置元件迭代计数器
+			con.ResetElemIter()
+			// 开始次级迭代循环
+			for con.NextElemIter() {
+				// 将矩阵回滚到加盖线性元件之后的状态
+				con.A.Rollback()
+				con.Z.Rollback()
+				// 重新计算所有非线性元件的贡献
+				con.CallMark(element.MarkDoStep)
+				// 重新求解MNA方程
+				if err := luSolver.Decompose(con.GetA()); err != nil {
+					return fmt.Errorf("元件迭代中矩阵分解失败: %v", err)
+				}
+				if err := luSolver.SolveReuse(con.GetZ(), con.GetX()); err != nil {
+					return fmt.Errorf("元件迭代中方程求解失败: %v", err)
+				}
+				// 重新计算残差并检查收敛
+				if err := con.CalculateMNAResidual(con); err != nil {
+					return fmt.Errorf("残差计算失败: %v", err)
+				}
+				con.CheckResidualConvergence()
+				// 如果整个系统现在已经收敛，则更新状态并返回
+				if con.IsConverged() {
+					con.CallMark(element.MarkUpdateElements)
+					break
 				}
 			}
-			// 检查元件级收敛
-			if timeMNA.IsElementConverged() {
-				newtonConverged = true
-				break
+			// 如果循环结束，意味着即使经过额外的迭代也未能收敛
+			if con.IsElemIterExhausted() {
+				return fmt.Errorf("经过 %d 次元件迭代后仍未收敛", con.MaxElemIter())
 			}
 		}
 		// 检查牛顿迭代是否成功收敛
 		if !newtonConverged {
-			return fmt.Errorf("牛顿迭代在时间 %.6e 未收敛（达到最大迭代次数 %d）",
-				timeMNA.CurrentTime(), timeMNA.MaxNonlinearIter())
+			return fmt.Errorf("牛顿迭代在时间 %.6e 未收敛（达到最大迭代次数 %d）", con.CurrentTime(), con.MaxNonlinearIter())
 		}
 		// 后处理：计算电流和更新元件状态
 		con.CallMark(element.MarkCalculateCurrent)
 		con.CallMark(element.MarkStepFinished)
 		// 提取并验证节点电压
 		if !extractAndValidateVoltages(con, nodesNum, voltages) {
-			return fmt.Errorf("检测到无效电压值（NaN/Inf）在时间 %.6e，停止仿真", timeMNA.CurrentTime())
+			return fmt.Errorf("检测到无效电压值（NaN/Inf）在时间 %.6e，停止仿真", con.CurrentTime())
 		}
 		// 更新残差历史并调整步长
-		timeMNA.UpdateResidualHistory()
-		if timeMNA.ShouldAdjustStepSize() {
+		con.UpdateResidualHistory()
+		if con.ShouldAdjustStepSize() {
 			needLinearStamp = true // 步长变化较大，需要重新加盖线性元件
 		}
 		// 检查残差是否可接受并推进时间
-		if timeMNA.IsResidualConverged() {
+		if con.IsResidualConverged() {
 			// 残差可接受，推进时间
-			if err := advanceTimeSimple(timeMNA); err != nil {
+			if err := advanceTimeSimple(con); err != nil {
 				return fmt.Errorf("时间推进失败: %v", err)
 			}
 			// 接受求解状态
 			con.CallMark(element.MarkUpdateElements)
 			// 重置计数
-			timeMNA.ResetTimeStepCount()
+			con.ResetTimeStepCount()
 			// 调用用户回调函数
 			call(voltages)
 		} else {
 			// 残差不可接受，减小步长并重新计算当前步
 			needLinearStamp = true
 			continue
-		}
-	}
-	return nil
-}
-
-// handleUnconvergedElements 处理未收敛的元件，进行单独迭代
-func handleUnconvergedElements(timeMNA *TimeMNA, con *element.Context,
-	luSolver maths.LU[float64], unconvergedIndices []int) error {
-	// 对每个未收敛元件进行单独迭代
-	for _, elemIdx := range unconvergedIndices {
-		elem := con.Nodelist[elemIdx]
-		timeMNA.ResetElemIter()
-		// 还原求解状态
-		con.CallMark(element.MarkRollbackElements)
-		// 元件级迭代循环
-		for timeMNA.NextElemIter() {
-			// 设置元件收敛状态为真
-			timeMNA.SetElementConverged(true)
-			// 执行元件计算
-			element.ElementLitt[elem.Base().NodeType].DoStep(con, timeMNA, elem)
-			// 检查元件是否收敛
-			if timeMNA.IsElementConverged() {
-				// 当元件收敛就记录求解状态
-				con.CallMark(element.MarkUpdateElements)
-				break // 元件收敛，退出迭代
-			}
-			// 重新求解MNA方程（元件状态变化可能影响矩阵）
-			if err := luSolver.Decompose(con.GetA()); err != nil {
-				return fmt.Errorf("矩阵分解失败（元件 %d）: %v", elemIdx, err)
-			}
-			if err := luSolver.SolveReuse(con.GetZ(), con.GetX()); err != nil {
-				return fmt.Errorf("方程求解失败（元件 %d）: %v", elemIdx, err)
-			}
-		}
-		// 检查元件是否达到最大迭代次数
-		if timeMNA.IsElemIterExhausted() {
-			return fmt.Errorf("元件 %d 迭代达到最大次数 %d 仍未收敛",
-				elemIdx, timeMNA.MaxElemIter())
 		}
 	}
 	return nil
@@ -200,21 +164,21 @@ func extractAndValidateVoltages(mnaSolver mna.Mna, nodesNum int, voltages []floa
 }
 
 // advanceTimeSimple 简单时间推进方法
-func advanceTimeSimple(timeMNA *TimeMNA) error {
+func advanceTimeSimple(con *element.Context) error {
 	// 检查仿真状态
-	if timeMNA.IsSimulationFinished() {
+	if con.IsSimulationFinished() {
 		return nil
 	}
 	// 获取当前时间和步长
-	currentTime := timeMNA.CurrentTime()
-	timeStep := timeMNA.CurrentStep()
-	targetTime := timeMNA.TargetTime()
+	currentTime := con.CurrentTime()
+	timeStep := con.CurrentStep()
+	targetTime := con.TargetTime()
 	// 计算下一个时间
 	nextTime := currentTime + timeStep
 	if nextTime > targetTime {
 		nextTime = targetTime
 	}
 	// 更新仿真时间
-	timeMNA.SetTime(nextTime)
+	con.SetTime(nextTime)
 	return nil
 }

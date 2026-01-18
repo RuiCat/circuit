@@ -21,13 +21,13 @@ func TestSwitch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("加载上下文失败: %s", err)
 	}
-	timeMNA, err := time.NewTimeMNA(0.1)
+	con.Time, err = time.NewTimeMNA(0.1)
 	if err != nil {
 		t.Fatalf("创建仿真时间失败 %s", err)
 	}
 
 	// 求解（开关导通状态）
-	if err := time.TransientSimulation(timeMNA, con, func(voltages []float64) {
+	if err := time.TransientSimulation(con, func(voltages []float64) {
 		// 可以在这里记录电压变化
 	}); err != nil {
 		t.Fatalf("仿真失败 %s", err)
@@ -59,13 +59,13 @@ func TestSwitch(t *testing.T) {
 	con.Nodelist[2].SetInt(0, 0) // 设置开关状态为关断
 
 	// 重新创建求解器进行第二次测试
-	timeMNA2, err := time.NewTimeMNA(0.1)
+	con.Time, err = time.NewTimeMNA(0.1)
 	if err != nil {
 		t.Fatalf("创建仿真时间失败 %s", err)
 	}
 
 	// 求解（开关关断状态）
-	if err := time.TransientSimulation(timeMNA2, con, func(voltages []float64) {
+	if err := time.TransientSimulation(con, func(voltages []float64) {
 		// 可以在这里记录电压变化
 	}); err != nil {
 		t.Fatalf("仿真失败 %s", err)

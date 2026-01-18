@@ -87,8 +87,9 @@ func (Transistor) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 检查收敛性
 	lastvbc := value.GetFloat64(3)
 	lastvbe := value.GetFloat64(4)
+
 	if math.Abs(vbc-lastvbc) > 0.01 || math.Abs(vbe-lastvbe) > 0.01 {
-		time.Converged()
+		time.NoConverged()
 	}
 
 	// 限制电压步长以保证数值稳定性
@@ -108,8 +109,8 @@ func (Transistor) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 		cbe = csat*(evbe-1) + value.GetFloat64(9)*vbe
 		gbe = csat*evbe/vtn + value.GetFloat64(9)
 	} else {
-		gbe = -csat/vbe + value.GetFloat64(9)
-		cbe = gbe * vbe
+		gbe = value.GetFloat64(9)
+		cbe = -csat + gbe*vbe
 	}
 
 	// 计算集电结电流
@@ -119,8 +120,8 @@ func (Transistor) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 		cbc = csat*(evbc-1) + value.GetFloat64(9)*vbc
 		gbc = csat*evbc/vtn + value.GetFloat64(9)
 	} else {
-		gbc = -csat/vbc + value.GetFloat64(9)
-		cbc = gbc * vbc
+		gbc = value.GetFloat64(9)
+		cbc = -csat + gbc*vbc
 	}
 
 	// 计算电流

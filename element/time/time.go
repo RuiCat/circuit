@@ -57,10 +57,8 @@ type TimeMNA struct {
 	timeStepCount int // 当前时间步计数
 
 	// 收敛状态管理
-	globalConverged   bool  // 全局收敛标记
-	unconvergedElems  []int // 未收敛元件索引列表
-	residualConverged bool  // 残差收敛标记
-	elementConverged  bool  // 元件收敛标记（用于单个元件迭代）
+	residualConverged bool // 残差收敛标记
+	elementConverged  bool // 元件收敛标记（用于单个元件迭代）
 
 	// 误差控制参数（外部可配置）
 	absTol float64 // 绝对误差容差
@@ -85,8 +83,13 @@ type TimeMNA struct {
 	currElemIter   int // 当前元件收敛迭代计数
 
 	// 局部截断误差（LTE）相关
-	localTruncError  float64 // 局部截断误差估计
-	maxErrorQuotient float64 // 步长最大增长倍数
+	localTruncError float64 // 局部截断误差估计
+
+	// 预分配的缓冲区（优化内存）
+	predState []float64 // 预测状态
+	predDer   []float64 // 预测导数
+	corrState []float64 // 校正状态
+	corrDer   []float64 // 校正导数
 }
 
 // NewTimeMNA 创建通用TimeMNAImpl实例
@@ -106,14 +109,10 @@ func NewTimeMNA(targetTime float64) (*TimeMNA, error) {
 		maxStep:           5e-4,
 		maxTimeSteps:      10000, // 默认最大时间步数
 		timeStepCount:     0,
-		globalConverged:   true,
-		unconvergedElems:  make([]int, 0, 16), // 预分配容量优化
 		residualConverged: false,
 		absTol:            defaultAbsTol,
 		relTol:            defaultRelTol,
 		safety:            defaultSafety,
-		historyStates:     [3][]float64{},
-		historyDers:       [3][]float64{},
 		historyInited:     false,
 		residualNorm:      0.0,
 		solutionNorm:      0.0,
@@ -124,7 +123,6 @@ func NewTimeMNA(targetTime float64) (*TimeMNA, error) {
 		maxElemIter:       defaultMaxElem,
 		currElemIter:      0,
 		localTruncError:   0.0,
-		maxErrorQuotient:  maxStepScale,
 	}, nil
 }
 
@@ -132,7 +130,7 @@ func NewTimeMNA(targetTime float64) (*TimeMNA, error) {
 // 外部配置方法（通用化参数调整）
 // ------------------------------
 
-// SetTolerances 配置误差容差（外部可定制精度）
+// SetTolerances 配置误差容差
 func (t *TimeMNA) SetTolerances(absTol, relTol float64) error {
 	if absTol <= 0 || relTol <= 0 {
 		return errors.New("容差必须大于0")
@@ -154,23 +152,6 @@ func (t *TimeMNA) MaxNonlinearIter() int {
 // MaxElemIter 返回最大元件迭代次数
 func (t *TimeMNA) MaxElemIter() int {
 	return t.maxElemIter
-}
-
-// ResetUnconvergedList 重置未收敛元件列表
-func (t *TimeMNA) ResetUnconvergedList() {
-	t.unconvergedElems = t.unconvergedElems[:0]
-	t.globalConverged = true
-}
-
-// SetElementConverged 设置元件收敛状态
-func (t *TimeMNA) SetElementConverged(converged bool) {
-	t.elementConverged = converged
-}
-
-// IsElementConverged 检查元件是否收敛
-func (t *TimeMNA) IsElementConverged() bool {
-	// 检查元件收敛标记和未收敛元件列表
-	return t.elementConverged && len(t.unconvergedElems) == 0
 }
 
 // UpdateResidualHistory 更新残差历史记录
@@ -208,17 +189,17 @@ func (t *TimeMNA) IsElemIterExhausted() bool {
 	return t.currElemIter >= t.maxElemIter
 }
 
-// SetTime 设置当前仿真时间（用于测试和调试）
+// SetTime 设置当前仿真时间
 func (t *TimeMNA) SetTime(time float64) {
 	t.currentTime = time
 }
 
-// SetTimeStep 设置当前步长（用于测试和调试）
+// SetTimeStep 设置当前步长
 func (t *TimeMNA) SetTimeStep(step float64) {
 	t.currentStep = step
 }
 
-// SetStepLimits 配置步长范围（适配不同仿真场景）
+// SetStepLimits 配置步长范围
 func (t *TimeMNA) SetStepLimits(minStep, maxStep float64) error {
 	if minStep <= 0 || maxStep <= minStep || maxStep > maxValidStep {
 		return fmt.Errorf("步长范围无效：需满足 0 < minStep < maxStep ≤ %v", maxValidStep)
@@ -283,27 +264,27 @@ func (t *TimeMNA) TargetTime() float64 {
 	return t.targetTime
 }
 
-// Time 获取当前仿真时间（实现 TimeMNA 接口）
+// Time 获取当前仿真时间
 func (t *TimeMNA) Time() float64 {
 	return t.currentTime
 }
 
-// TimeStep 获取当前时间步长（实现 TimeMNA 接口）
+// TimeStep 获取当前时间步长
 func (t *TimeMNA) TimeStep() float64 {
 	return t.currentStep
 }
 
-// MaxTimeStep 获取最大允许步长（实现 TimeMNA 接口）
+// MaxTimeStep 获取最大允许步长
 func (t *TimeMNA) MaxTimeStep() float64 {
 	return t.maxStep
 }
 
-// MinTimeStep 获取最小允许步长（实现 TimeMNA 接口）
+// MinTimeStep 获取最小允许步长
 func (t *TimeMNA) MinTimeStep() float64 {
 	return t.minStep
 }
 
-// GoodIterations 获取当前步数（实现 TimeMNA 接口）
+// GoodIterations 获取当前步数
 func (t *TimeMNA) GoodIterations() int {
 	// 返回已成功完成的时间步数
 	return t.timeStepCount
@@ -316,14 +297,12 @@ func (t *TimeMNA) ResidualNorm() float64 {
 
 // IsConverged 获取全局收敛状态（残差收敛+无未收敛元件）
 func (t *TimeMNA) IsConverged() bool {
-	return t.globalConverged && t.residualConverged
+	return t.elementConverged && t.residualConverged
 }
 
-// Converged 标记收敛状态（实现 TimeMNA 接口）
-func (t *TimeMNA) Converged() {
-	t.globalConverged = true
-	t.residualConverged = true
-	t.elementConverged = true
+// NoConverged 标记元件没有收敛
+func (t *TimeMNA) NoConverged() {
+	t.elementConverged = false
 }
 
 // IsSimulationFinished 检查仿真是否完成（达到目标时间）
@@ -331,67 +310,42 @@ func (t *TimeMNA) IsSimulationFinished() bool {
 	return t.currentTime >= t.targetTime
 }
 
-// UnconvergedElems 获取未收敛元件索引列表
-func (t *TimeMNA) UnconvergedElems() []int {
-	return append([]int(nil), t.unconvergedElems...) // 返回拷贝，避免外部修改
-}
-
 // ------------------------------
 // 多变量3阶预测-校正积分核心
 // ------------------------------
 
-// DerivativeFunc 多变量导数函数类型定义
-// 输入：当前状态向量（MNA解向量X）
-// 输出：状态导数向量（dx/dt）+ 错误信息
-type DerivativeFunc func([]float64) ([]float64, error)
-
 // Predict 3阶Adams-Bashford预测：计算下一时间步预测状态
-func (t *TimeMNA) Predict() ([]float64, error) {
+func (t *TimeMNA) Predict() error {
 	if !t.historyInited {
-		return nil, errors.New("历史数据未初始化，无法执行预测")
+		return errors.New("历史数据未初始化，无法执行预测")
 	}
 	// 获取历史数据（n: 当前步，n-1: 前1步，n-2: 前2步）
-	stateN := t.historyStates[0]
-	derN := t.historyDers[0]
-	derN1 := t.historyDers[1]
-	derN2 := t.historyDers[2]
+	stateN, derN, derN1, derN2 := t.historyStates[0], t.historyDers[0], t.historyDers[1], t.historyDers[2]
 	h := t.currentStep
-	// 校验历史数据维度一致性
-	if len(stateN) != len(derN) || len(derN) != len(derN1) || len(derN1) != len(derN2) {
-		return nil, fmt.Errorf("历史状态/导数向量维度不一致: state=%d, der=%d, derN1=%d, derN2=%d",
-			len(stateN), len(derN), len(derN1), len(derN2))
-	}
+
 	// 3阶Adams-Bashford公式（逐元素计算多变量预测值）
 	// x_pred[i] = x[n][i] + h*(abCoeff1*der[n][i] - abCoeff2*der[n-1][i] + abCoeff3*der[n-2][i])
-	predState := make([]float64, len(stateN))
 	for i := range stateN {
-		predState[i] = stateN[i] + h*(abCoeff1*derN[i]-abCoeff2*derN1[i]+abCoeff3*derN2[i])
+		t.predState[i] = stateN[i] + h*(abCoeff1*derN[i]-abCoeff2*derN1[i]+abCoeff3*derN2[i])
 	}
-	return predState, nil
+	return nil
 }
 
 // Correct 3阶Adams-Moulton校正：基于预测值优化状态
-func (t *TimeMNA) Correct(predState []float64, predDer []float64) ([]float64, error) {
+func (t *TimeMNA) Correct() error {
 	if !t.historyInited {
-		return nil, errors.New("历史数据未初始化，无法执行校正")
+		return errors.New("历史数据未初始化，无法执行校正")
 	}
 	// 获取历史数据
-	stateN := t.historyStates[0]
-	derN := t.historyDers[0]
-	derN1 := t.historyDers[1]
+	stateN, derN, derN1 := t.historyStates[0], t.historyDers[0], t.historyDers[1]
 	h := t.currentStep
-	// 校验维度一致性
-	if len(predState) != len(stateN) || len(predDer) != len(stateN) {
-		return nil, fmt.Errorf("预测状态/导数与历史状态维度不一致: predState=%d, predDer=%d, stateN=%d",
-			len(predState), len(predDer), len(stateN))
-	}
+
 	// 3阶Adams-Moulton公式（逐元素计算多变量校正值）
 	// x_corr[i] = x[n][i] + h*(amCoeff1*predDer[i] + amCoeff2*der[n][i] - amCoeff3*der[n-1][i])
-	corrState := make([]float64, len(stateN))
 	for i := range stateN {
-		corrState[i] = stateN[i] + h*(amCoeff1*predDer[i]+amCoeff2*derN[i]-amCoeff3*derN1[i])
+		t.corrState[i] = stateN[i] + h*(amCoeff1*t.predDer[i]+amCoeff2*derN[i]-amCoeff3*derN1[i])
 	}
-	return corrState, nil
+	return nil
 }
 
 // ------------------------------
@@ -403,7 +357,7 @@ func (t *TimeMNA) Correct(predState []float64, predDer []float64) ([]float64, er
 //
 //	initialState - 初始状态向量（MNA解向量X的初始值）
 //	derFunc      - 导数计算函数
-func (t *TimeMNA) InitHistory(initialState []float64, derFunc DerivativeFunc) error {
+func (t *TimeMNA) InitHistory(initialState []float64, derFunc mna.DerivativeFunc) error {
 	// 校验初始状态合法性
 	if len(initialState) == 0 {
 		return errors.New("初始状态向量不能为空")
@@ -413,98 +367,81 @@ func (t *TimeMNA) InitHistory(initialState []float64, derFunc DerivativeFunc) er
 			return fmt.Errorf("初始状态向量包含无效值（NaN/Inf）在索引 %d", i)
 		}
 	}
+	// 初始化缓冲区
+	vecSize := len(initialState)
+	t.predState = make([]float64, vecSize)
+	t.predDer = make([]float64, vecSize)
+	t.corrState = make([]float64, vecSize)
+	t.corrDer = make([]float64, vecSize)
+	for i := 0; i < 3; i++ {
+		t.historyStates[i] = make([]float64, vecSize)
+		t.historyDers[i] = make([]float64, vecSize)
+	}
+
 	stepHalf := t.currentStep / 2 // 半步长提升初始精度
 	// t=0，初始状态（state0）和初始导数（der0）
 	der0, err := derFunc(initialState)
 	if err != nil {
 		return fmt.Errorf("计算初始导数失败: %v", err)
 	}
-	if len(der0) != len(initialState) {
-		return fmt.Errorf("初始导数向量与状态向量维度不匹配: der=%d, state=%d", len(der0), len(initialState))
+	if len(der0) != vecSize {
+		return fmt.Errorf("初始导数向量与状态向量维度不匹配: der=%d, state=%d", len(der0), vecSize)
 	}
+
 	// t=stepHalf，用改进欧拉法计算（state1, der1）
+	state1, der1 := t.corrState, t.corrDer // 复用缓冲区
 	// 预测：欧拉法半步
-	state1Pred := make([]float64, len(initialState))
 	for i := range initialState {
-		state1Pred[i] = initialState[i] + stepHalf*der0[i]
+		state1[i] = initialState[i] + stepHalf*der0[i]
 	}
 	// 校正：梯形积分（用预测状态算导数，取平均）
-	der1Pred, err := derFunc(state1Pred)
+	der1Pred, err := derFunc(state1)
 	if err != nil {
 		return fmt.Errorf("计算第二步预测导数失败: %v", err)
 	}
-	state1 := make([]float64, len(initialState))
-	der1 := make([]float64, len(initialState))
 	for i := range initialState {
 		der1[i] = (der0[i] + der1Pred[i]) / 2
 		state1[i] = initialState[i] + stepHalf*der1[i]
 	}
+
 	// t=currentStep，用改进欧拉法计算（state2, der2）
+	state2, der2 := t.predState, t.predDer // 复用缓冲区
 	// 预测：欧拉法半步
-	state2Pred := make([]float64, len(state1))
 	for i := range state1 {
-		state2Pred[i] = state1[i] + stepHalf*der1[i]
+		state2[i] = state1[i] + stepHalf*der1[i]
 	}
 	// 校正：梯形积分
-	der2Pred, err := derFunc(state2Pred)
+	der2Pred, err := derFunc(state2)
 	if err != nil {
 		return fmt.Errorf("计算第三步预测导数失败: %v", err)
 	}
-	state2 := make([]float64, len(state1))
-	der2 := make([]float64, len(state1))
 	for i := range state1 {
 		der2[i] = (der1[i] + der2Pred[i]) / 2
 		state2[i] = state1[i] + stepHalf*der2[i]
 	}
 	// 填充历史数据（state[n] = state2, state[n-1] = state1, state[n-2] = initialState）
-	t.historyStates[0] = state2
-	t.historyStates[1] = state1
-	t.historyStates[2] = initialState
-	t.historyDers[0] = der2
-	t.historyDers[1] = der1
-	t.historyDers[2] = der0
+	copy(t.historyStates[0], state2)
+	copy(t.historyStates[1], state1)
+	copy(t.historyStates[2], initialState)
+	copy(t.historyDers[0], der2)
+	copy(t.historyDers[1], der1)
+	copy(t.historyDers[2], der0)
 	t.historyInited = true
 	return nil
 }
 
 // UpdateHistory 推进历史数据缓存（使用循环缓冲区优化，避免频繁内存分配）
-func (t *TimeMNA) UpdateHistory(newState, newDer []float64) error {
-	if !t.historyInited {
-		return errors.New("历史数据未初始化，无法更新")
-	}
-	if len(newState) != len(t.historyStates[0]) || len(newDer) != len(t.historyDers[0]) {
-		return fmt.Errorf("新状态/导数与历史数据维度不一致: newState=%d, historyState=%d, newDer=%d, historyDer=%d",
-			len(newState), len(t.historyStates[0]), len(newDer), len(t.historyDers[0]))
-	}
+func (t *TimeMNA) UpdateHistory() {
 	// 使用循环缓冲区思想：将新数据放在位置0，旧数据向后移动
 	// 保存最旧的数据（位置2）的引用，以便重用内存
-	oldestState := t.historyStates[2]
-	oldestDer := t.historyDers[2]
-	// 移动数据：2 <- 1, 1 <- 0
-	t.historyStates[2] = t.historyStates[1]
-	t.historyDers[2] = t.historyDers[1]
-	t.historyStates[1] = t.historyStates[0]
-	t.historyDers[1] = t.historyDers[0]
-	// 重用最旧的内存或分配新内存
-	if len(oldestState) == len(newState) {
-		// 重用内存
-		copy(oldestState, newState)
-		t.historyStates[0] = oldestState
-	} else {
-		// 分配新内存
-		t.historyStates[0] = make([]float64, len(newState))
-		copy(t.historyStates[0], newState)
-	}
-	if len(oldestDer) == len(newDer) {
-		// 重用内存
-		copy(oldestDer, newDer)
-		t.historyDers[0] = oldestDer
-	} else {
-		// 分配新内存
-		t.historyDers[0] = make([]float64, len(newDer))
-		copy(t.historyDers[0], newDer)
-	}
-	return nil
+	// [0] -> [1], [1] -> [2], [2] -> [0] (new)
+	s2, d2 := t.historyStates[2], t.historyDers[2]
+	t.historyStates[2], t.historyDers[2] = t.historyStates[1], t.historyDers[1]
+	t.historyStates[1], t.historyDers[1] = t.historyStates[0], t.historyDers[0]
+	t.historyStates[0], t.historyDers[0] = s2, d2
+	// 将校正结果复制到新的当前状态
+	copy(t.historyStates[0], t.corrState)
+	copy(t.historyDers[0], t.corrDer)
 }
 
 // ------------------------------
@@ -569,24 +506,17 @@ func (t *TimeMNA) CheckResidualConvergence() {
 // ------------------------------
 
 // EstimateLTE 基于预测/校正状态估计局部截断误差（多变量取最大误差）
-func (t *TimeMNA) EstimateLTE(predState, corrState []float64) error {
-	if len(predState) != len(corrState) {
-		return errors.New("预测状态与校正状态维度不一致")
-	}
-	if len(predState) == 0 {
-		return errors.New("状态向量为空，无法估计LTE")
-	}
+func (t *TimeMNA) EstimateLTE() {
 	// 多变量场景：取所有元素的最大LTE（保证最严格的误差控制）
 	maxLTE := 0.0
-	for i := range predState {
-		stateDiff := math.Abs(corrState[i] - predState[i])
+	for i := range t.predState {
+		stateDiff := math.Abs(t.corrState[i] - t.predState[i])
 		lte := math.Abs(lteFactor * stateDiff)
 		if lte > maxLTE {
 			maxLTE = lte
 		}
 	}
 	t.localTruncError = maxLTE
-	return nil
 }
 
 // AdjustStepSize 基于LTE和残差自适应调整步长
@@ -631,36 +561,25 @@ func (t *TimeMNA) AdjustStepSize() error {
 // ResetNonlinearIter 重置非线性迭代状态（每时间步开始时调用）
 func (t *TimeMNA) ResetNonlinearIter() {
 	t.currNonlinIter = 0
-	t.unconvergedElems = t.unconvergedElems[:0]
-	t.globalConverged = true
 	t.elementConverged = true
 }
 
 // NextNonlinearIter 推进非线性迭代计数，返回是否未超限
 func (t *TimeMNA) NextNonlinearIter() bool {
 	t.currNonlinIter++
+	t.elementConverged = true
 	return t.currNonlinIter < t.maxNonlinIter
-}
-
-// AddUnconvergedElem 记录未收敛的元件索引
-func (t *TimeMNA) AddUnconvergedElem(elemIdx int) {
-	if elemIdx < 0 {
-		return // 忽略无效索引
-	}
-	t.unconvergedElems = append(t.unconvergedElems, elemIdx)
-	t.globalConverged = false
-	t.elementConverged = false
 }
 
 // ResetElemIter 重置单个元件的收敛迭代计数
 func (t *TimeMNA) ResetElemIter() {
 	t.currElemIter = 0
-	t.elementConverged = true
 }
 
 // NextElemIter 推进单个元件迭代计数，返回是否未超限
 func (t *TimeMNA) NextElemIter() bool {
 	t.currElemIter++
+	t.elementConverged = true
 	return t.currElemIter < t.maxElemIter
 }
 
@@ -673,8 +592,8 @@ func (t *TimeMNA) IsNonlinIterExhausted() bool {
 // 仿真推进核心方法（完整流程闭环）
 // ------------------------------
 
-// initializeIfNeeded 初始化历史数据（如果需要）
-func (t *TimeMNA) initializeIfNeeded(mnaSolver mna.Mna, derFunc DerivativeFunc) error {
+// initializeIfNeeded 初始化历史数据
+func (t *TimeMNA) initializeIfNeeded(mnaSolver mna.Mna, derFunc mna.DerivativeFunc) error {
 	if t.historyInited {
 		return nil
 	}
@@ -705,34 +624,32 @@ func (t *TimeMNA) initializeIfNeeded(mnaSolver mna.Mna, derFunc DerivativeFunc) 
 }
 
 // performPredictionCorrection 执行预测-校正步骤
-func (t *TimeMNA) performPredictionCorrection(derFunc DerivativeFunc) ([]float64, []float64, []float64, error) {
+func (t *TimeMNA) performPredictionCorrection(derFunc mna.DerivativeFunc) error {
 	// 预测步骤：计算预测状态和预测导数
-	predState, err := t.Predict()
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("预测步骤失败: %v", err)
+	if err := t.Predict(); err != nil {
+		return fmt.Errorf("预测步骤失败: %v", err)
 	}
-	predDer, err := derFunc(predState)
+	var err error
+	t.predDer, err = derFunc(t.predState)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("计算预测导数失败: %v", err)
+		return fmt.Errorf("计算预测导数失败: %v", err)
 	}
 	// 校正步骤：计算校正状态和校正导数
-	corrState, err := t.Correct(predState, predDer)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("校正步骤失败: %v", err)
+	if err = t.Correct(); err != nil {
+		return fmt.Errorf("校正步骤失败: %v", err)
 	}
-	corrDer, err := derFunc(corrState)
+	t.corrDer, err = derFunc(t.corrState)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("计算校正导数失败: %v", err)
+		return fmt.Errorf("计算校正导数失败: %v", err)
 	}
-	return predState, corrState, corrDer, nil
+	return nil
 }
 
 // estimateAndAdjustStep 估计误差并调整步长
-func (t *TimeMNA) estimateAndAdjustStep(predState, corrState []float64, mnaSolver mna.Mna) error {
+func (t *TimeMNA) estimateAndAdjustStep(mnaSolver mna.Mna) error {
 	// 估计局部截断误差（LTE）
-	if err := t.EstimateLTE(predState, corrState); err != nil {
-		return fmt.Errorf("LTE估计失败: %v", err)
-	}
+	t.EstimateLTE()
+
 	// 计算MNA残差（基于当前MNA解向量）
 	if err := t.CalculateMNAResidual(mnaSolver); err != nil {
 		return fmt.Errorf("残差计算失败: %v", err)
@@ -751,7 +668,7 @@ func (t *TimeMNA) estimateAndAdjustStep(predState, corrState []float64, mnaSolve
 //
 //	mnaSolver - MNA矩阵求解器（用于获取A/Z/X，计算残差）
 //	derFunc   - 多变量导数计算函数（dx/dt）
-func (t *TimeMNA) AdvanceTimeStep(mnaSolver mna.Mna, derFunc DerivativeFunc) error {
+func (t *TimeMNA) AdvanceTimeStep(mnaSolver mna.Mna, derFunc mna.DerivativeFunc) error {
 	// 检查仿真状态
 	if t.IsSimulationFinished() {
 		return errors.New("仿真已完成，无需继续推进")
@@ -767,18 +684,15 @@ func (t *TimeMNA) AdvanceTimeStep(mnaSolver mna.Mna, derFunc DerivativeFunc) err
 		return err
 	}
 	// 执行预测-校正步骤
-	predState, corrState, corrDer, err := t.performPredictionCorrection(derFunc)
-	if err != nil {
+	if err := t.performPredictionCorrection(derFunc); err != nil {
 		return err
 	}
 	// 估计误差并调整步长
-	if err := t.estimateAndAdjustStep(predState, corrState, mnaSolver); err != nil {
+	if err := t.estimateAndAdjustStep(mnaSolver); err != nil {
 		return err
 	}
 	// 更新历史数据（用校正后的状态/导数）
-	if err := t.UpdateHistory(corrState, corrDer); err != nil {
-		return fmt.Errorf("历史数据更新失败: %v", err)
-	}
+	t.UpdateHistory()
 	// 推进仿真时间（确保不超过目标时间）
 	nextTime := t.currentTime + t.currentStep
 	if nextTime > t.targetTime {

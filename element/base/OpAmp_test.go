@@ -22,13 +22,13 @@ func TestOpAmp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("加载上下文失败: %s", err)
 	}
-	timeMNA, err := time.NewTimeMNA(0.001)
+	con.Time, err = time.NewTimeMNA(0.001)
 	if err != nil {
 		t.Fatalf("创建仿真时间失败 %s", err)
 	}
 
 	// 求解
-	if err := time.TransientSimulation(timeMNA, con, func(voltages []float64) {
+	if err := time.TransientSimulation(con, func(voltages []float64) {
 	}); err != nil {
 		t.Fatalf("运放仿真失败（可能模型问题）: %s", err)
 	}

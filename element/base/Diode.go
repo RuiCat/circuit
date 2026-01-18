@@ -119,7 +119,7 @@ func (Diode) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 
 	// 检查收敛性（基于CircuitJS1算法）
 	if math.Abs(voltdiff-lastvoltdiff) > 0.01 {
-		time.Converged()
+		time.NoConverged()
 	}
 
 	// 对于齐纳二极管，实现平滑的分段模型：
@@ -225,7 +225,7 @@ func limitDiodeStep(vnew, vold float64, time mna.Time, value element.NodeFace) f
 				vnew = vscale * math.Log(1e-10)
 			}
 		}
-		time.Converged()
+		time.NoConverged()
 	} else if vnew < 0 && zoffset != 0 {
 		// 对于齐纳击穿，使用相同的逻辑但平移值，
 		// 并用齐纳特定值替换正常值以考虑齐纳击穿曲线的更陡指数
@@ -253,7 +253,7 @@ func limitDiodeStep(vnew, vold float64, time mna.Time, value element.NodeFace) f
 					vnewTrans = Vt * math.Log(1e-10)
 				}
 			}
-			time.Converged()
+			time.NoConverged()
 		}
 		vnew = -(vnewTrans + zoffset)
 	}
