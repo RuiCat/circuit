@@ -15,7 +15,8 @@ var SwitchType element.NodeType = element.AddElement(7, &Switch{
 			float64(1e-6), // 1: 导通电阻
 			float64(1e12), // 2: 关断电阻
 		},
-		Current: []int{0},
+		ValueName: []string{"state", "R_on", "R_off"},
+		Current:   []int{0},
 	},
 })
 

@@ -15,13 +15,13 @@ func handleVector(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, 
 	switch funct3 {
 	case FUNCT3_OPIVV: // 向量-向量整数运算
 		trap = vmst.handleVFPOPIVV(ir) // 注意：当前实现中，整数和浮点共用一个OPIVV处理器入口，内部再区分
-	case 0b001: // 向量-向量浮点运算 (OPFVV)
+	case FUNCT3_OPFVV: // 向量-向量浮点运算
 		trap = vmst.handleVFPOPIVV(ir)
 	case FUNCT3_OPIVI: // 向量-立即数整数运算
 		trap = vmst.handleOPIVI(ir)
 	case FUNCT3_OPIVX: // 向量-标量整数运算
 		trap = vmst.handleOPIVX(ir)
-	case 0b101: // 向量-标量浮点运算 (OPFVF)
+	case FUNCT3_OPFVF: // 向量-标量浮点运算
 		trap = vmst.handleVFPOPIVF(ir)
 	case FUNCT3_OP_V: // 向量配置指令 vsetvl/vsetvli
 		trap = vmst.handleVSETVL(ir)

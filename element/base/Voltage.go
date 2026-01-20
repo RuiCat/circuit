@@ -33,6 +33,7 @@ var VoltageType element.NodeType = element.AddElement(11, &Voltage{
 			float64(0), // 6: 频率时间零点
 			float64(0), // 7: 噪声值
 		},
+		ValueName: []string{"waveform", "bias", "frequency", "phase", "V_max", "duty_cycle", "t_zero", "noise"},
 		Voltage:   []string{"v"},
 		OrigValue: []int{7},
 	},

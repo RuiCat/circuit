@@ -19,6 +19,7 @@ var OpAmpType element.NodeType = element.AddElement(5, &OpAmp{
 			float64(0),   // 5: g 小信号增益
 			float64(0),   // 6: VoutCalc 非线性模型计算的输出电压
 		},
+		ValueName: []string{"Vmax", "Vmin", "G", "lastVD", "Iout", "g", "VoutCalc"},
 		Voltage:   []string{"ov"},
 		Current:   []int{4},
 		OrigValue: []int{3, 4, 5, 6},

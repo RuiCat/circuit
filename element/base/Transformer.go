@@ -22,6 +22,7 @@ var TransformerType element.NodeType = element.AddElement(8, &Transformer{
 			float64(0),     // 7: I_hist1
 			float64(0),     // 8: I_hist2
 		},
+		ValueName: []string{"L1", "Ratio", "k", "G11", "G12", "G21", "G22", "I_hist1", "I_hist2"},
 	},
 })
 

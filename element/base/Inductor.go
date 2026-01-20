@@ -10,7 +10,8 @@ var InductorType element.NodeType = element.AddElement(3, &Inductor{
 	&element.Config{
 		Name:      "l",
 		Pin:       element.SetPin(element.PinLowVoltage, "l1", "l2"),
-		ValueInit: []any{float64(1e-3), 0.0, 0.0, 0.0}, // 0:L 1:I_init 2:G_eq 3:I_hist
+		ValueInit: []any{float64(1e-3), 0.0, 0.0, 0.0},
+		ValueName: []string{"L", "I_init", "G_eq", "I_hist"},
 		Current:   []int{0},
 		OrigValue: []int{2, 3},
 	},

@@ -26,6 +26,7 @@ var TransistorType element.NodeType = element.AddElement(9, &Transistor{
 			float64(0),        // 电流记录
 			float64(0),        // 电流记录
 		},
+		ValueName: []string{"pnp", "beta", "model", "lastvbc", "lastvbe", "vcrit", "ic", "ie", "ib", "gmin", "i1", "i2", "i3"},
 		OrigValue: []int{3, 4, 6, 7, 8},
 	},
 })

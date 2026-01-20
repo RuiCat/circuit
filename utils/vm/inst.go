@@ -61,7 +61,7 @@ func init() {
 	Instructions[OPCODE_OP_IMM] = handleOpImm
 	Instructions[OPCODE_OP] = handleOp
 	Instructions[OPCODE_SYSTEM] = handleSystem
-	Instructions[OPCODE_MISC_MEM] = handleMiscMem
+	Instructions[OPCODE_FENCE] = handleMiscMem
 
 	Instructions[OPCODE_LOAD_FP] = handleLoadFP   // F 扩展
 	Instructions[OPCODE_STORE_FP] = handleStoreFP // F 扩展
@@ -452,10 +452,18 @@ func handleOp(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int3
 
 // handleSystem 处理系统级指令，包括 ECALL、EBREAK 和 CSR（控制和状态寄存器）指令。
 func handleSystem(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
+	rs1id := (ir >> 15) & 0x1f
+	rdid := (ir >> 7) & 0x1f
+	funct3 := (ir >> 12) & 0x7
 	csr := (ir >> 20) & 0xfff
-	// ECALL 和 EBREAK 的特殊编码
-	if csr == 0 && ((ir>>7)&0x1f) == 0 && ((ir>>15)&0x1f) == 0 {
-		if (ir >> 12) == 0 { // ECALL
+
+	switch funct3 {
+	case FUNCT3_SYSTEM_ECALL_EBREAK:
+		// ECALL 和 EBREAK 的特殊编码
+		is_ebreak := (ir >> 20) & 0x1
+		if is_ebreak != 0 {
+			return 0, 0, 0, CAUSE_BREAKPOINT
+		} else {
 			// a7 是 x17, a0 是 x10
 			syscall_num := vmst.Core.Regs[17]
 			switch syscall_num {
@@ -464,62 +472,87 @@ func handleSystem(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, 
 			case VmSysCallHalt:
 				// vm.go 中的 Run 循环通过设置 VmStatusEnded 来处理此问题
 				return 0, 0, 0, CAUSE_USER_ECALL
-			case VmSysCallYield:
-				// 对于一个简单的虚拟机，yield 可能不会做任何特殊的事情。
-				// 在多任务场景中，这将触发上下文切换。
-				// 在这里，我们可以将其视为 NOP 并继续。
-				return 0, 0, pc + 4, 0
 			default:
 				// 触发一个系统调用事件供主机处理
 				return 0, 0, 0, CAUSE_USER_ECALL
 			}
-		} else { // EBREAK
-			return 0, 0, 0, CAUSE_BREAKPOINT
 		}
-	}
+	case FUNCT3_CSRRW, FUNCT3_CSRRS, FUNCT3_CSRRC, FUNCT3_CSRRWI, FUNCT3_CSRRSI, FUNCT3_CSRRCI:
+		csr_val, ok := vmst.CsrRead(csr)
+		if !ok {
+			return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
+		}
 
-	rs1id := (ir >> 15) & 0x1f
-	rdid := (ir >> 7) & 0x1f
-	funct3 := (ir >> 12) & 0x7
+		rval := csr_val // CSR 指令总是先将旧值读入 rd
+		var new_csr_val uint32
 
-	csr_val, ok := vmst.CsrRead(csr)
-	if !ok {
-		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
-	}
-
-	rval := csr_val // CSR 指令总是先将旧值读入 rd
-	var new_csr_val uint32
-
-	switch funct3 {
-	case FUNCT3_CSRRW: // CSRRW (Atomic Read/Write CSR)
-		new_csr_val = vmst.Core.Regs[rs1id]
-	case FUNCT3_CSRRS: // CSRRS (Atomic Read and Set Bits in CSR)
-		new_csr_val = csr_val | vmst.Core.Regs[rs1id]
-	case FUNCT3_CSRRC: // CSRRC (Atomic Read and Clear Bits in CSR)
-		new_csr_val = csr_val &^ vmst.Core.Regs[rs1id]
-	case FUNCT3_CSRRWI: // CSRRWI (立即数版本)
-		zimm := rs1id
-		new_csr_val = uint32(zimm)
-	case FUNCT3_CSRRSI: // CSRRSI
-		zimm := rs1id
-		new_csr_val = csr_val | uint32(zimm)
-	case FUNCT3_CSRRCI: // CSRRCI
-		zimm := rs1id
-		new_csr_val = csr_val &^ uint32(zimm)
+		switch funct3 {
+		case FUNCT3_CSRRW: // CSRRW (Atomic Read/Write CSR)
+			new_csr_val = vmst.Core.Regs[rs1id]
+		case FUNCT3_CSRRS: // CSRRS (Atomic Read and Set Bits in CSR)
+			new_csr_val = csr_val | vmst.Core.Regs[rs1id]
+		case FUNCT3_CSRRC: // CSRRC (Atomic Read and Clear Bits in CSR)
+			new_csr_val = csr_val &^ vmst.Core.Regs[rs1id]
+		case FUNCT3_CSRRWI: // CSRRWI (立即数版本)
+			zimm := rs1id
+			new_csr_val = uint32(zimm)
+		case FUNCT3_CSRRSI: // CSRRSI
+			zimm := rs1id
+			new_csr_val = csr_val | uint32(zimm)
+		case FUNCT3_CSRRCI: // CSRRCI
+			zimm := rs1id
+			new_csr_val = csr_val &^ uint32(zimm)
+		}
+		if !vmst.CsrWrite(csr, new_csr_val) {
+			return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
+		}
+		return rdid, rval, pc + 4, 0
 	default:
 		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 	}
-
-	if !vmst.CsrWrite(csr, new_csr_val) {
-		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
-	}
-
-	return rdid, rval, pc + 4, 0
 }
 
-// handleMiscMem 处理杂项内存指令，目前主要是 FENCE。
-// 在这个简单的模拟器中，FENCE 指令被视为空操作（NOP）。
+// handleMiscMem 处理杂项内存指令，包括 FENCE 和 FENCE.I。
+// 这些指令用于在复杂的内存模型中强制执行内存访问的顺序。
 func handleMiscMem(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
-	// FENCE 对于这个模拟器来说是一个 NOP。
-	return 0, 0, pc + 4, 0
+	funct3 := (ir >> 12) & 0x7
+
+	switch funct3 {
+	case 0: // FENCE
+		// --- FENCE 指令的完整作用 ---
+		//
+		// **目的**: FENCE 指令用于确保内存操作的顺序性，这在多核处理器系统和与 I/O 设备交互时至关重要。
+		// 现代处理器为了优化性能，可能会对内存读写操作进行乱序执行（Out-of-Order Execution）。
+		// 在单线程程序中，这种重排通常是不可见的，因为处理器会保证程序的最终结果与顺序执行一致。
+		// 但在多线程或与外部设备交互时，一个核心的内存写入操作可能不会立即对其他核心或设备可见，
+		// 从而导致数据不一致的问题。
+		//
+		// **工作原理**: FENCE 就像一个屏障。它强制要求在 FENCE 指令之前的所有内存操作
+		// （由 pred 字段指定类型）必须在 FENCE 指令之后的所有内存操作（由 succ 字段指定类型）
+		// 开始执行之前，对系统中的其他部分（其他核心、设备等）完全可见。
+		//
+		// **在当前模拟器中的实现**:
+		// 这个模拟器是单核的，并且严格按程序顺序执行指令，没有乱序执行或多级缓存。
+		// 任何内存写入都会立即反映在主内存中。因此，FENCE 指令所要保证的顺序性在这里是天然满足的。
+		// 将其视为空操作（NOP）是正确且标准的简化实现。
+		return 0, 0, pc + 4, 0
+	case 1: // FENCE.I
+		// --- FENCE.I 指令的完整作用 ---
+		//
+		// **目的**: FENCE.I 用于同步数据内存的写入操作和指令缓存的获取操作。
+		// 这在动态生成或修改代码的场景中非常关键，例如 JIT (Just-In-Time) 编译器或自我修改代码。
+		//
+		// **工作原理**: 当一个程序在内存中写入了新的指令后，需要确保这些新指令已经被写入主存，
+		// 并且处理器的指令缓存（I-cache）中任何与该内存地址相关的旧指令都已失效。
+		// FENCE.I 指令就是用来完成这个同步的。它会刷新指令缓存，强制处理器在执行后续指令时
+		// 重新从主内存中获取，从而确保执行的是最新写入的代码。
+		//
+		// **在当前模拟器中的实现**:
+		// 我们的模拟器没有实现分离的数据缓存和指令缓存。每次取指都是直接从 `vmst.Memory` 字节数组中读取。
+		// 因此，不存在指令缓存与主存不一致的问题。任何对内存的写入都会立即对下一次取指可见。
+		// 所以，FENCE.I 在此也可以安全地实现为空操作（NOP）。
+		return 0, 0, pc + 4, 0
+	default:
+		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
+	}
 }

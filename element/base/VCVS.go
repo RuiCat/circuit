@@ -11,7 +11,8 @@ var VCVSType element.NodeType = element.AddElement(10, &VCVS{
 		Name:      "e",
 		Pin:       element.SetPin(element.PinLowVoltage, "cp", "cn", "op", "on"), // 控制正、控制负、输出正、输出负
 		ValueInit: []any{float64(1)},                                             // 0: 增益系数
-		Voltage:   []string{"v"},                                                 // 电压源
+		ValueName: []string{"gain"},
+		Voltage:   []string{"v"}, // 电压源
 	},
 })
 

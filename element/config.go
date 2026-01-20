@@ -29,6 +29,7 @@ type Config struct {
 	Name      string   // 元件名称（如 "r" 表示电阻）
 	Pin       []Pin    // 引脚列表，定义元件的外部连接点
 	ValueInit []any    // 初始化数据，存储元件的参数初始值（如电阻值、电压值等）
+	ValueName []string // 参数名称
 	Current   []int    // 电流数据索引，指向ValueInit中存储电流值的索引位置
 	OrigValue []int    // 数据备份索引，指向需要备份/恢复的参数在ValueInit中的索引
 	Voltage   []string // 电压源名称列表，定义元件内部的电压源标识

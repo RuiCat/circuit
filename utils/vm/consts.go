@@ -8,9 +8,7 @@ package vm
 // --- 系统调用常量 ---
 // 定义了VM支持的特殊系统调用代码。
 const (
-	VmSysCallHalt          = 0x1000000 // 停止虚拟机执行。
-	VmSysCallYield         = 0x1000001 // 主动让出CPU，用于协作式多任务。
-	VmSysyCallStackProTect = 0x1000002 // 栈保护。
+	VmSysCallHalt = 0x1000000 // 停止虚拟机执行。
 	// 用户自定义的系统调用可以从这里开始。
 )
 
@@ -25,15 +23,14 @@ const (
 // --- VM 错误码 ---
 // VmErr 定义了VM在运行过程中可能遇到的各种错误类型。
 const (
-	VmErrNone          VmErr = iota // 0: 无错误。
-	VmErrNotrEady                   // 1: 虚拟机尚未准备好执行。
-	VmErrMemRd                      // 2: 内存读取错误（例如，地址越界）。
-	VmErrMemWr                      // 3: 内存写入错误。
-	VmErrBadSysCall                 // 4: 无效的系统调用代码。
-	VmErrHung                       // 5: 虚拟机挂起（例如，陷入死循环）。
-	VmErrIntErnalCore               // 6: 内部核心逻辑错误。
-	VmErrIntErnalState              // 7: 内部状态机错误。
-	VmErrArgs                       // 8: 传递给VM的参数错误。
+	VmErrNone         VmErr = iota // 0: 无错误。
+	VmErrNotrEady                  // 1: 虚拟机尚未准备好执行。
+	VmErrMemRd                     // 2: 内存读取错误（例如，地址越界）。
+	VmErrMemWr                     // 3: 内存写入错误。
+	VmErrBadSysCall                // 4: 无效的系统调用代码。
+	VmErrHung                      // 5: 虚拟机挂起（例如，陷入死循环）。
+	VmErrIntErnalCore              // 6: 内部核心逻辑错误。
+	VmErrArgs                      // 7: 传递给VM的参数错误。
 )
 
 // --- VM 事件类型 ---
@@ -79,9 +76,6 @@ const (
 	CAUSE_STORE_ADDRESS_MISALIGNED       = 6 // 异常：存储或AMO（原子操作）地址未对齐。
 	CAUSE_STORE_ACCESS_FAULT             = 7 // 异常：存储或AMO访问故障。
 	CAUSE_USER_ECALL                     = 8 // 异常：在用户模式下执行 `ECALL`。
-	CAUSE_ECALL_FROM_S_MODE              = 9 // 异常：在监管者模式下执行 `ECALL`。
-	// CAUSE 10 is reserved
-	CAUSE_ECALL_FROM_M_MODE = 11 // 异常：在机器模式下执行 `ECALL`。
 )
 
 // --- CSR (Control and Status Register) 地址 ---
@@ -127,7 +121,7 @@ const (
 	OPCODE_STORE    = 0x23 // S-Type: 存储指令 (SB, SH, SW)。
 	OPCODE_OP_IMM   = 0x13 // I-Type: 立即数算术/逻辑指令 (ADDI, SLTI, etc.)。
 	OPCODE_OP       = 0x33 // R-Type: 寄存器-寄存器算术/逻辑指令 (ADD, SUB, etc.)。
-	OPCODE_FENCE    = 0x0F // I-Type: FENCE, 用于内存排序。
+	OPCODE_FENCE    = 0x0F // I-Type: FENCE, FENCE.I, etc. Memory ordering.
 	OPCODE_SYSTEM   = 0x73 // I-Type: 系统指令 (ECALL, EBREAK, CSRs)。
 	OPCODE_LOAD_FP  = 0x07 // F-Ext: 浮点加载指令 (FLW)。
 	OPCODE_STORE_FP = 0x27 // F-Ext: 浮点存储指令 (FSW)。
@@ -137,7 +131,6 @@ const (
 	OPCODE_NMSUB    = 0x4B // F-Ext (FMA): FNMSUB.S/D
 	OPCODE_NMADD    = 0x4F // F-Ext (FMA): FNMADD.S/D
 	OPCODE_VECTOR   = 0x57 // V-Ext: 向量指令。
-	OPCODE_MISC_MEM = 0x0F // 与 FENCE 相同的操作码，通过 funct3 区分。
 	OPCODE_AMO      = 0x2F // A-Ext: 原子内存操作 (Atomic Memory Operations)。
 )
 
@@ -324,7 +317,9 @@ const (
 // 用于 V-扩展 的 Funct3
 const (
 	FUNCT3_OPIVV = 0b000 // 向量-向量
+	FUNCT3_OPFVV = 0b001 // 向量-向量浮点运算
 	FUNCT3_OPIVI = 0b011 // 向量-立即数
+	FUNCT3_OPFVF = 0b101 // 向量-标量浮点运算 (OPFVF)
 	FUNCT3_OPIVX = 0b110 // 向量-标量
 	FUNCT3_OP_V  = 7     // vsetvl/vsetvli
 )

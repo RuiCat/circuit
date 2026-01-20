@@ -25,7 +25,8 @@ var GateType element.NodeType = element.AddElement(12, &Gate{ // 使用通用的
 			int(GateInverter), // 0: 逻辑门类型
 			float64(5.0),      // 1: 高电平电压 (V)
 		},
-		Voltage: []string{"v"}, // 用于输出的内部电压源
+		ValueName: []string{"type", "V_high"},
+		Voltage:   []string{"v"}, // 用于输出的内部电压源
 	},
 })
 

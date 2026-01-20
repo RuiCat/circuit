@@ -156,8 +156,8 @@ func handleOpFPHelper(vmst *VmState, ir uint32, _ uint32, funct7 uint32,
 	case FUNCT7_FMIN_MAX_S:
 		var result_f float32
 		funct3 := (ir >> 12) & 0x7
-		is_min := (funct3 == FUNCT3_FMIN_S)
-		if is_min {
+		switch funct3 {
+		case FUNCT3_FMIN_S:
 			if isNaN_S(fs1) && !isNaN_S(fs2) {
 				result_f = fs2
 			} else if !isNaN_S(fs1) && isNaN_S(fs2) {
@@ -167,7 +167,7 @@ func handleOpFPHelper(vmst *VmState, ir uint32, _ uint32, funct7 uint32,
 			} else {
 				result_f = float32(math.Min(float64(fs1), float64(fs2)))
 			}
-		} else { // FMAX
+		case FUNCT3_FMAX_S:
 			if isNaN_S(fs1) && !isNaN_S(fs2) {
 				result_f = fs2
 			} else if !isNaN_S(fs1) && isNaN_S(fs2) {
@@ -177,13 +177,15 @@ func handleOpFPHelper(vmst *VmState, ir uint32, _ uint32, funct7 uint32,
 			} else {
 				result_f = float32(math.Max(float64(fs1), float64(fs2)))
 			}
+		default:
+			return 0, false
 		}
 		result_bits = 0xffffffff00000000 | uint64(math.Float32bits(result_f))
 	case FUNCT7_FMIN_MAX_D:
 		var result_d float64
 		funct3 := (ir >> 12) & 0x7
-		is_min := (funct3 == FUNCT3_FMIN_D)
-		if is_min {
+		switch funct3 {
+		case FUNCT3_FMIN_D:
 			if math.IsNaN(fd1) && !math.IsNaN(fd2) {
 				result_d = fd2
 			} else if !math.IsNaN(fd1) && math.IsNaN(fd2) {
@@ -193,7 +195,7 @@ func handleOpFPHelper(vmst *VmState, ir uint32, _ uint32, funct7 uint32,
 			} else {
 				result_d = math.Min(fd1, fd2)
 			}
-		} else { // FMAX
+		case FUNCT3_FMAX_D:
 			if math.IsNaN(fd1) && !math.IsNaN(fd2) {
 				result_d = fd2
 			} else if !math.IsNaN(fd1) && math.IsNaN(fd2) {
@@ -203,6 +205,8 @@ func handleOpFPHelper(vmst *VmState, ir uint32, _ uint32, funct7 uint32,
 			} else {
 				result_d = math.Max(fd1, fd2)
 			}
+		default:
+			return 0, false
 		}
 		result_bits = math.Float64bits(result_d)
 	// --- F/D 扩展：符号注入 ---
@@ -232,11 +236,11 @@ func handleOpFPHelper(vmst *VmState, ir uint32, _ uint32, funct7 uint32,
 		body1 := fs1_bits & 0x7fffffffffffffff
 		funct3 := (ir >> 12) & 0x7
 		switch funct3 {
-		case FUNCT3_FSGNJ_S:
+		case FUNCT3_FSGNJ_D:
 			result_bits = body1 | sign2
-		case FUNCT3_FSGNJN_S:
+		case FUNCT3_FSGNJN_D:
 			result_bits = body1 | (^sign2 & 0x8000000000000000)
-		case FUNCT3_FSGNJX_S:
+		case FUNCT3_FSGNJX_D:
 			sign1 := fs1_bits & 0x8000000000000000
 			result_bits = body1 | (sign1 ^ sign2)
 		default:
@@ -361,11 +365,11 @@ func handleOpFP(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, in
 	case FUNCT7_FEQ_FLT_FLE_D:
 		var cmp_result bool
 		switch funct3 {
-		case FUNCT3_FEQ_S:
+		case FUNCT3_FEQ_D:
 			cmp_result = (fd1 == fd2)
-		case FUNCT3_FLT_S:
+		case FUNCT3_FLT_D:
 			cmp_result = (fd1 < fd2)
-		case FUNCT3_FLE_S:
+		case FUNCT3_FLE_D:
 			cmp_result = (fd1 <= fd2)
 		default:
 			return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
@@ -390,7 +394,7 @@ func handleOpFP(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, in
 		}
 	case FUNCT7_FMV_W_X: // FMV.W.X
 		result_bits = 0xffffffff00000000 | uint64(rs1_val)
-	case FUNCT7_FCLASS_D: // FCLASS.D 和 FMV.X.D(RV64)
+	case FUNCT7_FMV_X_D: // FCLASS.D 和 FMV.X.D(RV64)
 		switch funct3 {
 		case FUNCT3_FCLASS_D: // FCLASS.D
 			int_rdid, int_rval = rdid, classify_float64(fd1)

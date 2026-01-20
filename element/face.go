@@ -6,15 +6,15 @@ import (
 	"log"
 )
 
-// PinType 元件类型
+// PinType 引脚类型
 type PinType uint8
 
 const (
-	PinLowVoltage  PinType = (1 << iota) // 弱电元件
-	PinHighVoltage                       // 强电元件
-	PinBoolean                           // 布尔元件
-	PinPneumatic                         // 气路元件
-	PinHydraulic                         // 油路元件
+	PinLowVoltage  PinType = (1 << iota) // 弱电引脚
+	PinHighVoltage                       // 强电引脚
+	PinBoolean                           // 布尔引脚
+	PinPneumatic                         // 气路引脚
+	PinHydraulic                         // 油路引脚
 )
 
 // elementFace 元件接口，组合了配置接口和元件实现接口

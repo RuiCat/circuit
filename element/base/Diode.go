@@ -29,6 +29,7 @@ var DiodeType element.NodeType = element.AddElement(2, &Diode{
 			float64(0),        // 13: 漏电流 leakage (A)
 			float64(0),        // 14: 最小电导 Gmin (S)
 		},
+		ValueName: []string{"Is", "Vz", "N", "Rs", "T", "V_old", "NVt", "invNVt", "Vt", "invVt", "zoffset", "vcrit", "vzcrit", "leakage", "Gmin"},
 		Current:   []int{0},
 		OrigValue: []int{5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
 	},

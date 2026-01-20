@@ -58,9 +58,7 @@ func (vmst *VmState) CsrRead(csr uint32) (uint32, bool) {
 	case CSR_MSTATUS:
 		return vmst.Core.Mstatus, true
 	case CSR_MISA:
-		// 硬编码返回一个值，表示支持 RV32IMAFDV 扩展。
-		// I, M, A, F, D (双精度) 和 V (向量)
-		return 0x40101101, true
+		return 0x40001129, true // 硬编码返回一个值，表示支持 RV32IMAFD 扩展。
 	case CSR_MIE:
 		return vmst.Core.Mie, true
 	case CSR_MTVEC:
@@ -85,6 +83,18 @@ func (vmst *VmState) CsrRead(csr uint32) (uint32, bool) {
 		return (vmst.Core.Fcsr >> 5) & 0x7, true
 	case CSR_FCSR:
 		return vmst.Core.Fcsr, true
+
+	// --- Vector CSRs ---
+	case CSR_VSTART:
+		return vmst.Core.Vstart, true
+	case CSR_VL:
+		return vmst.Core.Vl, true
+	case CSR_VTYPE:
+		return vmst.Core.Vtype, true
+	case CSR_VLENB:
+		// VLEN is fixed to 128 bits in this implementation. VLENB returns the length in bytes.
+		return 16, true
+
 	default:
 		// 对于任何其他未实现的CSR，读取失败。
 		return 0, false
@@ -129,6 +139,16 @@ func (vmst *VmState) CsrWrite(csr uint32, value uint32) bool {
 		vmst.Core.Fcsr = (vmst.Core.Fcsr &^ 0xe0) | ((value & 0x7) << 5)
 	case CSR_FCSR:
 		vmst.Core.Fcsr = value
+
+	// --- Vector CSRs ---
+	case CSR_VSTART:
+		vmst.Core.Vstart = value
+	case CSR_VL:
+		vmst.Core.Vl = value
+	case CSR_VTYPE:
+		vmst.Core.Vtype = value
+	case CSR_VLENB:
+		// VLENB is read-only in this implementation.
 	default:
 		// 对于任何其他未实现的或只读的CSR，写入失败。
 		return false

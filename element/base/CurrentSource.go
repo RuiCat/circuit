@@ -11,6 +11,8 @@ var CurrentSourceType element.NodeType = element.AddElement(1, &CurrentSource{
 		Name:      "i",
 		Pin:       element.SetPin(element.PinLowVoltage, "i+", "i-"),
 		ValueInit: []any{float64(0.01)}, // 基础电流: 0:0.01A
+		ValueName: []string{"I"},
+		Current:   []int{0},
 	},
 })
 
