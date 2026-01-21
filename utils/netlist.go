@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -63,6 +64,22 @@ func anyToString(v any) string {
 	default:
 		return fmt.Sprint(v)
 	}
+}
+
+// SeparationPrick 分离字符串前错
+func (value NetList) SeparationPrick(i int) (typeName string, id int) {
+	nameStr := strings.ToUpper(value[i])
+	for i, char := range nameStr {
+		if char >= '0' && char <= '9' {
+			typeName = nameStr[:i]
+			id, _ = strconv.Atoi(nameStr[i:])
+			break
+		}
+	}
+	if typeName == "" {
+		typeName = nameStr
+	}
+	return typeName, id
 }
 
 // ParseBool 解析布尔值

@@ -34,18 +34,18 @@ var GateType element.NodeType = element.AddElement(12, &Gate{ // 使用通用的
 type Gate struct{ *element.Config }
 
 // Stamp 放置输出电压源
-func (Gate) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
+func (g *Gate) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 输入数量为 PinNum - 1
-	outputNodeIndex := value.Type().PinNum() - 1
+	outputNodeIndex := g.PinNum() - 1
 	outputNode := value.GetNodes(outputNodeIndex)
 	mna.StampVoltageSource(0, outputNode, value.GetVoltSource(0), 0) // 初始电压为 0
 }
 
 // DoStep 根据逻辑门类型和输入计算输出
-func (Gate) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
+func (g *Gate) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	gateType := value.GetInt(0)
 	highVoltage := value.GetFloat64(1)
-	inputCount := value.Type().PinNum() - 1
+	inputCount := g.PinNum() - 1
 
 	var logicResult bool
 

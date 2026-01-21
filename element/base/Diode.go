@@ -3,7 +3,6 @@ package base
 import (
 	"circuit/element"
 	"circuit/mna"
-	"circuit/utils"
 	"math"
 )
 
@@ -37,9 +36,6 @@ var DiodeType element.NodeType = element.AddElement(2, &Diode{
 
 // Diode 二极管（基于CircuitJS1的精确实现）
 type Diode struct{ *element.Config }
-
-func (Diode) CirLoad(element.NodeFace, utils.NetList)  {}
-func (Diode) CirExport(element.NodeFace) utils.NetList { return nil }
 
 func (Diode) Reset(base element.NodeFace) {
 	// 获取参数
