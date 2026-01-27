@@ -1,22 +1,19 @@
 package base
 
 import (
-	"bufio"
-	"circuit/element"
 	"circuit/element/time"
+	"circuit/load"
 	"math"
-	"strings"
 	"testing"
 )
 
 func TestVCVS(t *testing.T) {
 	netlist := `
-	v1 0 -1
-	e1 0 -1 1 -1 1.0
-	r1 1 -1 100
+	v1 [0,-1]
+	e1 [0,-1,1,-1] [1.0]
+	r1 [1,-1] [100]
 	`
-	scanner := bufio.NewScanner(strings.NewReader(netlist))
-	con, err := element.LoadContext(scanner)
+	con, err := load.LoadString(netlist)
 	if err != nil {
 		t.Fatalf("加载上下文失败: %s", err)
 	}

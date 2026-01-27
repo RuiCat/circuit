@@ -1,8 +1,8 @@
 package element
 
 import (
+	"circuit/load/ast"
 	"circuit/mna"
-	"circuit/utils"
 	"log"
 )
 
@@ -83,15 +83,13 @@ type NodeFace interface {
 // ConfigFace 元件配置接口，提供元件的静态配置信息。
 // 所有元件类型都必须实现此接口，以提供其配置信息。
 type ConfigFace interface {
-	Base(netlist utils.NetList) (*Config, utils.NetList) // 初始化配置信息。
-	InternalNum() int                                    // 获取内部节点数量。
-	GetName() string                                     // 元件名称。
-	PinNum() int                                         // 获取外部引脚数量。
-	ValueNum() int                                       // 获取元件参数数量。
-	VoltageNum() int                                     // 获取电压源数量。
-	Reset(base NodeFace)                                 // 重置元件状态到初始值。
-	CirLoad(NodeFace, utils.NetList)                     // 从网表文件加载元件值。
-	CirExport(NodeFace) utils.NetList                    // 导出元件值到网表文件。
+	Base(ast.ElementNode) *Config // 初始化配置信息。
+	InternalNum() int             // 获取内部节点数量。
+	GetName() string              // 元件名称。
+	PinNum() int                  // 获取外部引脚数量。
+	ValueNum() int                // 获取元件参数数量。
+	VoltageNum() int              // 获取电压源数量。
+	Reset(base NodeFace)          // 重置元件状态到初始值。
 }
 
 // ElementFace 元件实现接口，提供元件的动态行为实现。

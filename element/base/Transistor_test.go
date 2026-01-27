@@ -1,11 +1,9 @@
 package base
 
 import (
-	"bufio"
-	"circuit/element"
 	"circuit/element/time"
+	"circuit/load"
 	"math"
-	"strings"
 	"testing"
 )
 
@@ -17,14 +15,13 @@ func TestTransistorCircuit(t *testing.T) {
 	rcVal := 1000.0  // 1kOhm 集电极电阻
 
 	netlist := `
-	v1 0 -1 5.0
-	v2 1 -1 5.0
-	r1 1 2 10000.0
-	r2 0 3 1000.0
-	q1 2 3 -1 100.0
+	v1 [0,-1] [5.0]
+	v2 [1,-1] [5.0]
+	r1 [1,2] [10000.0]
+	r2 [0,3] [1000.0]
+	q1 [2,3,-1] [false,100.0]
 	`
-	scanner := bufio.NewScanner(strings.NewReader(netlist))
-	con, err := element.LoadContext(scanner)
+	con, err := load.LoadString(netlist)
 	if err != nil {
 		t.Fatalf("加载上下文失败: %s", err)
 	}

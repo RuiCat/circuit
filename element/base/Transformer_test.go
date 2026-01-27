@@ -1,23 +1,20 @@
 package base
 
 import (
-	"bufio"
-	"circuit/element"
 	"circuit/element/time"
+	"circuit/load"
 	"math"
-	"strings"
 	"testing"
 )
 
 func TestTransformer(t *testing.T) {
 	netlist := `
-	v1 0 -1 AC 0 50 0 5
-	r1 0 1 10
-	xfmr1 1 -1 2 -1 4.0 1.0 0.999
-	r2 2 -1 1000
+	v1 [0,-1] [1,0,50,0,5]
+	r1 [0,1] [10]
+	xfmr1 [1,-1,2,-1] [4.0,1.0,0.999]
+	r2 [2,-1] [1000]
 	`
-	scanner := bufio.NewScanner(strings.NewReader(netlist))
-	con, err := element.LoadContext(scanner)
+	con, err := load.LoadString(netlist)
 	if err != nil {
 		t.Fatalf("加载上下文失败: %s", err)
 	}

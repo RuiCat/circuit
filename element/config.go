@@ -1,11 +1,9 @@
 package element
 
 import (
+	"circuit/load/ast"
 	"circuit/mna"
-	"circuit/utils"
-	"fmt"
 	"strings"
-	"time"
 )
 
 // Pin 引脚。
@@ -38,7 +36,7 @@ type Config struct {
 }
 
 // Base 默认配置信息。
-func (config *Config) Base(netlist utils.NetList) (*Config, utils.NetList) { return config, netlist }
+func (config *Config) Base(ele ast.ElementNode) *Config { return config }
 
 // GetName 元件名称。
 func (config *Config) GetName() string {
@@ -49,56 +47,6 @@ func (config *Config) GetName() string {
 // 将元件的当前值恢复为配置中的初始值，并更新备份数据。
 // 参数base: 元件的节点接口，用于访问元件的底层数据。
 func (Config) Reset(base NodeFace) {}
-
-// CirLoad 加载元件值（不处理引脚）。
-func (Config) CirLoad(node NodeFace, valueStrs utils.NetList) {
-	base, config := node.Base(), node.Config()
-	for i := 0; i < len(valueStrs) && i < len(config.ValueInit); i++ {
-		switch v := config.ValueInit[i].(type) {
-		case string:
-			base.NodeValue[i] = valueStrs.ParseString(i, v)
-		case bool:
-			base.NodeValue[i] = valueStrs.ParseBool(i, v)
-		case int:
-			base.NodeValue[i] = valueStrs.ParseInt(i, v)
-		case int8:
-			base.NodeValue[i] = valueStrs.ParseInt8(i, v)
-		case int16:
-			base.NodeValue[i] = valueStrs.ParseInt16(i, v)
-		case int32:
-			base.NodeValue[i] = valueStrs.ParseInt32(i, v)
-		case int64:
-			base.NodeValue[i] = valueStrs.ParseInt64(i, v)
-		case uint:
-			base.NodeValue[i] = valueStrs.ParseUint(i, v)
-		case uint16:
-			base.NodeValue[i] = valueStrs.ParseUint16(i, v)
-		case uint32:
-			base.NodeValue[i] = valueStrs.ParseUint32(i, v)
-		case uint64:
-			base.NodeValue[i] = valueStrs.ParseUint64(i, v)
-		case float32:
-			base.NodeValue[i] = valueStrs.ParseFloat32(i, v)
-		case float64:
-			base.NodeValue[i] = valueStrs.ParseFloat64(i, v)
-		case complex64:
-			base.NodeValue[i] = valueStrs.ParseComplex64(i, v)
-		case complex128:
-			base.NodeValue[i] = valueStrs.ParseComplex128(i, v)
-		case time.Duration:
-			base.NodeValue[i] = valueStrs.ParseDuration(i, v)
-		case fmt.Stringer:
-			base.NodeValue[i] = valueStrs.ParseString(i, v.String())
-		default:
-			base.NodeValue[i] = valueStrs.ParseString(i, fmt.Sprint(v))
-		}
-	}
-}
-
-// CirExport 导出元件。
-func (Config) CirExport(node NodeFace) utils.NetList {
-	return utils.FromAnySlice(node.Base().NodeValue)
-}
 
 // PinNum 获取元件的外部引脚数量。
 // 返回：引脚名称列表的长度。

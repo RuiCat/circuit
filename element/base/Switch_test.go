@@ -1,23 +1,20 @@
 package base
 
 import (
-	"bufio"
-	"circuit/element"
 	"circuit/element/time"
+	"circuit/load"
 	"math"
-	"strings"
 	"testing"
 )
 
 func TestSwitch(t *testing.T) {
 	// 测试开关在导通和关断状态下的行为
 	netlist := `
-	v1 1 -1
-	r1 1 0 100
-	sw1 0 -1 1 1e-6 1e12
+	v1 [1,-1]
+	r1 [1,0] [100]
+	sw1 [0,-1] [1,1e-6,1e12]
 	`
-	scanner := bufio.NewScanner(strings.NewReader(netlist))
-	con, err := element.LoadContext(scanner)
+	con, err := load.LoadString(netlist)
 	if err != nil {
 		t.Fatalf("加载上下文失败: %s", err)
 	}

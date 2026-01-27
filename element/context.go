@@ -1,8 +1,6 @@
 package element
 
 import (
-	"bufio"
-	"circuit/maths"
 	"circuit/mna"
 	"log"
 	"sync"
@@ -75,32 +73,4 @@ func (con *Context) CallMark(mark Mark) {
 	default:
 		log.Fatalf("未知 CallMark 操作: %d", mark)
 	}
-}
-
-// LoadContext 加载仿真网表。
-func LoadContext(scanner *bufio.Scanner) (con *Context, err error) {
-	var nodesNum, voltageSourcesNum int
-	con = &Context{}
-	con.Nodelist, nodesNum, voltageSourcesNum, err = parseNetlist(scanner)
-	if err != nil {
-		return nil, err
-	}
-	// 总方程数量
-	n := nodesNum + voltageSourcesNum
-	// 创建可更新的矩阵和向量
-	con.MnaUpdateType = &mna.MnaUpdateType[float64]{
-		MnaType: &mna.MnaType[float64]{
-			NodesNum:          nodesNum,
-			VoltageSourcesNum: voltageSourcesNum,
-		},
-		A:     maths.NewUpdateMatrixPtr(maths.NewDenseMatrix[float64](n, n)),
-		Z:     maths.NewUpdateVectorPtr(maths.NewDenseVector[float64](n)),
-		X:     maths.NewDenseVector[float64](n),
-		LastX: maths.NewDenseVector[float64](n),
-	}
-	// 设置引用
-	con.MnaUpdateType.MnaType.A = con.MnaUpdateType.A
-	con.MnaUpdateType.MnaType.Z = con.MnaUpdateType.Z
-	con.MnaUpdateType.MnaType.X = con.MnaUpdateType.X
-	return con, nil
 }

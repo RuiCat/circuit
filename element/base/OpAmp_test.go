@@ -1,24 +1,21 @@
 package base
 
 import (
-	"bufio"
-	"circuit/element"
 	"circuit/element/time"
+	"circuit/load"
 	"math"
-	"strings"
 	"testing"
 )
 
 func TestOpAmp(t *testing.T) {
 	// 创建同相放大器电路：增益 = 1 + R2/R1
 	netlist := `
-	v1 0 -1 0 0 0 0 1
-	r1 1 -1 1000
-	r2 1 2 2000
-	opamp1 0 1 2 15 -15 1e5
+	v1 [0,-1] [0,0,0,0,1]
+	r1 [1,-1] [1000]
+	r2 [1,2] [2000]
+	opamp1 [0,1,2] [15,-15,1e5]
 	`
-	scanner := bufio.NewScanner(strings.NewReader(netlist))
-	con, err := element.LoadContext(scanner)
+	con, err := load.LoadString(netlist)
 	if err != nil {
 		t.Fatalf("加载上下文失败: %s", err)
 	}

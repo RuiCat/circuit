@@ -1,11 +1,9 @@
 package base
 
 import (
-	"bufio"
-	"circuit/element"
 	"circuit/element/time"
+	"circuit/load"
 	"math"
-	"strings"
 	"testing"
 )
 
@@ -13,11 +11,10 @@ func TestVoltageSource(t *testing.T) {
 	// 测试直流电压源
 	t.Run("DCVoltage", func(t *testing.T) {
 		netlist := `
-	v1 0 -1 0 0.0 0.0 0.0 5.0 0.0 0.0 0.0
-	r1 0 -1 100
+	v1 [0,-1] [0,0.0,0.0,0.0,5.0,0.0,0.0,0.0]
+	r1 [0,-1] [100]
 	`
-		scanner := bufio.NewScanner(strings.NewReader(netlist))
-		con, err := element.LoadContext(scanner)
+		con, err := load.LoadString(netlist)
 		if err != nil {
 			t.Fatalf("加载上下文失败: %s", err)
 		}
@@ -47,11 +44,10 @@ func TestVoltageSource(t *testing.T) {
 	t.Run("ACVoltage", func(t *testing.T) {
 
 		netlist := `
-	v1 0 -1 1 0.0 1.0 0.0 5.0 0.0 0.0 0.0
-	r1 0 -1 100
+	v1 [0,-1] [1,0.0,1.0,0.0,5.0,0.0,0.0,0.0]
+	r1 [0,-1] [100]
 	`
-		scanner := bufio.NewScanner(strings.NewReader(netlist))
-		con, err := element.LoadContext(scanner)
+		con, err := load.LoadString(netlist)
 		if err != nil {
 			t.Fatalf("加载上下文失败: %s", err)
 		}
@@ -81,11 +77,10 @@ func TestVoltageSource(t *testing.T) {
 	// 测试方波电压源
 	t.Run("SquareWaveVoltage", func(t *testing.T) {
 		netlist := `
-	v1 0 -1 2 0.0 1.0 0.0 5.0 5.0 0.0 0.0
-	r1 0 -1 100
+	v1 [0,-1] [2,0.0,1.0,0.0,5.0,5.0,0.0,0.0]
+	r1 [0,-1] [100]
 	`
-		scanner := bufio.NewScanner(strings.NewReader(netlist))
-		con, err := element.LoadContext(scanner)
+		con, err := load.LoadString(netlist)
 		if err != nil {
 			t.Fatalf("加载上下文失败: %s", err)
 		}
