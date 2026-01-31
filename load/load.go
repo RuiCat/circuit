@@ -25,7 +25,7 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 
 	// 创建元件列表
 	var elements []element.NodeFace
-	maxNodeID := mna.NodeID(-1)
+	maxNodeID := mna.NodeID(0)
 
 	// 第一遍扫描：创建元件并收集引脚节点
 	for _, elemNode := range parseTree.ElementNodes {
@@ -48,7 +48,7 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 			if err != nil {
 				return nil, fmt.Errorf("第 %d 行: 引脚 %d 的节点ID无效 '%s'", elemNode.Line, i, elemNode.Pins[i].Value)
 			}
-			// 节点ID可以是负数（如-1表示地节点）
+			// 获得最大节点ID,也就是节点数量
 			element.SetNodePin(i, mna.NodeID(nodeID))
 			if mna.NodeID(nodeID) > maxNodeID {
 				maxNodeID = mna.NodeID(nodeID)

@@ -30,8 +30,9 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
-cmd/*.txt
-cmd/client
+cmd
+utils/vm/testdata/linux_kernel
 test
+app
 go.mod
 go.sum

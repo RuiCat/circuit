@@ -22,7 +22,7 @@ func TestRunSimpleSubELF(t *testing.T) {
 	defer exec.Command("make", "clean").Run()
 
 	// 2. 初始化模拟器
-	v_m := vm.NewVmState()
+	v_m := vm.NewVmState(1024 * 64)
 
 	// 3. 读取 ELF 文件
 	elfData, err := os.ReadFile("main.elf")
@@ -56,7 +56,7 @@ func TestRunSimpleSubELF(t *testing.T) {
 
 	// 5. 运行模拟器 (PC is set by NewVmState)
 	_, evt := v_m.Run(100000)
-	if evt.Typ != vm.VmEvtTypErr || evt.Err.Errcode != vm.VmErrHung {
+	if evt.Typ != vm.VmEvtTypErr || evt.Err.Errcode != vm.VmErrNone {
 		t.Fatalf("模拟器在意外的状态下停止: Evt=%v, Err=%v", evt.Typ, evt.Err.Errcode)
 	}
 

@@ -1,7 +1,5 @@
 package vm
 
-import "encoding/binary"
-
 // handleAMO 处理所有原子内存操作指令 (A 扩展)。
 // 这些指令以原子方式读取、修改并写回内存位置。
 // 格式: amoadd.w rd, rs2, (rs1)
@@ -30,7 +28,7 @@ func handleAMO(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int
 
 	ofs_addr := addr - VmRamImageOffSet
 	// 边界检查
-	if addr < VmRamImageOffSet || ofs_addr+4 > uint32(VmMemoRySize) {
+	if addr < VmRamImageOffSet || ofs_addr+4 > vmst.VmMemorySize {
 		vmst.Core.Mtval = addr
 		return 0, 0, 0, CAUSE_STORE_ACCESS_FAULT
 	}
@@ -47,7 +45,7 @@ func handleAMO(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int
 	case FUNCT5_LR:
 		// LR.W (Load-Reserved Word)
 		// 从内存加载值，设置保留地址，并将值写入 rd
-		rval := binary.LittleEndian.Uint32(vmst.Memory[ofs_addr:])
+		rval := vmst.Memory.LoadUint32(ofs_addr)
 		vmst.Core.LoadReservation = addr
 		return rdid, rval, pc + 4, 0
 
@@ -57,7 +55,7 @@ func handleAMO(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int
 		if addr == vmst.Core.LoadReservation {
 			// 成功：将 rs2 的值写入内存，rd 置为0
 			val_to_store := vmst.Core.Regs[rs2id]
-			binary.LittleEndian.PutUint32(vmst.Memory[ofs_addr:], val_to_store)
+			vmst.Memory.PutUint32(ofs_addr, val_to_store)
 			vmst.Core.LoadReservation = 0 // 清除保留
 			return rdid, 0, pc + 4, 0
 		} else {
@@ -68,7 +66,7 @@ func handleAMO(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int
 	default:
 		// --- 其他原子操作 (Read-Modify-Write) ---
 		// 1. 读取原始值
-		original_val := binary.LittleEndian.Uint32(vmst.Memory[ofs_addr:])
+		original_val := vmst.Memory.LoadUint32(ofs_addr)
 		rs2_val := vmst.Core.Regs[rs2id]
 		var result uint32
 
@@ -114,7 +112,7 @@ func handleAMO(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int
 		}
 
 		// 3. 将计算结果写回内存
-		binary.LittleEndian.PutUint32(vmst.Memory[ofs_addr:], result)
+		vmst.Memory.PutUint32(ofs_addr, result)
 
 		// 4. 将原始值写入目标寄存器 rd
 		return rdid, original_val, pc + 4, 0

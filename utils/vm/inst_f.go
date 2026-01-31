@@ -1,7 +1,6 @@
 package vm
 
 import (
-	"encoding/binary"
 	"math"
 )
 
@@ -42,7 +41,7 @@ func handleLoadFP_S(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32
 	ofs_addr := addr - VmRamImageOffSet
 
 	// 边界检查
-	if addr < VmRamImageOffSet || ofs_addr+4 > uint32(VmMemoRySize) {
+	if addr < VmRamImageOffSet || ofs_addr+4 > vmst.VmMemorySize {
 		vmst.Core.Mtval = addr
 		return 0, 0, 0, CAUSE_LOAD_ACCESS_FAULT
 	}
@@ -52,9 +51,7 @@ func handleLoadFP_S(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32
 		return 0, 0, 0, CAUSE_LOAD_ADDRESS_MISALIGNED
 	}
 	// 从内存加载32位值
-	val32 := binary.LittleEndian.Uint32(vmst.Memory[ofs_addr:])
-	setFRegS(vmst, rdid, math.Float32frombits(val32))
-
+	setFRegS(vmst, rdid, math.Float32frombits(vmst.LoadUint32(ofs_addr)))
 	// 浮点加载指令不写入通用寄存器，因此返回 rdid = 0。
 	return 0, 0, pc + 4, 0
 }
@@ -88,7 +85,7 @@ func handleStoreFP_S(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint3
 	ofs_addr := addr - VmRamImageOffSet
 
 	// 边界检查
-	if addr < VmRamImageOffSet || ofs_addr+4 > uint32(VmMemoRySize) {
+	if addr < VmRamImageOffSet || ofs_addr+4 > vmst.VmMemorySize {
 		vmst.Core.Mtval = addr
 		return 0, 0, 0, CAUSE_STORE_ACCESS_FAULT
 	}
@@ -98,9 +95,7 @@ func handleStoreFP_S(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint3
 		return 0, 0, 0, CAUSE_STORE_ADDRESS_MISALIGNED
 	}
 
-	val_to_store := math.Float32bits(getFRegS(vmst, rs2id))
-	binary.LittleEndian.PutUint32(vmst.Memory[ofs_addr:], val_to_store)
-
+	vmst.PutUint32(ofs_addr, math.Float32bits(getFRegS(vmst, rs2id)))
 	return 0, 0, pc + 4, 0
 }
 

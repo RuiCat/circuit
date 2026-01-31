@@ -1,9 +1,5 @@
 package vm
 
-import (
-	"encoding/binary"
-)
-
 // VmErr 定义了虚拟机可能出现的错误类型
 type VmErr int
 
@@ -45,26 +41,31 @@ type VmArg int
 
 // VmState 表示虚拟机的完整状态，包括核心、内存、I/O事件和状态标志。
 type VmState struct {
-	Status      VmStatus           // 虚拟机的当前运行状态 (例如，运行中、暂停、错误)。
-	Err         VmErr              // 如果发生错误，记录错误代码。
-	Core        VmInaState         // 虚拟机核心的状态，包括寄存器和程序计数器。
-	Memory      [VmMemoRySize]byte // 主内存区域。
-	Ioevt       VmEvt              // 当前待处理的I/O事件，如系统调用。
-	StackCanary *byte              // 栈保护金丝雀值，用于检测栈溢出（当前未使用）。
-	Garbage     uint32             // 一个丢弃值的存储位置，用于无效的指针操作。
-	extram      []byte             // 挂载的外部扩展内存。
-	extramLen   uint32             // 外部扩展内存的长度。
-	extramDirty bool               // 标记扩展内存是否被写入。
-	lastIR      uint32             // 最近执行的指令，用于某些指令的内部状态。
+	Memory                 // 主内存区域。
+	Status      VmStatus   // 虚拟机的当前运行状态 (例如，运行中、暂停、错误)。
+	Err         VmErr      // 如果发生错误，记录错误代码。
+	Core        VmInaState // 虚拟机核心的状态，包括寄存器和程序计数器。
+	Ioevt       VmEvt      // 当前待处理的I/O事件，如系统调用。
+	StackCanary *byte      // 栈保护金丝雀值，用于检测栈溢出（当前未使用）。
+	Garbage     uint32     // 一个丢弃值的存储位置，用于无效的指针操作。
+	lastIR      uint32     // 最近执行的指令，用于某些指令的内部状态。
 }
 
 // NewVmState 创建并初始化一个新的虚拟机状态实例。
-func NewVmState() *VmState {
-	vmst := &VmState{}
+func NewVmState(VmMemorySize uint32) *VmState {
+	vmst := &VmState{
+		Memory: Memory{
+			Data:         make([]byte, int(VmMemorySize)),
+			VmMemorySize: VmMemorySize,
+		},
+	}
 	// 将程序计数器（PC）初始化为RAM镜像的起始偏移量。
 	vmst.Core.PC = VmRamImageOffSet
 	// 将栈指针（sp, x2）设置在主内存的末尾，并确保16字节对齐。
-	vmst.Core.Regs[2] = ((VmRamImageOffSet + VmMemoRySize) &^ 0xF) - 16
+	vmst.Core.Regs[2] = ((VmRamImageOffSet + vmst.VmMemorySize) &^ 0xF) - 16
+	// 设置 MISA 寄存器，表明支持 RV32IMAFD 扩展。
+	// MXL=1 (RV32), I, M, A, F, D 扩展。
+	vmst.Core.Misa = 0x40001129
 	// 设置CPU模式为机器模式（Machine Mode）。
 	vmst.Core.Extraflags |= 3
 	return vmst
@@ -73,10 +74,10 @@ func NewVmState() *VmState {
 // Load 将提供的ROM字节切片加载到虚拟机的内存中。
 // 如果ROM的大小超过虚拟机内存容量，则加载失败。
 func (vmst *VmState) Load(rom []byte) bool {
-	if len(rom) > VmMemoRySize {
+	if len(rom) > int(vmst.VmMemorySize) {
 		return false
 	}
-	copy(vmst.Memory[:], rom)
+	vmst.Memory.Load(rom)
 	vmst.StackCanary = nil
 	return true
 }
@@ -113,6 +114,7 @@ func (vmst *VmState) SetStatusErr(err VmErr) {
 //	VmEvt:  执行过程中发生的事件。可能是 VmEvtTypEnd（结束）、
 //	        VmEvtTypSysCall（系统调用）、或 VmEvtTypErr（错误）。
 func (vmst *VmState) Run(instr_meter uint32) (uint32, VmEvt) {
+	vmst.ClearError() // 重置错误
 	var evt VmEvt
 	orig_instr_meter := instr_meter
 	if instr_meter < 1 {
@@ -137,7 +139,7 @@ func (vmst *VmState) Run(instr_meter uint32) (uint32, VmEvt) {
 		instr_meter--
 
 		switch ret {
-		case 0: // OK, 指令成功执行，无异常
+		case -1: // OK, 指令成功执行，无异常
 		case 12: // ECALL, 捕获到 ecall 指令
 			syscall := vmst.Core.Regs[17] // a7 寄存器传递系统调用号
 			vmst.Core.PC += 4             // ecall 不会自动增加PC，需要手动处理
@@ -160,8 +162,9 @@ func (vmst *VmState) Run(instr_meter uint32) (uint32, VmEvt) {
 		}
 
 		if vmst.Status == VmStatusRunnIng && instr_meter == 0 {
-			vmst.SetStatusErr(VmErrHung)
+			vmst.SetStatus(VmStatusPaused)
 		}
+
 	}
 
 	executed_instrs := orig_instr_meter - instr_meter
@@ -195,22 +198,6 @@ func (vmst *VmState) ClearError() {
 	}
 }
 
-// Extram 将一个外部字节切片挂载为虚拟机的扩展内存。
-func (vmst *VmState) Extram(ram []byte) {
-	vmst.extram = ram
-	vmst.extramLen = uint32(len(ram))
-}
-
-// ExtramDirty 返回一个布尔值，指示扩展内存自上次检查以来是否已被写入。
-func (vmst *VmState) ExtramDirty() bool {
-	return vmst.extramDirty
-}
-
-// GetMemory 返回一个指向虚拟机主内存的字节切片。
-func (vmst *VmState) GetMemory() []byte {
-	return vmst.Memory[:]
-}
-
 // GetProgramCounter 返回程序计数器（PC）的当前值。
 func (vmst *VmState) GetProgramCounter() uint32 {
 	return vmst.Core.PC
@@ -219,29 +206,6 @@ func (vmst *VmState) GetProgramCounter() uint32 {
 // SetProgramCounter 设置程序计数器（PC）的值。
 func (vmst *VmState) SetProgramCounter(pc uint32) {
 	vmst.Core.PC = pc
-}
-
-// GetSafePtr 根据给定的地址和长度，安全地从主内存或扩展内存中获取一个字节切片。
-// 它会进行边界检查，如果访问越界，则返回错误并设置虚拟机状态。
-func (vmst *VmState) GetSafePtr(addr, length uint32) ([]byte, bool) {
-	if VmEetRamBase <= addr && addr < 0x12000000 {
-		if vmst.extram == nil {
-			return nil, false
-		}
-		ptrstart := addr - VmEetRamBase
-		if ptrstart > vmst.extramLen || ptrstart+length > vmst.extramLen {
-			vmst.SetStatusErr(VmErrMemRd)
-			return nil, false
-		}
-		return vmst.extram[ptrstart : ptrstart+length], true
-	}
-
-	ptrstart := addr - VmRamImageOffSet
-	if ptrstart > VmMemoRySize || ptrstart+length > VmMemoRySize {
-		vmst.SetStatusErr(VmErrMemRd)
-		return nil, false
-	}
-	return vmst.Memory[ptrstart : ptrstart+length], true
 }
 
 // ArgGetVal 从给定的虚拟机事件中检索指定系统调用参数的值。
@@ -275,54 +239,4 @@ func (vmst *VmState) argToPtr(evt *VmEvt, arg VmArg) *uint32 {
 		vmst.SetStatusErr(VmErrArgs)
 		return &vmst.Garbage
 	}
-}
-
-// ExtramLoad 根据指定的访问类型（字节、半字、字）从扩展内存中读取数据。
-// 它处理地址转换和边界检查。
-func (vmst *VmState) ExtramLoad(addr uint32, accessTyp uint32) uint32 {
-	if vmst.extram == nil {
-		return 0
-	}
-	addr -= VmEetRamBase
-	if addr >= vmst.extramLen {
-		vmst.SetStatusErr(VmErrMemRd)
-		return 0
-	}
-
-	switch accessTyp {
-	case 0: // LB
-		return uint32(int8(vmst.extram[addr]))
-	case 1: // LH
-		return uint32(int16(binary.LittleEndian.Uint16(vmst.extram[addr:])))
-	case 2: // LW
-		return binary.LittleEndian.Uint32(vmst.extram[addr:])
-	case 4: // LBU
-		return uint32(vmst.extram[addr])
-	case 5: // LHU
-		return uint32(binary.LittleEndian.Uint16(vmst.extram[addr:]))
-	}
-	return 0
-}
-
-// ExtramStore 根据指定的访问类型（字节、半字、字）将数据写入扩展内存。
-// 它处理地址转换和边界检查，并在写入后设置 `extramDirty` 标志。
-func (vmst *VmState) ExtramStore(addr, val, accessTyp uint32) {
-	if vmst.extram == nil {
-		return
-	}
-	addr -= VmEetRamBase
-	if addr >= vmst.extramLen {
-		vmst.SetStatusErr(VmErrMemWr)
-		return
-	}
-
-	switch accessTyp {
-	case 0: // SB
-		vmst.extram[addr] = byte(val)
-	case 1: // SH
-		binary.LittleEndian.PutUint16(vmst.extram[addr:], uint16(val))
-	case 2: // SW
-		binary.LittleEndian.PutUint32(vmst.extram[addr:], val)
-	}
-	vmst.extramDirty = true
 }

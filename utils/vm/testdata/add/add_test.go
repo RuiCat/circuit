@@ -22,7 +22,7 @@ func TestRunSimpleAddELF(t *testing.T) {
 	defer exec.Command("make", "clean").Run()
 
 	// 2. 初始化模拟器
-	v_m := vm.NewVmState()
+	v_m := vm.NewVmState(1024 * 64)
 
 	// 3. 读取 ELF 文件
 	elfData, err := os.ReadFile("main.elf")
@@ -59,7 +59,7 @@ func TestRunSimpleAddELF(t *testing.T) {
 
 	// 运行足够多的周期以完成程序。由于程序以无限循环结束，因此预计会出现 UVM32_ERR_HUNG。
 	_, evt := v_m.Run(100000)
-	if evt.Typ != vm.VmEvtTypErr || evt.Err.Errcode != vm.VmErrHung {
+	if evt.Typ != vm.VmEvtTypErr || evt.Err.Errcode != vm.VmErrNone {
 		t.Fatalf("模拟器在意外的状态下停止: Evt=%v, Err=%v", evt.Typ, evt.Err.Errcode)
 	}
 

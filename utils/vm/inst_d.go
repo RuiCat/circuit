@@ -1,7 +1,6 @@
 package vm
 
 import (
-	"encoding/binary"
 	"math"
 )
 
@@ -28,7 +27,7 @@ func handleLoadFP_D(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32
 	ofs_addr := addr - VmRamImageOffSet
 
 	// --- 边界检查 ---
-	if addr < VmRamImageOffSet || ofs_addr+8 > uint32(VmMemoRySize) {
+	if addr < VmRamImageOffSet || ofs_addr+8 > vmst.VmMemorySize {
 		vmst.Core.Mtval = addr
 		return 0, 0, 0, CAUSE_LOAD_ACCESS_FAULT
 	}
@@ -39,7 +38,7 @@ func handleLoadFP_D(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32
 	}
 
 	// --- 从内存加载数据 ---
-	val := binary.LittleEndian.Uint64(vmst.Memory[ofs_addr:])
+	val := vmst.LoadUint64(ofs_addr)
 
 	// --- 写入寄存器 ---
 	setFRegD(vmst, rd, math.Float64frombits(val))
@@ -63,7 +62,7 @@ func handleStoreFP_D(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint3
 	ofs_addr := addr - VmRamImageOffSet
 
 	// --- 边界检查 ---
-	if addr < VmRamImageOffSet || ofs_addr+8 > uint32(VmMemoRySize) {
+	if addr < VmRamImageOffSet || ofs_addr+8 > vmst.VmMemorySize {
 		vmst.Core.Mtval = addr
 		return 0, 0, 0, CAUSE_STORE_ACCESS_FAULT
 	}
@@ -77,6 +76,6 @@ func handleStoreFP_D(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint3
 	val_bits := math.Float64bits(getFRegD(vmst, rs2))
 
 	// --- 存入内存 ---
-	binary.LittleEndian.PutUint64(vmst.Memory[ofs_addr:], val_bits)
+	vmst.PutUint64(ofs_addr, val_bits)
 	return 0, 0, pc + 4, 0
 }

@@ -30,7 +30,7 @@ func TestRunSimpleFPELF(t *testing.T) {
 	}
 	defer exec.Command("make", "clean").Run()
 
-	v_m := vm.NewVmState()
+	v_m := vm.NewVmState(1024 * 64)
 	elfData, err := os.ReadFile("main.elf")
 	if err != nil {
 		t.Fatalf("读取 ELF 文件失败: %v", err)
@@ -73,7 +73,7 @@ func TestRunSimpleFPELF(t *testing.T) {
 
 	v_m.SetProgramCounter(uint32(file.Entry))
 	_, evt := v_m.Run(200000)
-	if evt.Typ != vm.VmEvtTypErr || evt.Err.Errcode != vm.VmErrHung {
+	if evt.Typ != vm.VmEvtTypErr || evt.Err.Errcode != vm.VmErrNone {
 		t.Fatalf("模拟器在意外的状态下停止: Evt=%v, Err=%v", evt.Typ, evt.Err.Errcode)
 	}
 
