@@ -347,7 +347,7 @@ func vshift_vx(vmst *VmState, vd, vs2, i, sew_bytes, op2 uint32) {
 
 // handleOPIVI 是 OPIVI (向量-立即数) 整数指令的主分发函数。
 // 它解码指令，验证参数，并为每个向量元素调用适当的处理器。
-func (vmst *VmState) handleOPIVI(ir uint32) int32 {
+func (vmst *VmState) handleOPIVI(ir uint32) VmMcauseCode {
 	// --- 解码 ---
 	funct6 := ir >> 26
 	vm := (ir >> 25) & 1
@@ -383,11 +383,11 @@ func (vmst *VmState) handleOPIVI(ir uint32) int32 {
 	}
 
 	vmst.Core.Vstart = 0
-	return 0
+	return CAUSE_TRAP_CODE_OK
 }
 
 // handleOPIVX 是 OPIVX (向量-标量) 整数指令的主分发函数。
-func (vmst *VmState) handleOPIVX(ir uint32) int32 {
+func (vmst *VmState) handleOPIVX(ir uint32) VmMcauseCode {
 	// --- 解码 ---
 	funct6 := ir >> 26
 	vm := (ir >> 25) & 1
@@ -423,5 +423,5 @@ func (vmst *VmState) handleOPIVX(ir uint32) int32 {
 	}
 
 	vmst.Core.Vstart = 0
-	return 0
+	return CAUSE_TRAP_CODE_OK
 }

@@ -4,9 +4,9 @@ package vm
 // 它通过解码指令的 `funct3` 字段来确定具体的向量操作类型，
 // 例如是向量-向量（OPIVV）、向量-立即数（OPIVI）、向量-标量（OPIVX），
 // 还是向量配置指令（vsetvl/vsetvli），然后调用相应的子处理器。
-func handleVector(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
+func handleVector(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	funct3 := (ir >> 12) & 0x7
-	var trap int32
+	var trap VmMcauseCode
 
 	// 将当前指令存储在VM状态中。这是一种简化实现的方式，允许子处理器（如此处的移位操作）
 	// 在需要时能访问到完整的指令编码，而无需在函数调用栈中层层传递。
@@ -35,13 +35,13 @@ func handleVector(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, 
 	if trap != 0 {
 		return 0, 0, 0, trap
 	}
-	return 0, 0, pc + 4, 0
+	return 0, 0, pc + 4, CAUSE_TRAP_CODE_OK
 }
 
 // handleVSETVL 实现了 `vsetvl` 和 `vsetvli` 指令，这是向量扩展的核心配置机制。
 // 这条指令根据两个输入——期望的向量长度（avl, 来自rs1或zimm）和类型配置（vtypei, 来自rs2或imm）——
 // 来设置两个关键的CSR：`vl`（实际向量长度）和 `vtype`（向量类型）。
-func (vmst *VmState) handleVSETVL(ir uint32) int32 {
+func (vmst *VmState) handleVSETVL(ir uint32) VmMcauseCode {
 	// --- 解码指令字段 ---
 	rdid := (ir >> 7) & 0x1f
 	rs1id := (ir >> 15) & 0x1f
@@ -87,7 +87,7 @@ func (vmst *VmState) handleVSETVL(ir uint32) int32 {
 			vmst.Core.Regs[rdid] = 0
 		}
 		vmst.Core.Vstart = 0
-		return 0
+		return CAUSE_TRAP_CODE_OK
 	}
 
 	vmst.Core.Vtype = vtypei
@@ -116,5 +116,5 @@ func (vmst *VmState) handleVSETVL(ir uint32) int32 {
 		vmst.Core.Regs[rdid] = new_vl
 	}
 
-	return 0
+	return CAUSE_TRAP_CODE_OK
 }

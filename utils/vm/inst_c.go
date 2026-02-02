@@ -10,7 +10,7 @@ func signExtend(val uint32, bits uint) uint32 {
 }
 
 // handleCompressed 是 16 位指令的处理入口
-func handleCompressed(vmst *VmState, ir16 uint16, pc uint32) (rdid, rval, newPC uint32, trap int32) {
+func handleCompressed(vmst *VmState, ir16 uint16, pc uint32) (rdid, rval, newPC uint32, trap VmMcauseCode) {
 	// RISC-V 压缩指令通过低 2 位决定象限 (Quadrant)
 	quadrant := ir16 & 0x3
 	switch quadrant {
@@ -26,7 +26,7 @@ func handleCompressed(vmst *VmState, ir16 uint16, pc uint32) (rdid, rval, newPC 
 }
 
 // handleC0 处理象限 0：主要是基于基址寄存器的加载/存储指令
-func handleC0(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, int32) {
+func handleC0(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	funct3 := (ir >> 13) & 0x7
 	rs1_p := (ir >> 7) & 0x7 // rd' / rs1'
 	rd_p := (ir >> 2) & 0x7  // rd' / rs2'
@@ -38,7 +38,7 @@ func handleC0(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, int3
 		if imm == 0 {
 			return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 		}
-		return CRegs[rd_p], vmst.Core.Regs[2] + imm, pc + 2, 0
+		return CRegs[rd_p], vmst.Core.Regs[2] + imm, pc + 2, CAUSE_TRAP_CODE_OK
 
 	case FUNCT3_C_LW: // C.LW: 加载字
 		// imm[6:2] 布局: 5=6, 10:12=5:3, 6=2
@@ -56,7 +56,7 @@ func handleC0(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, int3
 		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 
 	case FUNCT3_C_FLW, FUNCT3_C_FSW: // C.FLW, C.FSW (RV32 浮点暂占位实现)
-		return 0, 0, pc + 2, 0
+		return 0, 0, pc + 2, CAUSE_TRAP_CODE_OK
 
 	default:
 		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
@@ -64,7 +64,7 @@ func handleC0(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, int3
 }
 
 // handleC1 处理象限 1：算术、跳转和立即数指令
-func handleC1(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, int32) {
+func handleC1(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	funct3 := (ir >> 13) & 0x7
 	rd_rs1 := (ir >> 7) & 0x1f
 	imm6 := (uint32(ir>>12)&0x1)<<5 | uint32(ir>>2)&0x1f
@@ -72,20 +72,20 @@ func handleC1(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, int3
 	switch funct3 {
 	case FUNCT3_C_NOP_ADDI: // C.ADDI / C.NOP
 		if rd_rs1 == 0 {
-			return 0, 0, pc + 2, 0 // C.NOP
+			return 0, 0, pc + 2, CAUSE_TRAP_CODE_OK // C.NOP
 		}
 		imm := signExtend(imm6, 6)
-		return uint32(rd_rs1), vmst.Core.Regs[rd_rs1] + imm, pc + 2, 0
+		return uint32(rd_rs1), vmst.Core.Regs[rd_rs1] + imm, pc + 2, CAUSE_TRAP_CODE_OK
 
 	case FUNCT3_C_JAL: // C.JAL (RV32 专用)
 		offset := decodeCJImm(ir)
-		return 1, pc + 2, pc + offset, 0 // 返回地址存入 x1 (ra)
+		return 1, pc + 2, pc + offset, CAUSE_TRAP_CODE_OK // 返回地址存入 x1 (ra)
 
 	case FUNCT3_C_LI: // C.LI (Load Immediate)
 		if rd_rs1 == 0 {
-			return 0, 0, pc + 2, 0 // HINT
+			return 0, 0, pc + 2, CAUSE_TRAP_CODE_OK // HINT
 		}
-		return uint32(rd_rs1), signExtend(imm6, 6), pc + 2, 0
+		return uint32(rd_rs1), signExtend(imm6, 6), pc + 2, CAUSE_TRAP_CODE_OK
 
 	case FUNCT3_C_LUI_ADDI16SP: // C.LUI / C.ADDI16SP
 		if rd_rs1 == 2 { // C.ADDI16SP
@@ -103,16 +103,16 @@ func handleC1(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, int3
 			if final_imm == 0 {
 				return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 			}
-			return 2, uint32(int32(vmst.Core.Regs[2]) + final_imm), pc + 2, 0
+			return 2, uint32(int32(vmst.Core.Regs[2]) + final_imm), pc + 2, CAUSE_TRAP_CODE_OK
 		} else { // C.LUI
 			if rd_rs1 == 0 {
-				return 0, 0, pc + 2, 0 // HINT
+				return 0, 0, pc + 2, CAUSE_TRAP_CODE_OK // HINT
 			}
 			imm := signExtend(imm6, 6) << 12
 			if imm == 0 {
 				return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 			}
-			return uint32(rd_rs1), imm, pc + 2, 0
+			return uint32(rd_rs1), imm, pc + 2, CAUSE_TRAP_CODE_OK
 		}
 
 	case FUNCT3_C_MISC_ALU: // 杂项算术指令 (SRLI, SRAI, ANDI, 以及 R-type 压缩)
@@ -133,7 +133,7 @@ func handleC1(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, int3
 			case FUNCT2_C_ANDI:
 				res = vmst.Core.Regs[rd_p] & signExtend(imm6, 6) // ANDI
 			}
-			return rd_p, res, pc + 2, 0
+			return rd_p, res, pc + 2, CAUSE_TRAP_CODE_OK
 		case FUNCT2_C_REG_ALU: // C.SUB, C.XOR, C.OR, C.AND
 			rs2_p := CRegs[(ir>>2)&0x7]
 			funct2 := (ir >> 5) & 0x3
@@ -156,11 +156,11 @@ func handleC1(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, int3
 				// 这里保留原始逻辑中的 switch 结构
 				return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 			}
-			return rd_p, res, pc + 2, 0
+			return rd_p, res, pc + 2, CAUSE_TRAP_CODE_OK
 		}
 
 	case FUNCT3_C_J: // C.J (无条件跳转)
-		return 0, 0, pc + decodeCJImm(ir), 0
+		return 0, 0, pc + decodeCJImm(ir), CAUSE_TRAP_CODE_OK
 
 	case FUNCT3_C_BEQZ, FUNCT3_C_BNEZ: // C.BEQZ, C.BNEZ (条件分支)
 		rs1_p := CRegs[(ir>>7)&0x7]
@@ -170,15 +170,15 @@ func handleC1(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, int3
 			cond = !cond // BNEZ
 		}
 		if cond {
-			return 0, 0, pc + offset, 0
+			return 0, 0, pc + offset, CAUSE_TRAP_CODE_OK
 		}
-		return 0, 0, pc + 2, 0
+		return 0, 0, pc + 2, CAUSE_TRAP_CODE_OK
 	}
 	return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 }
 
 // handleC2 处理象限 2：栈指针相关加载/存储、跳转和寄存器指令
-func handleC2(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, int32) {
+func handleC2(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	funct3 := (ir >> 13) & 0x7
 	rd_rs1 := (uint32(ir) >> 7) & 0x1f
 	rs2 := (uint32(ir) >> 2) & 0x1f
@@ -187,7 +187,7 @@ func handleC2(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, int3
 	case FUNCT3_C_SLLI: // C.SLLI
 		shamt := (uint32(ir>>12)&1)<<5 | rs2
 		if rd_rs1 == 0 {
-			return 0, 0, pc + 2, 0 // HINT
+			return 0, 0, pc + 2, CAUSE_TRAP_CODE_OK // HINT
 		}
 		if shamt >= 32 {
 			return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
@@ -212,12 +212,12 @@ func handleC2(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, int3
 				if rd_rs1 == 0 {
 					return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 				}
-				return 0, 0, vmst.Core.Regs[rd_rs1] & ^uint32(1), 0
+				return 0, 0, vmst.Core.Regs[rd_rs1] & ^uint32(1), CAUSE_TRAP_CODE_OK
 			} else { // C.MV
 				if rd_rs1 == 0 {
-					return 0, 0, pc + 2, 0 // HINT
+					return 0, 0, pc + 2, CAUSE_TRAP_CODE_OK // HINT
 				}
-				return rd_rs1, vmst.Core.Regs[rs2], pc + 2, 0
+				return rd_rs1, vmst.Core.Regs[rs2], pc + 2, CAUSE_TRAP_CODE_OK
 			}
 		} else {
 			if rd_rs1 == 0 && rs2 == 0 { // C.EBREAK
@@ -227,12 +227,12 @@ func handleC2(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, int3
 					return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 				}
 				target := vmst.Core.Regs[rd_rs1] & ^uint32(1)
-				return 1, pc + 2, target, 0 // x1 = pc + 2
+				return 1, pc + 2, target, CAUSE_TRAP_CODE_OK // x1 = pc + 2
 			} else { // C.ADD
 				if rd_rs1 == 0 {
-					return 0, 0, pc + 2, 0 // HINT
+					return 0, 0, pc + 2, CAUSE_TRAP_CODE_OK // HINT
 				}
-				return rd_rs1, vmst.Core.Regs[rd_rs1] + vmst.Core.Regs[rs2], pc + 2, 0
+				return rd_rs1, vmst.Core.Regs[rd_rs1] + vmst.Core.Regs[rs2], pc + 2, CAUSE_TRAP_CODE_OK
 			}
 		}
 
@@ -246,7 +246,7 @@ func handleC2(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, int3
 	case FUNCT3_C_FLDSP, FUNCT3_C_FSDSP: // C.FLDSP, C.FSDSP (RV64 非法)
 		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 	case FUNCT3_C_FLWSP, FUNCT3_C_FSWSP: // C.FLWSP, C.FSWSP (RV32 浮点占位)
-		return 0, 0, pc + 2, 0
+		return 0, 0, pc + 2, CAUSE_TRAP_CODE_OK
 
 	default:
 		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
@@ -290,32 +290,31 @@ func decodeCBImm(ir uint16) uint32 {
 	return signExtend(uint32(imm), 9)
 }
 
-// 抽象加载逻辑
-func performLoad(vmst *VmState, addr uint32, rdid uint32, pc uint32) (uint32, uint32, uint32, int32) {
+// performLoad 抽象加载逻辑
+func performLoad(vmst *VmState, addr uint32, rdid uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	paddr, trap := vmst.TranslateAddress(addr, VmMemAccessLoad)
 	if trap != 0 {
 		vmst.Core.Mtval = addr
-		return 0, 0, 0, int32(trap)
+		return 0, 0, 0, trap
 	}
-	if paddr&3 != 0 {
+	val, ok := vmst.LoadUint32(paddr)
+	if !ok {
 		vmst.Core.Mtval = addr
-		return 0, 0, 0, CAUSE_LOAD_ADDRESS_MISALIGNED
+		return 0, 0, 0, CAUSE_LOAD_ACCESS_FAULT
 	}
-	val := vmst.LoadUint32(paddr)
-	return rdid, val, pc + 2, 0
+	return rdid, val, pc + 2, CAUSE_TRAP_CODE_OK
 }
 
-// 抽象存储逻辑
-func performStore(vmst *VmState, addr uint32, val uint32, pc uint32) (uint32, uint32, uint32, int32) {
+// performStore 抽象存储逻辑
+func performStore(vmst *VmState, addr uint32, val uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	paddr, trap := vmst.TranslateAddress(addr, VmMemAccessStore)
 	if trap != 0 {
 		vmst.Core.Mtval = addr
-		return 0, 0, 0, int32(trap)
+		return 0, 0, 0, trap
 	}
-	if paddr&3 != 0 {
+	if !vmst.PutUint32(paddr, val) {
 		vmst.Core.Mtval = addr
-		return 0, 0, 0, CAUSE_STORE_ADDRESS_MISALIGNED
+		return 0, 0, 0, CAUSE_STORE_ACCESS_FAULT
 	}
-	vmst.PutUint32(paddr, val)
-	return 0, 0, pc + 2, 0
+	return 0, 0, pc + 2, CAUSE_TRAP_CODE_OK
 }

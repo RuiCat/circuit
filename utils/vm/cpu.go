@@ -17,17 +17,17 @@ type VmInaState struct {
 	Privilege uint8  // 当前的特权级别 (0=User, 1=Supervisor, 3=Machine)。
 
 	// --- 机器模式控制与状态寄存器 (CSRs) ---
-	Mstatus  uint32 // 机器状态寄存器，包含全局中断使能和处理器模式等信息。
-	Mscratch uint32 // 机器模式下的一个暂存寄存器，供陷阱处理程序使用。
-	Mtvec    uint32 // 机器模式陷阱向量基地址，指向陷阱处理程序的入口。
-	Mideleg  uint32 // 机器中断委托寄存器。
-	Medeleg  uint32 // 机器异常委托寄存器。
-	Mie      uint32 // 机器中断使能寄存器，控制哪些中断可以被触发。
-	Mip      uint32 // 机器中断挂起寄存器，显示哪些中断正在等待处理。
-	Mepc     uint32 // 机器异常程序计数器，保存发生异常或中断时的指令地址。
-	Mtval    uint32 // 机器陷阱值寄存器，提供有关陷阱的额外信息（如无效地址或非法指令编码）。
-	Mcause   uint32 // 机器陷阱原因寄存器，指示发生陷阱的具体原因。
-	Misa     uint32 // MISA 寄存器，报告支持的指令集体系结构。
+	Mstatus  uint32       // 机器状态寄存器，包含全局中断使能和处理器模式等信息。
+	Mscratch uint32       // 机器模式下的一个暂存寄存器，供陷阱处理程序使用。
+	Mtvec    uint32       // 机器模式陷阱向量基地址，指向陷阱处理程序的入口。
+	Mideleg  uint32       // 机器中断委托寄存器。
+	Medeleg  uint32       // 机器异常委托寄存器。
+	Mie      uint32       // 机器中断使能寄存器，控制哪些中断可以被触发。
+	Mip      uint32       // 机器中断挂起寄存器，显示哪些中断正在等待处理。
+	Mepc     uint32       // 机器异常程序计数器，保存发生异常或中断时的指令地址。
+	Mtval    uint32       // 机器陷阱值寄存器，提供有关陷阱的额外信息（如无效地址或非法指令编码）。
+	Mcause   VmMcauseCode // 机器陷阱原因寄存器，指示发生陷阱的具体原因。
+	Misa     uint32       // MISA 寄存器，报告支持的指令集体系结构。
 
 	// --- 监控模式控制与状态寄存器 (CSRs) ---
 	Sstatus  uint32 // 监控模式状态寄存器。
@@ -108,7 +108,7 @@ func (vmst *VmState) CsrRead(csr uint32) (uint32, bool) {
 	case CSR_MEPC:
 		return vmst.Core.Mepc, true
 	case CSR_MCAUSE:
-		return vmst.Core.Mcause, true
+		return uint32(vmst.Core.Mcause), true
 	case CSR_MTVAL:
 		return vmst.Core.Mtval, true
 	case CSR_MIP:
@@ -119,6 +119,10 @@ func (vmst *VmState) CsrRead(csr uint32) (uint32, bool) {
 		return 0, true
 	case CSR_MVENDORID:
 		return 0, true // 标准规定，未实现时返回0。
+	case CSR_MARCHID:
+		return 0, true // 架构ID，未实现时返回0
+	case CSR_MIMPID:
+		return 0, true // 实现ID，未实现时返回0
 	case CSR_MCOUNTINHIBIT: // mcountinhibit - 机器模式计数器禁止寄存器
 		// 这是一个可读写的 CSR，用于控制性能计数器
 		// 位 0: 禁止 cycle 计数器
@@ -220,7 +224,7 @@ func (vmst *VmState) CsrWrite(csr uint32, value uint32) bool {
 	case CSR_MEPC:
 		vmst.Core.Mepc = value
 	case CSR_MCAUSE:
-		vmst.Core.Mcause = value
+		vmst.Core.Mcause = VmMcauseCode(value)
 	case CSR_MTVAL:
 		vmst.Core.Mtval = value
 	case CSR_MIP:
@@ -230,6 +234,10 @@ func (vmst *VmState) CsrWrite(csr uint32, value uint32) bool {
 		// 根据 RISC-V 规范，尝试写入只读 CSR 不会产生异常
 	case CSR_MVENDORID:
 		// MVENDORID 也是只读的，写入操作被忽略
+	case CSR_MARCHID:
+		// marchid 是只读寄存器，写入操作被忽略
+	case CSR_MIMPID:
+		// mimpid 是只读寄存器，写入操作被忽略
 	case CSR_MCOUNTINHIBIT: // mcountinhibit - 机器模式计数器禁止寄存器
 		// 这是一个可读写的 CSR，用于控制性能计数器
 		// 位 0: 禁止 cycle 计数器
@@ -283,90 +291,61 @@ func (vmst *VmState) CsrWrite(csr uint32, value uint32) bool {
 }
 
 // TranslateAddress 执行 Sv32 虚拟地址到物理地址的翻译。
-func (vmst *VmState) TranslateAddress(vaddr uint32, accessType int) (uint32, int32) {
-	// 检查地址翻译是否启用。
+func (vmst *VmState) TranslateAddress(vaddr uint32, accessType int) (uint32, VmMcauseCode) {
 	mode := (vmst.Core.Satp >> 31) & 1
-	if mode == 0 { // Bare 模式：不进行翻译
-		paddr := vaddr
-		if vaddr >= VmRamImageOffSet {
-			paddr = vaddr - VmRamImageOffSet
-		}
-		if paddr >= vmst.VmMemorySize {
-			// 物理地址越界
-			switch accessType {
-			case VmMemAccessInstruction:
-				return 0, CAUSE_INSTRUCTION_ACCESS_FAULT
-			case VmMemAccessLoad:
-				return 0, CAUSE_LOAD_ACCESS_FAULT
-			case VmMemAccessStore:
-				return 0, CAUSE_STORE_ACCESS_FAULT
-			}
-		}
-		return paddr, 0
+	if mode == 0 {
+		return vaddr, CAUSE_TRAP_CODE_OK
 	}
 
-	// --- Sv32 地址翻译 ---
-	// 从虚拟地址中提取字段
 	vpn1 := (vaddr >> 22) & 0x3FF
 	vpn0 := (vaddr >> 12) & 0x3FF
 	offset := vaddr & 0xFFF
 
-	// 1. 获取一级页表项 (PTE)
-	ptbr := (vmst.Core.Satp & 0x3FFFFF) * 4096 // 页表基地址
+	ptbr := (vmst.Core.Satp & 0x3FFFFF) * 4096
 	pte1_addr := ptbr + vpn1*4
-	if pte1_addr >= vmst.VmMemorySize {
+	pte1, ok := vmst.LoadUint32(pte1_addr)
+	if !ok {
 		return 0, pageFault(accessType)
 	}
-	pte1 := vmst.Memory.LoadUint32(pte1_addr)
 
-	// 2. 检查一级页表项
-	if (pte1 & 1) == 0 { // V 位为 0 (无效)
+	if (pte1 & 1) == 0 {
 		return 0, pageFault(accessType)
 	}
-	if (pte1 & 0b1110) != 0 { // R,W,X 位不全为 0，所以它是一个叶子页表项
-		// 检查巨页是否对齐
+	if (pte1 & 0b1110) != 0 {
 		if (pte1>>10)&0x3FF != 0 {
 			return 0, pageFault(accessType)
 		}
-		// 检查权限
 		if !checkPermissions(pte1, accessType) {
 			return 0, pageFault(accessType)
 		}
-		// 从巨页构建物理地址
-		// 根据Sv32规范：对于4MB巨页，PPN[1]是12位（PTE[31:20]），偏移是22位
-		ppn1 := (pte1 >> 20) & 0xFFF               // 12位PPN[1]
-		paddr := (ppn1 << 22) | (vaddr & 0x3FFFFF) // 34位物理地址 (物理地址高位被截断)
-		return paddr, 0
+		ppn1 := (pte1 >> 20) & 0xFFF
+		paddr := (ppn1 << 22) | (vaddr & 0x3FFFFF)
+		return paddr, CAUSE_TRAP_CODE_OK
 	}
 
-	// 3. 获取零级页表项 (PTE)
-	ppn := (pte1 >> 10) & 0x3FFFFF
-	pte0_addr := (ppn * 4096) + vpn0*4
-	if pte0_addr >= vmst.VmMemorySize {
+	ppn0 := (pte1 >> 10) & 0x3FFFFF
+	pte0_addr := (ppn0 * 4096) + vpn0*4
+
+	// 【修改】：删除 pte0_addr >= vmst.VmMemorySize 检查
+	pte0, ok := vmst.LoadUint32(pte0_addr)
+	if !ok {
 		return 0, pageFault(accessType)
 	}
-	pte0 := vmst.Memory.LoadUint32(pte0_addr)
 
-	// 4. 检查零级页表项
-	if (pte0 & 1) == 0 { // V 位为 0 (无效)
+	if (pte0 & 1) == 0 {
 		return 0, pageFault(accessType)
 	}
 	if !checkPermissions(pte0, accessType) {
 		return 0, pageFault(accessType)
 	}
 
-	// 5. 计算最终的物理地址
-	paddr := ((pte0 >> 10) & 0x3FFFFF) * 4096
-	final_paddr := paddr + offset
-	if final_paddr >= vmst.VmMemorySize {
-		return 0, pageFault(accessType)
-	}
-
-	return final_paddr, 0
+	final_paddr := ((pte0>>10)&0x3FFFFF)*4096 + offset
+	// 【修改】：删除 final_paddr >= vmst.VmMemorySize 检查
+	return final_paddr, CAUSE_TRAP_CODE_OK
 }
 
 // pageFault 根据访问类型返回相应的页错误代码。
-func pageFault(accessType int) int32 {
+func pageFault(accessType int) VmMcauseCode {
 	switch accessType {
 	case VmMemAccessInstruction:
 		return CAUSE_INSTRUCTION_PAGE_FAULT
@@ -396,21 +375,13 @@ func checkPermissions(pte uint32, accessType int) bool {
 }
 
 // handleTrap 管理 CPU 对异常和中断的响应。
-func (vmst *VmState) handleTrap(trap_code int32, trap_val uint32) {
-	is_interrupt := trap_code < 0
+func (vmst *VmState) handleTrap(trap_code VmMcauseCode, trap_val uint32) {
 	cause := uint32(trap_code & 0x7FFFFFFF) // 移除符号位以获取纯粹的原因码
-
 	// --- 1. 陷阱委托 ---
 	// 决定陷阱应该在哪个特权级别处理（M-mode 或 S-mode）。
 	var target_priv uint8
 	var deleg_reg uint32
-
-	if is_interrupt {
-		deleg_reg = vmst.Core.Mideleg // 中断委托
-	} else {
-		deleg_reg = vmst.Core.Medeleg // 异常委托
-	}
-
+	deleg_reg = vmst.Core.Medeleg // 异常委托
 	// 检查相应的原因位是否在委托寄存器中被设置
 	if vmst.Core.Privilege < PRIV_MACHINE && (deleg_reg&(1<<cause)) != 0 {
 		target_priv = PRIV_SUPERVISOR
@@ -423,7 +394,7 @@ func (vmst *VmState) handleTrap(trap_code int32, trap_val uint32) {
 	case PRIV_MACHINE:
 		// 在 M-mode 处理
 		vmst.Core.Mepc = vmst.Core.PC
-		vmst.Core.Mcause = uint32(trap_code)
+		vmst.Core.Mcause = trap_code
 		vmst.Core.Mtval = trap_val
 
 		// 更新 MSTATUS 寄存器
@@ -472,28 +443,33 @@ func (vmst *VmState) handleTrap(trap_code int32, trap_val uint32) {
 //
 //	int32: 如果发生陷阱或异常，则返回相应的陷阱代码；如果正常停止（例如通过 ecall 退出），
 //	       则返回 TRAP_CODE_EXIT；否则在执行完指定数量的指令后返回0。
-func (vmst *VmState) VmImaStep(count int) int32 {
+func (vmst *VmState) VmImaStep(count int) VmMcauseCode {
 	for i := 0; i < count; i++ {
 		pc := vmst.Core.PC
 		// --- 1. 指令获取 ---
+		// TranslateAddress 负责将虚拟地址转为物理地址 (Bare模式下返回原地址)
 		paddr, fetch_trap := vmst.TranslateAddress(pc, VmMemAccessInstruction)
 		if fetch_trap != 0 {
 			vmst.handleTrap(fetch_trap, pc)
 			return fetch_trap
 		}
+
 		// 所有指令必须至少2字节对齐
 		if paddr&1 != 0 {
 			vmst.handleTrap(CAUSE_INSTRUCTION_ADDRESS_MISALIGNED, pc)
 			return CAUSE_INSTRUCTION_ADDRESS_MISALIGNED
 		}
-		if paddr+2 > vmst.VmMemorySize {
+
+		ir16, ok := vmst.LoadUint16(paddr)
+		if !ok {
 			vmst.handleTrap(CAUSE_INSTRUCTION_ACCESS_FAULT, pc)
 			return CAUSE_INSTRUCTION_ACCESS_FAULT
 		}
-		ir16 := vmst.Memory.LoadUint16(paddr)
+
 		var rdid, rval, newPC uint32
-		var trap int32
+		var trap VmMcauseCode
 		var ir uint32
+
 		// --- 2. 解码与执行 ---
 		if (ir16 & 0x3) != 0x3 {
 			// 16位压缩指令
@@ -501,12 +477,12 @@ func (vmst *VmState) VmImaStep(count int) int32 {
 			rdid, rval, newPC, trap = handleCompressed(vmst, ir16, pc)
 		} else {
 			// 32位指令
-			if paddr+4 > vmst.VmMemorySize {
+			// 【修复】：使用 LoadUint32，它会自动处理偏移并检查边界
+			ir, ok = vmst.LoadUint32(paddr)
+			if !ok {
 				vmst.handleTrap(CAUSE_INSTRUCTION_ACCESS_FAULT, pc)
 				return CAUSE_INSTRUCTION_ACCESS_FAULT
 			}
-			// 从内存中读取完整的32位指令
-			ir = vmst.Memory.LoadUint32(paddr)
 			opcode := ir & 0x7f
 			handler, ok := Instructions[opcode]
 			if ok {
@@ -515,19 +491,18 @@ func (vmst *VmState) VmImaStep(count int) int32 {
 				rdid, rval, newPC, trap = handleIllegal(vmst, ir, pc)
 			}
 		}
+
 		// --- 3. 陷阱处理 ---
 		if trap != 0 {
-			if trap == TRAP_CODE_EXIT {
+			if trap == CAUSE_TRAP_CODE_OK {
 				return trap
 			}
-			// 对于大多数执行期间的陷阱，陷阱值是出错的指令。
 			trap_val := ir
-			if (ir16 & 0x3) != 0x3 { // 如果是压缩指令，陷阱值为16位指令
+			if (ir16 & 0x3) != 0x3 {
 				trap_val = uint32(ir16)
 			}
-			// 加载/存储故障是例外，它们应该提供故障地址。
+			// Load/Store 故障应该提供故障地址 (已经在处理程序中存入 Mtval)
 			if trap == CAUSE_LOAD_ACCESS_FAULT || trap == CAUSE_STORE_ACCESS_FAULT || trap == CAUSE_LOAD_ADDRESS_MISALIGNED || trap == CAUSE_STORE_ADDRESS_MISALIGNED {
-				// load/store 的处理程序应该已经更新了 Mtval/Stval。
 				switch vmst.Core.Privilege {
 				case PRIV_MACHINE:
 					trap_val = vmst.Core.Mtval
@@ -540,22 +515,24 @@ func (vmst *VmState) VmImaStep(count int) int32 {
 			vmst.handleTrap(trap, trap_val)
 			return trap
 		}
-		// --- 4. 更新性能计数器 ---
-		// 只有在计数器没有被禁止的情况下才递增
+
+		// --- 4. 更新计数器 ---
 		if (vmst.Core.Mcountinhibit & 0x1) == 0 {
 			vmst.Core.Mcycle++
 		}
 		if (vmst.Core.Mcountinhibit & 0x4) == 0 {
 			vmst.Core.Minstret++
 		}
+
 		// --- 5. 写回 ---
 		if rdid != 0 {
 			vmst.Core.Regs[rdid] = rval
 		}
+
 		// --- 6. 更新PC ---
 		vmst.Core.PC = newPC
 	}
-	return -1
+	return CAUSE_TRAP_CODE_OK
 }
 
 // GetVelementAddr 计算向量寄存器文件中某个逻辑元素的确切字节地址。

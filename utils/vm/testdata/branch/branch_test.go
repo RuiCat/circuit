@@ -34,10 +34,10 @@ func TestRunSimpleBranchELF(t *testing.T) {
 
 	for _, prog := range file.Progs {
 		if prog.Type == elf.PT_LOAD {
-			if prog.Paddr < vm.VmRamImageOffSet {
+			if prog.Paddr < uint64(v_m.RamImageOffSet) {
 				t.Fatalf("程序段地址 (0x%x) 无效", prog.Paddr)
 			}
-			memOffset := prog.Paddr - vm.VmRamImageOffSet
+			memOffset := prog.Paddr - uint64(v_m.RamImageOffSet)
 			if memOffset+prog.Filesz > uint64(len(v_m.GetMemory())) {
 				t.Fatalf("程序段对于模拟器内存来说太大了")
 			}
@@ -56,7 +56,7 @@ func TestRunSimpleBranchELF(t *testing.T) {
 	}
 
 	base_addr := uint32(0x80001000)
-	offset := base_addr - vm.VmRamImageOffSet
+	offset := base_addr - v_m.RamImageOffSet
 
 	tests := []struct {
 		name     string

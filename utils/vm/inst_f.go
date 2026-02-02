@@ -18,7 +18,7 @@ func setFRegS(vmst *VmState, frid uint32, val float32) {
 }
 
 // handleLoadFP 根据 funct3 字段分发浮点加载指令 (FLW, FLD)。
-func handleLoadFP(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
+func handleLoadFP(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	funct3 := (ir >> 12) & 0x7
 
 	switch funct3 {
@@ -33,31 +33,30 @@ func handleLoadFP(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, 
 }
 
 // handleLoadFP_S 处理 FLW (浮点加载单字) 指令。
-func handleLoadFP_S(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
+func handleLoadFP_S(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	rs1id := (ir >> 15) & 0x1f
 	rdid := (ir >> 7) & 0x1f
 	imm := int32(ir&0xfff00000) >> 20
 	addr := vmst.Core.Regs[rs1id] + uint32(imm)
-	ofs_addr := addr - VmRamImageOffSet
 
-	// 边界检查
-	if addr < VmRamImageOffSet || ofs_addr+4 > vmst.VmMemorySize {
-		vmst.Core.Mtval = addr
-		return 0, 0, 0, CAUSE_LOAD_ACCESS_FAULT
-	}
 	// 对齐检查
-	if ofs_addr&3 != 0 {
+	if addr&3 != 0 {
 		vmst.Core.Mtval = addr
 		return 0, 0, 0, CAUSE_LOAD_ADDRESS_MISALIGNED
 	}
 	// 从内存加载32位值
-	setFRegS(vmst, rdid, math.Float32frombits(vmst.LoadUint32(ofs_addr)))
+	val, ok := vmst.LoadUint32(addr)
+	if !ok {
+		vmst.Core.Mtval = addr
+		return 0, 0, 0, CAUSE_LOAD_ACCESS_FAULT
+	}
+	setFRegS(vmst, rdid, math.Float32frombits(val))
 	// 浮点加载指令不写入通用寄存器，因此返回 rdid = 0。
-	return 0, 0, pc + 4, 0
+	return 0, 0, pc + 4, CAUSE_TRAP_CODE_OK
 }
 
 // handleStoreFP 根据 funct3 字段分发浮点存储指令 (FSW, FSD)。
-func handleStoreFP(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
+func handleStoreFP(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	funct3 := (ir >> 12) & 0x7
 
 	switch funct3 {
@@ -71,7 +70,7 @@ func handleStoreFP(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32,
 }
 
 // handleStoreFP_S 处理 FSW (浮点存储单字) 指令。
-func handleStoreFP_S(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
+func handleStoreFP_S(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	rs1id := (ir >> 15) & 0x1f
 	rs2id := (ir >> 20) & 0x1f
 
@@ -82,21 +81,19 @@ func handleStoreFP_S(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint3
 	imm := int32(imm_unsigned<<20) >> 20
 
 	addr := vmst.Core.Regs[rs1id] + uint32(imm)
-	ofs_addr := addr - VmRamImageOffSet
 
-	// 边界检查
-	if addr < VmRamImageOffSet || ofs_addr+4 > vmst.VmMemorySize {
-		vmst.Core.Mtval = addr
-		return 0, 0, 0, CAUSE_STORE_ACCESS_FAULT
-	}
 	// 对齐检查
-	if ofs_addr&3 != 0 {
+	if addr&3 != 0 {
 		vmst.Core.Mtval = addr
 		return 0, 0, 0, CAUSE_STORE_ADDRESS_MISALIGNED
 	}
 
-	vmst.PutUint32(ofs_addr, math.Float32bits(getFRegS(vmst, rs2id)))
-	return 0, 0, pc + 4, 0
+	ok := vmst.PutUint32(addr, math.Float32bits(getFRegS(vmst, rs2id)))
+	if !ok {
+		vmst.Core.Mtval = addr
+		return 0, 0, 0, CAUSE_STORE_ACCESS_FAULT
+	}
+	return 0, 0, pc + 4, CAUSE_TRAP_CODE_OK
 }
 
 // handleOpFPHelper 是 handleOpFP 的辅助函数，处理 F/D 扩展的非转换、
@@ -250,7 +247,7 @@ func handleOpFPHelper(vmst *VmState, ir uint32, _ uint32, funct7 uint32,
 // handleOpFP 处理所有单精度和双精度浮点操作指令 (F/D 扩展)。
 // 它解码 funct7, funct3 和 rs2 字段以确定具体的操作。
 // 通过一个集中的 switch 语句处理所有情况。
-func handleOpFP(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
+func handleOpFP(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	rdid := (ir >> 7) & 0x1f
 	rs1id := (ir >> 15) & 0x1f
 	rs2id := (ir >> 20) & 0x1f
@@ -275,7 +272,7 @@ func handleOpFP(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, in
 	if ok {
 		// 如果指令被 handleOpFPHelper 成功处理，则将结果写入浮点寄存器
 		vmst.Core.FRegs[rdid] = result_bits
-		return 0, 0, pc + 4, 0
+		return 0, 0, pc + 4, CAUSE_TRAP_CODE_OK
 	}
 
 	switch funct7 {
@@ -291,7 +288,7 @@ func handleOpFP(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, in
 			return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 		}
 		int_rdid, int_rval = rdid, uint32(val)
-		return int_rdid, int_rval, pc + 4, 0
+		return int_rdid, int_rval, pc + 4, CAUSE_TRAP_CODE_OK
 	case FUNCT7_FCVT_S_W:
 		var result_f float32
 		switch rs2id {
@@ -314,7 +311,7 @@ func handleOpFP(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, in
 			return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 		}
 		int_rdid, int_rval = rdid, uint32(val)
-		return int_rdid, int_rval, pc + 4, 0
+		return int_rdid, int_rval, pc + 4, CAUSE_TRAP_CODE_OK
 	case FUNCT7_FCVT_D_W:
 		var result_d float64
 		switch rs2id {
@@ -356,7 +353,7 @@ func handleOpFP(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, in
 			int_rval = 1
 		}
 		int_rdid = rdid
-		return int_rdid, int_rval, pc + 4, 0
+		return int_rdid, int_rval, pc + 4, CAUSE_TRAP_CODE_OK
 	case FUNCT7_FEQ_FLT_FLE_D:
 		var cmp_result bool
 		switch funct3 {
@@ -373,17 +370,17 @@ func handleOpFP(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, in
 			int_rval = 1
 		}
 		int_rdid = rdid
-		return int_rdid, int_rval, pc + 4, 0
+		return int_rdid, int_rval, pc + 4, CAUSE_TRAP_CODE_OK
 
 	// --- F/D 扩展：移动和分类 ---
 	case FUNCT7_FMV_X_W_FCLASS_S: // FMV.X.W 和 FCLASS.S
 		switch funct3 {
 		case FUNCT3_FMV_X_W: // FMV.X.W
 			int_rdid, int_rval = rdid, uint32(vmst.Core.FRegs[rs1id])
-			return int_rdid, int_rval, pc + 4, 0
+			return int_rdid, int_rval, pc + 4, CAUSE_TRAP_CODE_OK
 		case FUNCT3_FCLASS_S: // FCLASS.S
 			int_rdid, int_rval = rdid, classify_float32(fs1)
-			return int_rdid, int_rval, pc + 4, 0
+			return int_rdid, int_rval, pc + 4, CAUSE_TRAP_CODE_OK
 		default:
 			return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 		}
@@ -393,11 +390,11 @@ func handleOpFP(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, in
 		switch funct3 {
 		case FUNCT3_FCLASS_D: // FCLASS.D
 			int_rdid, int_rval = rdid, classify_float64(fd1)
-			return int_rdid, int_rval, pc + 4, 0
+			return int_rdid, int_rval, pc + 4, CAUSE_TRAP_CODE_OK
 		case FUNCT3_FMV_X_D: // FMV.X.D (RV64D)
 			// In RV32, this moves the lower 32 bits of the double-precision float
 			int_rdid, int_rval = rdid, uint32(vmst.Core.FRegs[rs1id])
-			return int_rdid, int_rval, pc + 4, 0
+			return int_rdid, int_rval, pc + 4, CAUSE_TRAP_CODE_OK
 		default:
 			return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 		}
@@ -410,7 +407,7 @@ func handleOpFP(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, in
 
 	// 对于结果为浮点数的指令，写回浮点寄存器
 	vmst.Core.FRegs[rdid] = result_bits
-	return 0, 0, pc + 4, 0
+	return 0, 0, pc + 4, CAUSE_TRAP_CODE_OK
 }
 
 func isNaN_S(f float32) bool {
@@ -478,7 +475,7 @@ func classify_float64(f float64) uint32 {
 // handleFMA 处理所有浮点乘加（Fused Multiply-Add, FMA）指令。
 // 这是一个 R4 类型的指令，使用三个源寄存器（rs1, rs2, rs3）。
 // 格式: fmadd.s rd, rs1, rs2, rs3
-func handleFMA(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
+func handleFMA(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	rdid := (ir >> 7) & 0x1f
 	rs1id := (ir >> 15) & 0x1f
 	rs2id := (ir >> 20) & 0x1f
@@ -533,5 +530,5 @@ func handleFMA(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int
 	}
 
 	vmst.Core.FRegs[rdid] = result_bits
-	return 0, 0, pc + 4, 0
+	return 0, 0, pc + 4, CAUSE_TRAP_CODE_OK
 }

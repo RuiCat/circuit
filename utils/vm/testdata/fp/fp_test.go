@@ -56,10 +56,10 @@ func TestRunSimpleFPELF(t *testing.T) {
 
 	for _, prog := range file.Progs {
 		if prog.Type == elf.PT_LOAD {
-			if prog.Paddr < vm.VmRamImageOffSet {
+			if prog.Paddr < uint64(v_m.RamImageOffSet) {
 				t.Fatalf("程序段地址 (0x%x) 无效", prog.Paddr)
 			}
-			memOffset := prog.Paddr - uint64(vm.VmRamImageOffSet)
+			memOffset := prog.Paddr - uint64(v_m.RamImageOffSet)
 			if memOffset+prog.Filesz > uint64(len(v_m.GetMemory())) {
 				t.Fatalf("程序段对于模拟器内存来说太大了")
 			}
@@ -77,7 +77,7 @@ func TestRunSimpleFPELF(t *testing.T) {
 		t.Fatalf("模拟器在意外的状态下停止: Evt=%v, Err=%v", evt.Typ, evt.Err.Errcode)
 	}
 
-	offset := uint32(resultAreaAddr - vm.VmRamImageOffSet)
+	offset := uint32(resultAreaAddr - uint64(v_m.RamImageOffSet))
 	mem := v_m.GetMemory()
 
 	// --- 验证结果 ---

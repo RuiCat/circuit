@@ -24,13 +24,6 @@ const (
 	VmMemAccessStore       = 2
 )
 
-// --- 内存布局常量 ---
-// 定义了VM的内存模型和地址空间。
-const (
-	VmRamImageOffSet = 0x80000000 // RAM 在地址空间中的起始偏移。加载的程序镜像将从这里开始。
-	VmEetRamBase     = 0x10000000 // 扩展RAM的基地址（如果支持）。
-)
-
 // --- VM 错误码 ---
 // VmErr 定义了VM在运行过程中可能遇到的各种错误类型。
 const (
@@ -69,29 +62,31 @@ const (
 	VmStatusEnded                   // 3: 执行已结束。
 )
 
-// --- 特殊陷阱代码 ---
-// 定义了内部使用的特殊陷阱代码。
-const (
-	TRAP_CODE_EXIT = -1 // 一个特殊的内部代码，用于表示程序通过 syscall 正常退出。
-)
-
 // --- RISC-V 机器级陷阱原因 ---
 // 这些常量对应于 RISC-V 规范中定义的 `mcause` 寄存器的值。
+type VmMcauseCode uint32
+
 const (
-	CAUSE_INSTRUCTION_ADDRESS_MISALIGNED = 0  // 异常：指令地址未对齐。
-	CAUSE_INSTRUCTION_ACCESS_FAULT       = 1  // 异常：指令访问故障（例如，从无执行权限的内存区域取指）。
-	CAUSE_ILLEGAL_INSTRUCTION            = 2  // 异常：遇到非法或不支持的指令。
-	CAUSE_BREAKPOINT                     = 3  // 异常：执行 `EBREAK` 指令。
-	CAUSE_LOAD_ADDRESS_MISALIGNED        = 4  // 异常：加载地址未对齐。
-	CAUSE_LOAD_ACCESS_FAULT              = 5  // 异常：加载访问故障（例如，从无效地址加载）。
-	CAUSE_STORE_ADDRESS_MISALIGNED       = 6  // 异常：存储或AMO（原子操作）地址未对齐。
-	CAUSE_STORE_ACCESS_FAULT             = 7  // 异常：存储或AMO访问故障。
-	CAUSE_USER_ECALL                     = 8  // 异常：在用户模式下执行 `ECALL`。
-	CAUSE_SUPERVISOR_ECALL               = 9  // 异常：在监控模式下执行 `ECALL`。
-	CAUSE_MACHINE_ECALL                  = 11 // 异常：在机器模式下执行 `ECALL`。
-	CAUSE_INSTRUCTION_PAGE_FAULT         = 12 // 页错误：取指时发生。
-	CAUSE_LOAD_PAGE_FAULT                = 13 // 页错误：加载时发生。
-	CAUSE_STORE_PAGE_FAULT               = 15 // 页错误：存储时发生。
+	CAUSE_TRAP_CODE_OK                   VmMcauseCode = iota // 指令正常
+	CAUSE_INSTRUCTION_ADDRESS_MISALIGNED                     // 异常：指令地址未对齐。
+	CAUSE_INSTRUCTION_ACCESS_FAULT                           // 异常：指令访问故障（例如，从无执行权限的内存区域取指）。
+	CAUSE_ILLEGAL_INSTRUCTION                                // 异常：遇到非法或不支持的指令。
+	CAUSE_BREAKPOINT                                         // 异常：执行 `EBREAK` 指令。
+	CAUSE_LOAD_ADDRESS_MISALIGNED                            // 异常：加载地址未对齐。
+	CAUSE_LOAD_ACCESS_FAULT                                  // 异常：加载访问故障（例如，从无效地址加载）。
+	CAUSE_STORE_ADDRESS_MISALIGNED                           // 异常：存储或AMO（原子操作）地址未对齐。
+	CAUSE_STORE_ACCESS_FAULT                                 // 异常：存储或AMO访问故障。
+	CAUSE_USER_ECALL                                         // 异常：在用户模式下执行 `ECALL`。
+	CAUSE_SUPERVISOR_ECALL                                   // 异常：在监控模式下执行 `ECALL`。
+	CAUSE_MACHINE_ECALL                                      // 异常：在机器模式下执行 `ECALL`。
+	CAUSE_INSTRUCTION_PAGE_FAULT                             // 页错误：取指时发生。
+	CAUSE_LOAD_PAGE_FAULT                                    // 页错误：加载时发生。
+	CAUSE_STORE_PAGE_FAULT                                   // 页错误：存储时发生。
+)
+
+// 中断原因码（最高位为1表示中断）
+const (
+	CAUSE_MACHINE_TIMER_INTERRUPT VmMcauseCode = 0x80000007 // 机器定时器中断
 )
 
 // --- CSR (Control and Status Register) 地址 ---
@@ -128,6 +123,8 @@ const (
 	CSR_MIP       = 0x344 // M: 机器中断挂起。
 	CSR_MHARTID   = 0xF14 // M: 机器模式硬件线程ID（只读）。
 	CSR_MVENDORID = 0xF11 // M: 供应商ID（只读）。
+	CSR_MARCHID   = 0xF12 // M: 架构ID寄存器（只读）。
+	CSR_MIMPID    = 0xF13 // M: 实现ID寄存器（只读）。
 
 	// --- 机器模式性能计数器 CSRs ---
 	CSR_MCYCLE          = 0xb00 // M: 机器模式周期计数器（低32位）。

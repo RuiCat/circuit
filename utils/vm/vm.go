@@ -55,14 +55,15 @@ type VmState struct {
 func NewVmState(VmMemorySize uint32) *VmState {
 	vmst := &VmState{
 		Memory: Memory{
-			Data:         make([]byte, int(VmMemorySize)),
-			VmMemorySize: VmMemorySize,
+			Data:           make([]byte, int(VmMemorySize)),
+			VmMemorySize:   VmMemorySize,
+			RamImageOffSet: 0x80000000, // RAM 在地址空间中的起始偏移。加载的程序镜像将从这里开始。
 		},
 	}
 	// 将程序计数器（PC）初始化为RAM镜像的起始偏移量。
-	vmst.Core.PC = VmRamImageOffSet
+	vmst.Core.PC = vmst.RamImageOffSet
 	// 将栈指针（sp, x2）设置在主内存的末尾，并确保16字节对齐。
-	vmst.Core.Regs[2] = ((VmRamImageOffSet + vmst.VmMemorySize) &^ 0xF) - 16
+	vmst.Core.Regs[2] = ((vmst.RamImageOffSet + vmst.VmMemorySize) &^ 0xF) - 16
 	// 设置 MISA 寄存器，表明支持 RV32IMAFD 扩展。
 	// MXL=1 (RV32), I, M, A, F, D 扩展。
 	vmst.Core.Misa = 0x40001129
@@ -77,7 +78,7 @@ func (vmst *VmState) Load(rom []byte) bool {
 	if len(rom) > int(vmst.VmMemorySize) {
 		return false
 	}
-	vmst.Memory.Load(rom)
+	vmst.Load(rom)
 	vmst.StackCanary = nil
 	return true
 }
@@ -121,68 +122,83 @@ func (vmst *VmState) Run(instr_meter uint32) (uint32, VmEvt) {
 		instr_meter = 1
 		orig_instr_meter = 1
 	}
-
-	vmst.extramDirty = false
-
 	if vmst.Status != VmStatusPaused {
 		vmst.SetStatusErr(VmErrNotrEady)
 		evt.Typ = VmEvtTypErr
 		evt.Err.Errcode = vmst.Err
+		evt.Err.Errstr = vmst.errToString(vmst.Err)
 		return 0, evt
 	}
-
 	vmst.SetStatus(VmStatusRunnIng)
-
 	for vmst.Status == VmStatusRunnIng && instr_meter > 0 {
+		// 只有当全局中断开启 (MIE) 时才处理
+		if (vmst.Core.Mstatus & MSTATUS_MIE) != 0 {
+			// 检查哪些中断被使能 (mie) 且 正在挂起 (mip)
+			enabled_interrupts := vmst.Core.Mie & vmst.Core.Mip
+			if (enabled_interrupts & (1 << 7)) != 0 {
+				vmst.handleTrap(CAUSE_MACHINE_TIMER_INTERRUPT, vmst.Core.PC)
+			}
+		}
 		// 执行单条指令，并获取执行结果（陷阱码）。
 		ret := vmst.VmImaStep(1)
+		// 中断调用
+		if vmst.Dm != nil {
+			vmst.Dm.FindTick(vmst)
+		}
 		instr_meter--
-
+		// 处理指令执行结果
 		switch ret {
-		case -1: // OK, 指令成功执行，无异常
-		case 12: // ECALL, 捕获到 ecall 指令
-			syscall := vmst.Core.Regs[17] // a7 寄存器传递系统调用号
-			vmst.Core.PC += 4             // ecall 不会自动增加PC，需要手动处理
-			switch syscall {
-			case VmSysCallHalt: // 虚拟机主动暂停
-				vmst.SetStatus(VmStatusEnded)
-			default: // 其他系统调用
-				// 准备系统调用事件，以便外部环境处理
-				vmst.Ioevt.Typ = VmEvtTypSysCall
-				vmst.Ioevt.Syscall.Code = syscall
-				vmst.Ioevt.Syscall.Ret = &vmst.Core.Regs[12]       // a2, 用于返回值
-				vmst.Ioevt.Syscall.Params[0] = &vmst.Core.Regs[10] // a0, 第一个参数
-				vmst.Ioevt.Syscall.Params[1] = &vmst.Core.Regs[11] // a1, 第二个参数
-				vmst.SetStatus(VmStatusPaused)                     // 暂停虚拟机，等待外部处理
-			}
-		case 6: // 加载访问故障 (Load Access Fault)
+		case CAUSE_TRAP_CODE_OK:
+		case CAUSE_INSTRUCTION_PAGE_FAULT,
+			CAUSE_LOAD_ADDRESS_MISALIGNED,
+			CAUSE_LOAD_ACCESS_FAULT,
+			CAUSE_INSTRUCTION_ADDRESS_MISALIGNED,
+			CAUSE_INSTRUCTION_ACCESS_FAULT,
+			CAUSE_LOAD_PAGE_FAULT:
+			vmst.Core.Mcause = ret
 			vmst.SetStatusErr(VmErrMemRd)
-		default: // 未处理的异常
+		case CAUSE_STORE_ACCESS_FAULT,
+			CAUSE_STORE_ADDRESS_MISALIGNED,
+			CAUSE_STORE_PAGE_FAULT:
+			vmst.Core.Mcause = ret
+			vmst.SetStatusErr(VmErrMemWr)
+		case CAUSE_ILLEGAL_INSTRUCTION:
+			vmst.Core.Mcause = ret
+			vmst.SetStatusErr(VmErrIntErnalCore)
+		case CAUSE_BREAKPOINT,
+			CAUSE_USER_ECALL,
+			CAUSE_SUPERVISOR_ECALL,
+			CAUSE_MACHINE_ECALL:
+			// 生成系统调用事件而不是错误
+			vmst.Core.Mcause = ret
+			vmst.Ioevt.Typ = VmEvtTypSysCall
+			vmst.Ioevt.Syscall.Code = vmst.Core.Regs[17]       // a7寄存器包含系统调用号
+			vmst.Ioevt.Syscall.Params[0] = &vmst.Core.Regs[10] // a0
+			vmst.Ioevt.Syscall.Params[1] = &vmst.Core.Regs[11] // a1
+			vmst.Ioevt.Syscall.Ret = &vmst.Core.Regs[10]       // a0作为返回值
+			vmst.SetStatus(VmStatusPaused)
+			return orig_instr_meter - instr_meter, vmst.Ioevt
+		default:
+			vmst.Core.Mcause = ret
 			vmst.SetStatusErr(VmErrIntErnalCore)
 		}
-
 		if vmst.Status == VmStatusRunnIng && instr_meter == 0 {
 			vmst.SetStatus(VmStatusPaused)
 		}
-
 	}
-
 	executed_instrs := orig_instr_meter - instr_meter
-
 	if vmst.Status == VmStatusEnded {
 		evt.Typ = VmEvtTypEnd
 		return executed_instrs, evt
 	}
-
 	if vmst.Status == VmStatusPaused {
 		return executed_instrs, vmst.Ioevt
 	}
-
 	if vmst.Status == VmStatusError {
 		evt.Typ = VmEvtTypErr
 		evt.Err.Errcode = vmst.Err
+		evt.Err.Errstr = vmst.errToString(vmst.Err)
 	}
-
 	return executed_instrs, evt
 }
 
@@ -238,5 +254,29 @@ func (vmst *VmState) argToPtr(evt *VmEvt, arg VmArg) *uint32 {
 	default:
 		vmst.SetStatusErr(VmErrArgs)
 		return &vmst.Garbage
+	}
+}
+
+// errToString 将错误代码转换为可读的字符串描述
+func (vmst *VmState) errToString(err VmErr) string {
+	switch err {
+	case VmErrNone:
+		return "无错误"
+	case VmErrNotrEady:
+		return "虚拟机尚未准备好执行"
+	case VmErrMemRd:
+		return "内存读取错误"
+	case VmErrMemWr:
+		return "内存写入错误"
+	case VmErrBadSysCall:
+		return "无效的系统调用代码"
+	case VmErrHung:
+		return "虚拟机挂起"
+	case VmErrIntErnalCore:
+		return "内部核心逻辑错误"
+	case VmErrArgs:
+		return "传递给VM的参数错误"
+	default:
+		return "未知错误"
 	}
 }

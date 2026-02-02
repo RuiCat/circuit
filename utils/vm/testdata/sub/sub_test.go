@@ -39,10 +39,10 @@ func TestRunSimpleSubELF(t *testing.T) {
 	// 4. 将 ELF 段加载到模拟器内存
 	for _, prog := range file.Progs {
 		if prog.Type == elf.PT_LOAD {
-			if prog.Paddr < vm.VmRamImageOffSet {
+			if prog.Paddr < uint64(v_m.RamImageOffSet) {
 				t.Fatalf("程序段地址 (0x%x) 无效", prog.Paddr)
 			}
-			memOffset := prog.Paddr - vm.VmRamImageOffSet
+			memOffset := prog.Paddr - uint64(v_m.RamImageOffSet)
 			if memOffset+prog.Filesz > uint64(len(v_m.GetMemory())) {
 				t.Fatalf("程序段对于模拟器内存来说太大了")
 			}
@@ -63,7 +63,7 @@ func TestRunSimpleSubELF(t *testing.T) {
 	// 6. 验证结果
 	// 在我们的 simple_sub 程序中，结果存储在地址 0x80001000
 	result_addr_ram := uint32(0x80001000)
-	result_offset := result_addr_ram - vm.VmRamImageOffSet
+	result_offset := result_addr_ram - v_m.RamImageOffSet
 	final_val := binary.LittleEndian.Uint32(v_m.GetMemory()[result_offset:])
 
 	expected_val := uint32(5)

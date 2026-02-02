@@ -15,7 +15,7 @@ package vm
 //	rval:  要写入目标寄存器的 32 位值。
 //	newPC: 下一条指令的程序计数器。对于大多数指令，它是 pc + 4；对于跳转指令，它是目标地址。
 //	trap:  如果在执行过程中发生异常（例如，非法指令、内存访问错误），则返回相应的陷阱代码；否则，返回 0。
-type InstructionFunc func(vmst *VmState, ir uint32, pc uint32) (rdid uint32, rval uint32, newPC uint32, trap int32)
+type InstructionFunc func(vmst *VmState, ir uint32, pc uint32) (rdid uint32, rval uint32, newPC uint32, trap VmMcauseCode)
 
 // OpiviFunc 是处理 OPIVI（向量-立即数）整数指令的函数类型。
 type OpiviFunc func(vmst *VmState, vd, vs2, i, sew_bytes, imm, imm5 uint32)
@@ -72,7 +72,7 @@ func init() {
 
 // handleIllegal 是 `instructions` 映射中任何未注册操作码的回退处理程序。
 // 它总是返回一个非法指令陷阱。
-func handleIllegal(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
+func handleIllegal(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	// 设置陷阱值（非法指令本身）
 	if vmst != nil {
 		vmst.Core.Mtval = ir
@@ -83,29 +83,29 @@ func handleIllegal(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32,
 // handleLUI 处理 LUI (加载高位立即数) 指令。
 // LUI 指令将一个 20 位立即数加载到目标寄存器的高 20 位，并清除低 12 位。
 // 格式: lui 目标寄存器, 立即数
-func handleLUI(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
+func handleLUI(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	rdid := (ir >> 7) & 0x1f
 	// U-Type 指令的立即数在 [31:12] 位
 	rval := ir & 0xfffff000
-	return rdid, rval, pc + 4, 0
+	return rdid, rval, pc + 4, CAUSE_TRAP_CODE_OK
 }
 
 // handleAUIPC 处理 AUIPC (PC加高位立即数) 指令。
 // AUIPC 指令将一个 20 位立即数（左移 12 位）加到当前 PC，并将结果存入目标寄存器。
 // 它主要用于生成 PC 相关的地址。
 // 格式: auipc 目标寄存器, 立即数
-func handleAUIPC(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
+func handleAUIPC(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	rdid := (ir >> 7) & 0x1f
 	imm := ir & 0xfffff000
 	rval := pc + imm
-	return rdid, rval, pc + 4, 0
+	return rdid, rval, pc + 4, CAUSE_TRAP_CODE_OK
 }
 
 // handleJAL 处理 JAL (跳转并链接) 指令。
 // JAL 指令将 pc+4 的值存入目标寄存器 rd，然后无条件跳转到 `pc + 20-bit signed offset`。
 // 偏移量根据 J-Type 格式从指令字中重新组合。
 // 格式: jal 目标寄存器, 偏移量
-func handleJAL(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
+func handleJAL(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	rdid := (ir >> 7) & 0x1f
 	rval := pc + 4
 
@@ -119,27 +119,27 @@ func handleJAL(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int
 		imm |= 0xfff00000 // 符号扩展到 32 位 uint32
 	}
 
-	return rdid, rval, pc + imm, 0
+	return rdid, rval, pc + imm, CAUSE_TRAP_CODE_OK
 }
 
 // handleJALR 处理 JALR (寄存器跳转并链接) 指令。
 // JALR 指令将 pc+4 的值存入目标寄存器 rd，然后跳转到 `rs1 + 12-bit signed immediate` 的地址。
 // 目标地址的最低有效位总是被清除。
 // 格式: jalr 目标寄存器, 源寄存器1, 偏移量
-func handleJALR(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
+func handleJALR(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	rs1id := (ir >> 15) & 0x1f
 	rdid := (ir >> 7) & 0x1f
 	imm := int32(ir&0xfff00000) >> 20 // 12位符号扩展
 	rval := pc + 4
 	newPC := (vmst.Core.Regs[rs1id] + uint32(imm)) & 0xfffffffe
-	return rdid, rval, newPC, 0
+	return rdid, rval, newPC, CAUSE_TRAP_CODE_OK
 }
 
 // handleBranch 处理所有条件分支指令 (BEQ, BNE, BLT, BGE, BLTU, BGEU)。
 // 它比较寄存器 rs1 和 rs2 的值，如果条件满足，则跳转到 `pc + 12-bit signed offset`。
 // 偏移量根据 B-Type 格式从指令字中重新组合。
 // 格式: beq 源寄存器1, 源寄存器2, 偏移量
-func handleBranch(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
+func handleBranch(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	rs1id := (ir >> 15) & 0x1f
 	rs2id := (ir >> 20) & 0x1f
 	funct3 := (ir >> 12) & 0x7
@@ -174,17 +174,17 @@ func handleBranch(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, 
 		if (imm & 0x1000) != 0 {
 			imm |= 0xffffe000
 		}
-		return 0, 0, pc + imm, 0
+		return 0, 0, pc + imm, CAUSE_TRAP_CODE_OK
 	}
 
-	return 0, 0, pc + 4, 0
+	return 0, 0, pc + 4, CAUSE_TRAP_CODE_OK
 }
 
 // handleLoad 处理所有加载指令 (LB, LH, LW, LBU, LHU)。
 // 它计算有效地址 `rs1 + offset`，从内存中读取数据，然后将其写入目标寄存器 rd。
 // 它还执行内存边界检查和地址对齐检查。
 // 格式: lw 目标寄存器, 偏移量(源寄存器1)
-func handleLoad(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
+func handleLoad(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	rs1id := (ir >> 15) & 0x1f
 	rdid := (ir >> 7) & 0x1f
 	funct3 := (ir >> 12) & 0x7
@@ -192,108 +192,115 @@ func handleLoad(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, in
 	imm := int32(ir&0xfff00000) >> 20
 
 	// 计算内存访问的绝对地址
-	addr := vmst.Core.Regs[rs1id] + uint32(imm)
+	vaddr := vmst.Core.Regs[rs1id] + uint32(imm)
+	paddr, trap := vmst.TranslateAddress(vaddr, VmMemAccessLoad)
+	if trap != 0 {
+		return 0, 0, 0, trap
+	}
 
 	var rval uint32
-	var access_size uint32
-
-	// 根据 funct3 确定访问大小
-	switch funct3 {
-	case FUNCT3_LB, FUNCT3_LBU: // 加载字节
-		access_size = 1
-	case FUNCT3_LH, FUNCT3_LHU: // 加载半字
-		access_size = 2
-	case FUNCT3_LW: // 加载字
-		access_size = 4
-	default:
-		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
-	}
-
-	// 将绝对地址转换为 VM 内存切片中的偏移量
-	ofs_addr := addr - VmRamImageOffSet
-	// 边界检查：确保访问在有效的 RAM 范围内
-	if addr < VmRamImageOffSet || ofs_addr+access_size > vmst.VmMemorySize {
-		// 设置陷阱值（故障地址）
-		switch vmst.Core.Privilege {
-		case PRIV_MACHINE:
-			vmst.Core.Mtval = addr
-		case PRIV_SUPERVISOR:
-			vmst.Core.Stval = addr
-		default:
-			// 用户模式，设置机器模式的值
-			vmst.Core.Mtval = addr
-		}
-		return 0, 0, 0, CAUSE_LOAD_ACCESS_FAULT
-	}
+	var ok bool
 
 	// 根据 funct3 执行具体的加载操作
 	switch funct3 {
 	case FUNCT3_LB: // LB (加载字节, 有符号)
 		// 读取一个字节并进行符号扩展
-		// 使用内存访问函数
-		rval = uint32(int8(vmst.LoadUint8(ofs_addr)))
+		var b uint8
+		b, ok = vmst.LoadUint8(paddr)
+		if !ok {
+			// 设置陷阱值（故障地址）
+			switch vmst.Core.Privilege {
+			case PRIV_MACHINE:
+				vmst.Core.Mtval = vaddr
+			case PRIV_SUPERVISOR:
+				vmst.Core.Stval = vaddr
+			default:
+				// 用户模式，设置机器模式的值
+				vmst.Core.Mtval = vaddr
+			}
+			return 0, 0, 0, CAUSE_LOAD_ACCESS_FAULT
+		}
+		rval = uint32(int8(b))
 	case FUNCT3_LH: // LH (加载半字, 有符号)
-		// 地址对齐检查
-		if ofs_addr&1 != 0 {
-			// 设置陷阱值（故障地址）
-			switch vmst.Core.Privilege {
-			case PRIV_MACHINE:
-				vmst.Core.Mtval = addr
-			case PRIV_SUPERVISOR:
-				vmst.Core.Stval = addr
-			default:
-				// 用户模式，设置机器模式的值
-				vmst.Core.Mtval = addr
-			}
-			return 0, 0, 0, CAUSE_LOAD_ADDRESS_MISALIGNED
-		}
 		// 读取一个半字并进行符号扩展
-		rval = uint32(int16(vmst.LoadUint16(ofs_addr)))
-	case FUNCT3_LW: // LW (加载字)
-		// 地址对齐检查
-		if ofs_addr&3 != 0 {
+		var b uint16
+		b, ok = vmst.LoadUint16(paddr)
+		if !ok {
 			// 设置陷阱值（故障地址）
 			switch vmst.Core.Privilege {
 			case PRIV_MACHINE:
-				vmst.Core.Mtval = addr
+				vmst.Core.Mtval = vaddr
 			case PRIV_SUPERVISOR:
-				vmst.Core.Stval = addr
+				vmst.Core.Stval = vaddr
 			default:
 				// 用户模式，设置机器模式的值
-				vmst.Core.Mtval = addr
+				vmst.Core.Mtval = vaddr
 			}
-			return 0, 0, 0, CAUSE_LOAD_ADDRESS_MISALIGNED
+			return 0, 0, 0, CAUSE_LOAD_ACCESS_FAULT
 		}
-		rval = vmst.LoadUint32(ofs_addr)
+		rval = uint32(int16(b))
+	case FUNCT3_LW: // LW (加载字)
+		rval, ok = vmst.LoadUint32(paddr)
+		if !ok {
+			// 设置陷阱值（故障地址）
+			switch vmst.Core.Privilege {
+			case PRIV_MACHINE:
+				vmst.Core.Mtval = vaddr
+			case PRIV_SUPERVISOR:
+				vmst.Core.Stval = vaddr
+			default:
+				// 用户模式，设置机器模式的值
+				vmst.Core.Mtval = vaddr
+			}
+			return 0, 0, 0, CAUSE_LOAD_ACCESS_FAULT
+		}
 	case FUNCT3_LBU: // LBU (加载字节, 无符号)
 		// 读取一个字节并进行零扩展
-		rval = uint32(vmst.LoadUint8(ofs_addr))
-	case FUNCT3_LHU: // LHU (加载半字, 无符号)
-		// 地址对齐检查
-		if ofs_addr&1 != 0 {
+		var b uint8
+		b, ok = vmst.LoadUint8(paddr)
+		if !ok {
 			// 设置陷阱值（故障地址）
 			switch vmst.Core.Privilege {
 			case PRIV_MACHINE:
-				vmst.Core.Mtval = addr
+				vmst.Core.Mtval = vaddr
 			case PRIV_SUPERVISOR:
-				vmst.Core.Stval = addr
+				vmst.Core.Stval = vaddr
 			default:
 				// 用户模式，设置机器模式的值
-				vmst.Core.Mtval = addr
+				vmst.Core.Mtval = vaddr
 			}
-			return 0, 0, 0, CAUSE_LOAD_ADDRESS_MISALIGNED
+			return 0, 0, 0, CAUSE_LOAD_ACCESS_FAULT
 		}
+		rval = uint32(b)
+	case FUNCT3_LHU: // LHU (加载半字, 无符号)
 		// 读取一个半字并进行零扩展
-		rval = uint32(vmst.LoadUint16(ofs_addr))
+		var b uint16
+		b, ok = vmst.LoadUint16(paddr)
+		if !ok {
+			// 设置陷阱值（故障地址）
+			switch vmst.Core.Privilege {
+			case PRIV_MACHINE:
+				vmst.Core.Mtval = vaddr
+			case PRIV_SUPERVISOR:
+				vmst.Core.Stval = vaddr
+			default:
+				// 用户模式，设置机器模式的值
+				vmst.Core.Mtval = vaddr
+			}
+			return 0, 0, 0, CAUSE_LOAD_ACCESS_FAULT
+		}
+		rval = uint32(b)
+	default:
+		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 	}
-	return rdid, rval, pc + 4, 0
+	return rdid, rval, pc + 4, CAUSE_TRAP_CODE_OK
 }
 
 // handleStore 处理所有存储指令 (SB, SH, SW)。
 // 它计算有效地址 `rs1 + offset` 并将寄存器 rs2 的值写入内存。
 // 它还执行内存边界检查和地址对齐检查。
 // 格式: sw rs2, offset(rs1)
-func handleStore(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
+func handleStore(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	rs1id := (ir >> 15) & 0x1f
 	rs2id := (ir >> 20) & 0x1f
 	funct3 := (ir >> 12) & 0x7
@@ -304,81 +311,74 @@ func handleStore(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, i
 	imm_unsigned := (imm_11_5 << 5) | imm_4_0
 	imm := int32(imm_unsigned<<20) >> 20 // 符号扩展
 
-	addr := vmst.Core.Regs[rs1id] + uint32(imm)
+	// 计算内存访问的绝对地址
+	vaddr := vmst.Core.Regs[rs1id] + uint32(imm)
+	paddr, trap := vmst.TranslateAddress(vaddr, VmMemAccessStore)
+	if trap != 0 {
+		return 0, 0, 0, trap
+	}
+
 	rs2 := vmst.Core.Regs[rs2id]
-	var access_size uint32
-
-	// 根据 funct3 确定访问大小
-	switch funct3 {
-	case FUNCT3_SB: // SB
-		access_size = 1
-	case FUNCT3_SH: // SH
-		access_size = 2
-	case FUNCT3_SW: // SW
-		access_size = 4
-	default:
-		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
-	}
-
-	// 边界检查
-	ofs_addr := addr - VmRamImageOffSet
-	if addr < VmRamImageOffSet || ofs_addr+access_size > vmst.VmMemorySize {
-		// 设置陷阱值（故障地址）
-		switch vmst.Core.Privilege {
-		case PRIV_MACHINE:
-			vmst.Core.Mtval = addr
-		case PRIV_SUPERVISOR:
-			vmst.Core.Stval = addr
-		default:
-			// 用户模式，设置机器模式的值
-			vmst.Core.Mtval = addr
-		}
-		return 0, 0, 0, CAUSE_STORE_ACCESS_FAULT
-	}
+	var ok bool
 
 	// 根据 funct3 执行具体的存储操作
 	switch funct3 {
 	case FUNCT3_SB: // SB (Store Byte)
-		vmst.PutUint8(ofs_addr, byte(rs2))
+		ok = vmst.PutUint8(paddr, byte(rs2))
+		if !ok {
+			// 设置陷阱值（故障地址）
+			switch vmst.Core.Privilege {
+			case PRIV_MACHINE:
+				vmst.Core.Mtval = vaddr
+			case PRIV_SUPERVISOR:
+				vmst.Core.Stval = vaddr
+			default:
+				// 用户模式，设置机器模式的值
+				vmst.Core.Mtval = vaddr
+			}
+			return 0, 0, 0, CAUSE_STORE_ACCESS_FAULT
+		}
 	case FUNCT3_SH: // SH (Store Half-word)
-		if ofs_addr&1 != 0 {
+		ok = vmst.PutUint16(paddr, uint16(rs2))
+		if !ok {
 			// 设置陷阱值（故障地址）
 			switch vmst.Core.Privilege {
 			case PRIV_MACHINE:
-				vmst.Core.Mtval = addr
+				vmst.Core.Mtval = vaddr
 			case PRIV_SUPERVISOR:
-				vmst.Core.Stval = addr
+				vmst.Core.Stval = vaddr
 			default:
 				// 用户模式，设置机器模式的值
-				vmst.Core.Mtval = addr
+				vmst.Core.Mtval = vaddr
 			}
-			return 0, 0, 0, CAUSE_STORE_ADDRESS_MISALIGNED
+			return 0, 0, 0, CAUSE_STORE_ACCESS_FAULT
 		}
-		vmst.PutUint16(ofs_addr, uint16(rs2))
 	case FUNCT3_SW: // SW (Store Word)
-		if ofs_addr&3 != 0 {
+		ok = vmst.PutUint32(paddr, rs2)
+		if !ok {
 			// 设置陷阱值（故障地址）
 			switch vmst.Core.Privilege {
 			case PRIV_MACHINE:
-				vmst.Core.Mtval = addr
+				vmst.Core.Mtval = vaddr
 			case PRIV_SUPERVISOR:
-				vmst.Core.Stval = addr
+				vmst.Core.Stval = vaddr
 			default:
 				// 用户模式，设置机器模式的值
-				vmst.Core.Mtval = addr
+				vmst.Core.Mtval = vaddr
 			}
-			return 0, 0, 0, CAUSE_STORE_ADDRESS_MISALIGNED
+			return 0, 0, 0, CAUSE_STORE_ACCESS_FAULT
 		}
-		vmst.PutUint32(ofs_addr, rs2)
+	default:
+		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 	}
 	// 存储指令不写入通用寄存器
-	return 0, 0, pc + 4, 0
+	return 0, 0, pc + 4, CAUSE_TRAP_CODE_OK
 }
 
 // handleOpImm 处理所有立即数算术和逻辑指令 (ADDI, SLTI, XORI, SLLI 等)。
 // 它对 rs1 和一个 12 位立即数进行操作，并将结果存入 rd。
 // 格式: addi rd, rs1, immediate
-func handleOpImm(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
+func handleOpImm(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	rs1id := (ir >> 15) & 0x1f
 	rdid := (ir >> 7) & 0x1f
 	funct3 := (ir >> 12) & 0x7
@@ -421,13 +421,13 @@ func handleOpImm(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, i
 	default:
 		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 	}
-	return rdid, rval, pc + 4, 0
+	return rdid, rval, pc + 4, CAUSE_TRAP_CODE_OK
 }
 
 // handleOp 处理所有寄存器-寄存器算术和逻辑指令 (ADD, SUB, SLT, XOR, SLL 等)。
 // 它对 rs1 和 rs2 寄存器进行操作，并将结果存入 rd。
 // 格式: add rd, rs1, rs2
-func handleOp(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
+func handleOp(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	rs1id := (ir >> 15) & 0x1f
 	rs2id := (ir >> 20) & 0x1f
 	rdid := (ir >> 7) & 0x1f
@@ -513,11 +513,11 @@ func handleOp(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int3
 			return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 		}
 	}
-	return rdid, rval, pc + 4, 0
+	return rdid, rval, pc + 4, CAUSE_TRAP_CODE_OK
 }
 
 // handleSystem 处理系统级指令，包括 ECALL、EBREAK 和 CSR（控制和状态寄存器）指令。
-func handleSystem(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
+func handleSystem(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	rs1id := (ir >> 15) & 0x1f
 	rdid := (ir >> 7) & 0x1f
 	funct3 := (ir >> 12) & 0x7
@@ -553,7 +553,7 @@ func handleSystem(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, 
 			vmst.Core.Mstatus |= (1 << 7)
 			// 5. PC 跳转到 MEPC
 			newPC := vmst.Core.Mepc
-			return 0, 0, newPC, 0
+			return 0, 0, newPC, CAUSE_TRAP_CODE_OK
 		case FUNCT12_SRET:
 			// 从 S-mode 陷阱返回
 			// 1. 恢复特权级别
@@ -568,10 +568,10 @@ func handleSystem(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, 
 			vmst.Core.Sstatus |= (1 << 5)
 			// 5. PC 跳转到 SEPC
 			newPC := vmst.Core.Sepc
-			return 0, 0, newPC, 0
+			return 0, 0, newPC, CAUSE_TRAP_CODE_OK
 		default:
 			// 其他特权指令，如 WFI, SFENCE.VMA 等
-			return 0, 0, pc + 4, 0 // 当前实现为 NOP
+			return 0, 0, pc + 4, CAUSE_TRAP_CODE_OK // 当前实现为 NOP
 		}
 	case FUNCT3_CSRRW, FUNCT3_CSRRS, FUNCT3_CSRRC, FUNCT3_CSRRWI, FUNCT3_CSRRSI, FUNCT3_CSRRCI:
 		csr_val, ok := vmst.CsrRead(csr)
@@ -602,7 +602,7 @@ func handleSystem(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, 
 		if !vmst.CsrWrite(csr, new_csr_val) {
 			return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 		}
-		return rdid, rval, pc + 4, 0
+		return rdid, rval, pc + 4, CAUSE_TRAP_CODE_OK
 	default:
 		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 	}
@@ -610,7 +610,7 @@ func handleSystem(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, 
 
 // handleMiscMem 处理杂项内存指令，包括 FENCE 和 FENCE.I。
 // 这些指令用于在复杂的内存模型中强制执行内存访问的顺序。
-func handleMiscMem(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
+func handleMiscMem(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	funct3 := (ir >> 12) & 0x7
 
 	switch funct3 {
@@ -631,7 +631,7 @@ func handleMiscMem(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32,
 		// 这个模拟器是单核的，并且严格按程序顺序执行指令，没有乱序执行或多级缓存。
 		// 任何内存写入都会立即反映在主内存中。因此，FENCE 指令所要保证的顺序性在这里是天然满足的。
 		// 将其视为空操作（NOP）是正确且标准的简化实现。
-		return 0, 0, pc + 4, 0
+		return 0, 0, pc + 4, CAUSE_TRAP_CODE_OK
 	case 1: // FENCE.I
 		// --- FENCE.I 指令的完整作用 ---
 		//
@@ -647,7 +647,7 @@ func handleMiscMem(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32,
 		// 我们的模拟器没有实现分离的数据缓存和指令缓存。每次取指都是直接从 `vmst.Memory` 字节数组中读取。
 		// 因此，不存在指令缓存与主存不一致的问题。任何对内存的写入都会立即对下一次取指可见。
 		// 所以，FENCE.I 在此也可以安全地实现为空操作（NOP）。
-		return 0, 0, pc + 4, 0
+		return 0, 0, pc + 4, CAUSE_TRAP_CODE_OK
 	default:
 		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 	}

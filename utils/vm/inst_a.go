@@ -3,7 +3,7 @@ package vm
 // handleAMO 处理所有原子内存操作指令 (A 扩展)。
 // 这些指令以原子方式读取、修改并写回内存位置。
 // 格式: amoadd.w rd, rs2, (rs1)
-func handleAMO(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int32) {
+func handleAMO(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmMcauseCode) {
 	// --- 解码指令字段 ---
 	rs1id := (ir >> 15) & 0x1f
 	rs2id := (ir >> 20) & 0x1f
@@ -26,13 +26,6 @@ func handleAMO(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int
 		return 0, 0, 0, CAUSE_STORE_ADDRESS_MISALIGNED
 	}
 
-	ofs_addr := addr - VmRamImageOffSet
-	// 边界检查
-	if addr < VmRamImageOffSet || ofs_addr+4 > vmst.VmMemorySize {
-		vmst.Core.Mtval = addr
-		return 0, 0, 0, CAUSE_STORE_ACCESS_FAULT
-	}
-
 	// 任何原子操作都会使 Load Reservation 失效
 	// LR 和 SC 有特殊处理
 	is_lr_sc := funct5 == FUNCT5_LR || funct5 == FUNCT5_SC
@@ -45,9 +38,12 @@ func handleAMO(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int
 	case FUNCT5_LR:
 		// LR.W (Load-Reserved Word)
 		// 从内存加载值，设置保留地址，并将值写入 rd
-		rval := vmst.Memory.LoadUint32(ofs_addr)
+		rval, ok := vmst.LoadUint32(addr)
+		if !ok {
+			return 0, 0, 0, CAUSE_STORE_ACCESS_FAULT
+		}
 		vmst.Core.LoadReservation = addr
-		return rdid, rval, pc + 4, 0
+		return rdid, rval, pc + 4, CAUSE_TRAP_CODE_OK
 
 	case FUNCT5_SC:
 		// SC.W (Store-Conditional Word)
@@ -55,18 +51,21 @@ func handleAMO(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int
 		if addr == vmst.Core.LoadReservation {
 			// 成功：将 rs2 的值写入内存，rd 置为0
 			val_to_store := vmst.Core.Regs[rs2id]
-			vmst.Memory.PutUint32(ofs_addr, val_to_store)
+			vmst.PutUint32(addr, val_to_store)
 			vmst.Core.LoadReservation = 0 // 清除保留
-			return rdid, 0, pc + 4, 0
+			return rdid, 0, pc + 4, CAUSE_TRAP_CODE_OK
 		} else {
 			// 失败：不写入内存，rd 置为1
-			return rdid, 1, pc + 4, 0
+			return rdid, 1, pc + 4, CAUSE_TRAP_CODE_OK
 		}
 
 	default:
 		// --- 其他原子操作 (Read-Modify-Write) ---
 		// 1. 读取原始值
-		original_val := vmst.Memory.LoadUint32(ofs_addr)
+		original_val, ok := vmst.LoadUint32(addr)
+		if !ok {
+			return 0, 0, 0, CAUSE_STORE_ACCESS_FAULT
+		}
 		rs2_val := vmst.Core.Regs[rs2id]
 		var result uint32
 
@@ -112,9 +111,10 @@ func handleAMO(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, int
 		}
 
 		// 3. 将计算结果写回内存
-		vmst.Memory.PutUint32(ofs_addr, result)
-
+		if !vmst.PutUint32(addr, result) {
+			return 0, 0, 0, CAUSE_STORE_ACCESS_FAULT
+		}
 		// 4. 将原始值写入目标寄存器 rd
-		return rdid, original_val, pc + 4, 0
+		return rdid, original_val, pc + 4, CAUSE_TRAP_CODE_OK
 	}
 }

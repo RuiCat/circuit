@@ -28,7 +28,7 @@ func init() {
 
 // handleVFPOPIVV 是 OPFVV (向量-向量) 浮点指令的主分发函数。
 // 它解码指令，验证参数，并对向量中的每个元素执行操作。
-func (vmst *VmState) handleVFPOPIVV(ir uint32) int32 {
+func (vmst *VmState) handleVFPOPIVV(ir uint32) VmMcauseCode {
 	// --- 解码 ---
 	funct6 := ir >> 26
 	vm := (ir >> 25) & 1
@@ -80,11 +80,11 @@ func (vmst *VmState) handleVFPOPIVV(ir uint32) int32 {
 	}
 
 	vmst.Core.Vstart = 0 // 重置 vstart
-	return 0
+	return CAUSE_TRAP_CODE_OK
 }
 
 // handleVFPOPIVF 是 OPFVF (向量-标量) 浮点指令的主分发函数。
-func (vmst *VmState) handleVFPOPIVF(ir uint32) int32 {
+func (vmst *VmState) handleVFPOPIVF(ir uint32) VmMcauseCode {
 	// --- 解码 ---
 	funct6 := ir >> 26
 	vm := (ir >> 25) & 1
@@ -128,5 +128,5 @@ func (vmst *VmState) handleVFPOPIVF(ir uint32) int32 {
 	}
 
 	vmst.Core.Vstart = 0
-	return 0
+	return CAUSE_TRAP_CODE_OK
 }
