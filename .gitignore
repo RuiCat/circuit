@@ -33,6 +33,5 @@ go.work.sum
 cmd
 utils/vm/testdata/linux_kernel
 test
-app
 go.mod
 go.sum
