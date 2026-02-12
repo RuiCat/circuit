@@ -34,41 +34,41 @@ func (con *Context) Rollback() {
 func (con *Context) CallMark(mark Mark) {
 	switch mark {
 	case MarkReset:
-		for _, v := range con.Nodelist {
-			ElementList[v.Base().NodeType].Reset(v)
+		for i := range con.Nodelist {
+			ElementList[con.Nodelist[i].Base().NodeType].Reset(con.Nodelist[i])
 		}
 		con.MnaUpdateType.MnaType.A.Zero()
 		con.MnaUpdateType.MnaType.Z.Zero()
 		con.Update()
 	case MarkUpdateElements:
 		con.UpdateX()
-		for _, elem := range con.Nodelist {
-			elem.Base().Update()
+		for i := range con.Nodelist {
+			con.Nodelist[i].Base().Update()
 		}
 	case MarkRollbackElements:
 		con.RollbackX()
-		for _, elem := range con.Nodelist {
-			elem.Base().Rollback()
+		for i := range con.Nodelist {
+			con.Nodelist[i].Base().Rollback()
 		}
 	case MarkStartIteration:
-		for _, v := range con.Nodelist {
-			ElementList[v.Base().NodeType].StartIteration(con, con.Time, v)
+		for i := range con.Nodelist {
+			ElementList[con.Nodelist[i].Base().NodeType].StartIteration(con, con.Time, con.Nodelist[i])
 		}
 	case MarkStamp:
-		for _, v := range con.Nodelist {
-			ElementList[v.Base().NodeType].Stamp(con, con.Time, v)
+		for i := range con.Nodelist {
+			ElementList[con.Nodelist[i].Base().NodeType].Stamp(con, con.Time, con.Nodelist[i])
 		}
 	case MarkDoStep:
-		for _, v := range con.Nodelist {
-			ElementList[v.Base().NodeType].DoStep(con, con.Time, v)
+		for i := range con.Nodelist {
+			ElementList[con.Nodelist[i].Base().NodeType].DoStep(con, con.Time, con.Nodelist[i])
 		}
 	case MarkCalculateCurrent:
-		for _, v := range con.Nodelist {
-			ElementList[v.Base().NodeType].CalculateCurrent(con, con.Time, v)
+		for i := range con.Nodelist {
+			ElementList[con.Nodelist[i].Base().NodeType].CalculateCurrent(con, con.Time, con.Nodelist[i])
 		}
 	case MarkStepFinished:
-		for _, v := range con.Nodelist {
-			ElementList[v.Base().NodeType].StepFinished(con, con.Time, v)
+		for i := range con.Nodelist {
+			ElementList[con.Nodelist[i].Base().NodeType].StepFinished(con, con.Time, con.Nodelist[i])
 		}
 	default:
 		log.Fatalf("未知 CallMark 操作: %d", mark)

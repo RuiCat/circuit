@@ -183,8 +183,8 @@ func (dm *dataManager[T]) ResizeInPlace(newLength int) {
 func (dm *dataManager[T]) NonZeroCount() int {
 	count := 0
 	var zero T
-	for _, v := range dm.data {
-		if v != zero {
+	for i := range dm.data {
+		if dm.data[i] != zero {
 			count++
 		}
 	}

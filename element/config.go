@@ -15,8 +15,8 @@ type Pin struct {
 // SetPin 设置引脚。
 func SetPin(pinType PinType, pin ...string) (pins []Pin) {
 	pins = make([]Pin, len(pin))
-	for i, n := range pin {
-		pins[i].Name = n
+	for i := range pin {
+		pins[i].Name = pin[i]
 		pins[i].Type = pinType
 	}
 	return pins

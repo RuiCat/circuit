@@ -63,27 +63,27 @@ func (parseTree *ParseTree) String() {
 	for i, n := range parseTree.ElementNodes {
 		fmt.Printf("\n元件 %d: %s%s (行号: %d)\n", i+1, n.Type, n.ID, n.Line)
 		fmt.Printf("  引脚 (%d 个): ", len(n.Pins))
-		for j, pin := range n.Pins {
-			fmt.Printf("%s(variable:%v) ", pin.Value, pin.IsVar)
+		for j := range n.Pins {
+			fmt.Printf("%s(variable:%v) ", n.Pins[j].Value, n.Pins[j].IsVar)
 			if j < len(n.Pins)-1 {
 				fmt.Printf(", ")
 			}
 		}
 		fmt.Printf("\n")
 		fmt.Printf("  值 (%d 个): ", len(n.Values))
-		for j, val := range n.Values {
-			fmt.Printf("%s(variable:%v) ", val.Value, val.IsVar)
+		for j := range n.Values {
+			fmt.Printf("%s(variable:%v) ", n.Values[j].Value, n.Values[j].IsVar)
 			if j < len(n.Values)-1 {
 				fmt.Printf(", ")
 			}
 		}
 		fmt.Printf("\n")
 	}
-	for Name, Value := range parseTree.ValueNodes {
-		fmt.Printf("\n值设置: %s = %s\n", Name, Value)
+	for Name := range parseTree.ValueNodes {
+		fmt.Printf("\n值设置: %s = %s\n", Name, parseTree.ValueNodes[Name])
 	}
-	for i, n := range parseTree.CommentNodes {
-		fmt.Printf("\n注释 %d (行号: %d): %s\n", i+1, n.Line, n.Text)
+	for i := range parseTree.CommentNodes {
+		fmt.Printf("\n注释 %d (行号: %d): %s\n", i+1, parseTree.CommentNodes[i].Line, parseTree.CommentNodes[i].Text)
 	}
 }
 
@@ -362,8 +362,8 @@ func SplitTokens(data []byte, atEOF bool) (advance int, token []byte, err error)
 	if atEOF && len(data) == 0 {
 		return 0, nil, nil
 	}
-	for i, v := range data {
-		switch v {
+	for i := range data {
+		switch data[i] {
 		case '#':
 			return bufio.ScanLines(data, atEOF)
 		case '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '+', '-':

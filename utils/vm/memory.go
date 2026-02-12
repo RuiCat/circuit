@@ -38,8 +38,9 @@ func (dm *DeviceManager) AddDevice(dev Device) {
 }
 
 // FindDevice 根据地址查找设备
-func (dm *DeviceManager) FindDevice(addr uint32) (Device, uint32) {
-	for _, dev := range dm.devices {
+func (dm *DeviceManager) FindDevice(addr uint32) (dev Device, _ uint32) {
+	for i := range dm.devices {
+		dev = dm.devices[i]
 		base := dev.GetBaseAddr()
 		size := dev.GetSize()
 		if addr >= base && addr < base+size {
@@ -51,8 +52,8 @@ func (dm *DeviceManager) FindDevice(addr uint32) (Device, uint32) {
 
 // FindTick 周期调用
 func (dm *DeviceManager) FindTick(vmst *VmState) {
-	for _, dev := range dm.devices {
-		dev.Tick(vmst)
+	for i := range dm.devices {
+		dm.devices[i].Tick(vmst)
 	}
 }
 

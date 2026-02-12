@@ -130,9 +130,9 @@ func (m *subMatrix[T]) BuildFromDense(dense [][]T) {
 	if len(dense) != m.rows || (len(dense) > 0 && len(dense[0]) != m.cols) {
 		panic("dense matrix dimension mismatch")
 	}
-	for r, rowData := range dense {
-		for c, val := range rowData {
-			m.Set(r, c, val)
+	for r := range dense {
+		for c := range dense[r] {
+			m.Set(r, c, dense[r][c])
 		}
 	}
 }

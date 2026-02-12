@@ -193,8 +193,8 @@ func (um *updateMatrix[T]) Copy(a Matrix[T]) {
 		}
 		um.Matrix.Copy(target.Matrix)
 		target.cache = make(map[int][16]T)
-		for k, v := range um.cache {
-			target.cache[k] = v
+		for k := range um.cache {
+			target.cache[k] = um.cache[k]
 		}
 		totalElements := um.Rows() * um.Cols()
 		for i := 0; i < totalElements; i++ {
@@ -280,14 +280,14 @@ func (um *updateMatrix[T]) NonZeroCount() int {
 		count += len(cols)
 	}
 	// 统计缓存中新增/修改的非零元素
-	for blockIdx, block := range um.cache {
+	for blockIdx := range um.cache {
 		for pos := 0; pos < um.blockSize; pos++ {
 			linearIndex := blockIdx*um.blockSize + pos
 			row := linearIndex / um.Cols()
 			col := linearIndex % um.Cols()
 			if row < um.Rows() && col < um.Cols() && um.isBitSet(row, col) {
 				baseVal := um.Matrix.Get(row, col)
-				cachedVal := block[pos]
+				cachedVal := um.cache[blockIdx][pos]
 				// 情况1：底层为零，缓存非零 → 新增非零
 				// 情况2：底层非零，缓存修改后仍非零 → 不重复统计
 				// 情况3：底层非零，缓存修改为零 → 减少统计

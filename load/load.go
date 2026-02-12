@@ -67,18 +67,18 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 	currentVoltageID := mna.VoltageID(0)
 	currentInternalNodeID := maxNodeID + 1
 
-	for _, element := range elements {
-		config := element.Config()
+	for i := range elements {
+		config := elements[i].Config()
 
 		// 分配内部节点
 		for i := 0; i < config.InternalNum(); i++ {
-			element.SetNodesInternal(i, currentInternalNodeID)
+			elements[i].SetNodesInternal(i, currentInternalNodeID)
 			currentInternalNodeID++
 		}
 
 		// 分配电压源
 		for i := 0; i < config.VoltageNum(); i++ {
-			element.SetVoltSource(i, currentVoltageID)
+			elements[i].SetVoltSource(i, currentVoltageID)
 			currentVoltageID++
 		}
 	}

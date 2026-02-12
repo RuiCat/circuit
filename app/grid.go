@@ -1,132 +1,239 @@
 package app
 
 import (
+	"circuit/app/draw"
 	"image"
 	"image/color"
 	"math"
 
 	"gioui.org/f32"
-	"gioui.org/io/event"   // 事件处理
-	"gioui.org/io/pointer" // 指针事件
-	"gioui.org/layout"     // 布局系统
-	"gioui.org/op"         // 操作栈
-	"gioui.org/op/clip"    // 裁剪区域
-	"gioui.org/op/paint"   // 绘制操作
-	"gioui.org/unit"       // 单位转换
+	"gioui.org/io/event"
+	"gioui.org/io/pointer"
+	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/op/clip"
+	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 )
 
-// Handle 控制点类型
+// Handle 表示调整大小的控制点位置。
+// 用于标识用户正在拖拽哪个方向的控制点来调整组件大小。
 type Handle int
 
 const (
-	HandleNone Handle = iota
-	HandleN
-	HandleS
-	HandleE
-	HandleW
-	HandleNW
-	HandleNE
-	HandleSW
-	HandleSE
+	HandleNone Handle = iota // 无控制点
+	HandleN                  // 北（上）控制点
+	HandleS                  // 南（下）控制点
+	HandleE                  // 东（右）控制点
+	HandleW                  // 西（左）控制点
+	HandleNW                 // 西北（左上）控制点
+	HandleNE                 // 东北（右上）控制点
+	HandleSW                 // 西南（左下）控制点
+	HandleSE                 // 东南（右下）控制点
 )
 
+// InteractionMode 表示当前的交互模式。
+// 定义了用户与网格组件交互时的不同状态。
 type InteractionMode int
 
 const (
-	ModeNone     InteractionMode = iota
-	ModePanning                  // 平移背景
-	ModeMoving                   // 移动组件
-	ModeResizing                 // 缩放组件
+	ModeNone      InteractionMode = iota // 无交互
+	ModePanning                          // 平移背景
+	ModeMoving                           // 移动组件
+	ModeResizing                         // 缩放组件
+	ModeDrawing                          // 绘制连线模式
+	ModeEditing                          // 编辑线段模式
+	ModeSelecting                        // 选择线段模式
 )
 
+// GridMode 表示网格组件的交互模式
+type GridMode int
+
+const (
+	GridModeView GridMode = iota // 查看状态：只能查看，不能编辑
+	GridModeEdit                 // 编辑状态：可以编辑控制点、连接点
+	GridModeDraw                 // 绘制状态：可以绘制新连线
+)
+
+// ChildItem 表示网格中的一个子组件。
+// 每个子组件可以有自己的位置、大小、可移动性和可调整大小属性。
 type ChildItem struct {
-	ID        string
-	Pos       image.Point // 虚拟空间位置
-	Size      image.Point // 组件大小
-	Widget    layout.Widget
-	Movable   bool
-	Resizable bool
+	ID        string        // 组件唯一标识符
+	Pos       image.Point   // 虚拟空间位置（世界坐标）
+	Size      image.Point   // 组件大小（世界坐标）
+	Widget    layout.Widget // Gio 布局组件
+	Movable   bool          // 是否可移动
+	Resizable bool          // 是否可调整大小
 }
 
+// ChildrenManager 子组件管理器接口
+// 定义了对子组件列表的操作，使得 GridComponent 不直接依赖具体的实现
+type ChildrenManager interface {
+	GetByID(id string) *ChildItem
+	Len() int
+	Iterate(fn func(child *ChildItem) bool)
+	UpdatePosition(id string, pos image.Point)
+	UpdateSize(id string, size image.Point)
+	FindAtPosition(pos f32.Point, worldToScreen func(pos, size image.Point) image.Rectangle) *ChildItem
+}
+
+// Children 子组件列表的默认实现
+type Children []*ChildItem // 子组件列表
+
+// GetByID 根据ID获取子组件
+func (c *Children) GetByID(id string) *ChildItem {
+	for i := range *c {
+		if (*c)[i].ID == id {
+			return (*c)[i]
+		}
+	}
+	return nil
+}
+
+// GetByIndex 根据索引获取子组件
+func (c *Children) GetByIndex(index int) *ChildItem {
+	if index < 0 || index >= len(*c) {
+		return nil
+	}
+	return (*c)[index]
+}
+
+// Len 返回子组件数量
+func (c *Children) Len() int {
+	return len(*c)
+}
+
+// Iterate 遍历所有子组件
+func (c *Children) Iterate(fn func(child *ChildItem) bool) {
+	for i := range *c {
+		if !fn((*c)[i]) {
+			break
+		}
+	}
+}
+
+// UpdatePosition 更新子组件位置
+func (c *Children) UpdatePosition(id string, pos image.Point) {
+	if child := c.GetByID(id); child != nil {
+		child.Pos = pos
+	}
+}
+
+// UpdateSize 更新子组件大小
+func (c *Children) UpdateSize(id string, size image.Point) {
+	if child := c.GetByID(id); child != nil {
+		child.Size = size
+	}
+}
+
+// FindAtPosition 在指定位置查找子组件
+func (c *Children) FindAtPosition(pos f32.Point, worldToScreen func(pos, size image.Point) image.Rectangle) *ChildItem {
+	// 从后往前遍历，这样最后添加的组件在最上面
+	for i := len(*c) - 1; i >= 0; i-- {
+		child := (*c)[i]
+		rect := worldToScreen(child.Pos, child.Size)
+		if pointInRect(pos, rect) {
+			return child
+		}
+	}
+	return nil
+}
+
+// GridComponent 是可交互的网格组件
 type GridComponent struct {
-	VirtualSize image.Point
-	Children    []*ChildItem
+	VirtualSize image.Point     // 虚拟空间总大小
+	Children    ChildrenManager // 子组件管理器
 
-	// 滚动状态
+	// 事件拦截钩子
+	EventHook func(gtx layout.Context, e pointer.Event, d *draw.Draw) bool
+
+	// 滚动和缩放状态 (作为数据源)
 	scroll f32.Point
-
-	// 缩放状态
-	scale float32 // 缩放比例，1.0 表示原始大小
+	scale  float32
 
 	// 交互状态
 	mode          InteractionMode
-	activeItem    *ChildItem
-	activeHandle  Handle
-	dragStartPos  f32.Point // 鼠标按下时的屏幕位置
+	activeItemID  string
+	activeHandle  draw.Handle // 使用 draw 包中的定义
+	dragStartPos  f32.Point
 	itemStartPos  image.Point
 	itemStartSize image.Point
 
-	// 配置
-	GridLineSize int
-	GridColor    color.NRGBA
+	// 网格组件状态
+	gridMode GridMode
 
-	// 网格缓存优化
-	lastSize  image.Point // 上次绘制时的控件大小
-	lastScale float32     // 上次绘制时的缩放比例
-	gridCache op.Ops      // 网格绘制指令缓存
-	gridCall  op.CallOp   // 缓存的绘制调用
-
-	// 滚动条
-	Theme     *material.Theme
-	scrollbar [2]*widget.Scrollbar // 垂直水平滚动条
+	// 绘图辅助
+	Background *draw.GridBackground
+	Theme      *material.Theme
+	scrollbar  [2]*widget.Scrollbar
 }
 
 // NewGridComponent 创建新的网格组件实例
-// 返回一个初始化的 GridComponent，包含默认的虚拟空间大小和网格配置
-func NewGridComponent() *GridComponent {
-	g := &GridComponent{
-		Theme:        material.NewTheme(),
-		VirtualSize:  image.Pt(5000, 5000),                        // 5000x5000 像素的虚拟空间
-		GridLineSize: 20,                                          // 网格线间距 20 像素
-		GridColor:    color.NRGBA{R: 220, G: 220, B: 220, A: 255}, // 浅灰色网格
-		scale:        1.0,                                         // 初始缩放比例为 1.0
+func NewGridComponent(theme *material.Theme) *GridComponent {
+	return &GridComponent{
+		Theme:       theme,
+		VirtualSize: image.Pt(5000, 5000),
+		scale:       1.0,
+		scrollbar:   [2]*widget.Scrollbar{{}, {}},
+		// 使用新的 GridBackground
+		Background: draw.NewGridBackground(20, color.NRGBA{R: 230, G: 230, B: 230, A: 255}),
 	}
-	// 初始化滚动条
-	g.scrollbar[0] = &widget.Scrollbar{} // 垂直滚动条
-	g.scrollbar[1] = &widget.Scrollbar{} // 水平滚动条
-	return g
 }
 
-// Layout 实现 Gio 的布局接口，负责组件的渲染和事件处理
-// 采用四层堆叠布局：背景层（网格+事件捕获）、内容层（子组件）、装饰层（选中框和控制点）、滚动条层
+// activeItem 获取当前激活的子组件
+func (g *GridComponent) activeItem() *ChildItem {
+	if g.activeItemID == "" {
+		return nil
+	}
+	return g.Children.GetByID(g.activeItemID)
+}
+
+// Layout 实现 Gio 的布局接口
 func (g *GridComponent) Layout(gtx layout.Context) layout.Dimensions {
 	size := gtx.Constraints.Max
-	// 处理所有输入事件 (统一入口)
-	g.handleEvents(gtx)
-	// 渲染
+
+	// 1. 初始化 Draw 上下文
+	// 将当前的 grid 状态传递给 Draw
+	d := &draw.Draw{
+		Context: gtx,
+		Ops:     gtx.Ops,
+		Scale:   g.scale,
+		Scroll:  g.scroll,
+	}
+
+	// 2. 处理事件 (包括 Grid 自身的交互和 Draw 的缩放/平移)
+	g.handleEvents(gtx, d)
+
+	// 3. 同步状态回来 (因为 Draw 可能会处理缩放和滚轮)
+	g.scale = d.Scale
+	g.scroll = d.Scroll
+
+	// 4. 渲染
 	return layout.Stack{}.Layout(gtx,
-		// 背景层：网格 + 事件捕获
+		// 背景层：网格
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 			defer clip.Rect{Max: size}.Push(gtx.Ops).Pop()
+			// 注册事件监听
 			event.Op(gtx.Ops, g)
-			g.drawGrid(gtx, size)
+
+			// 使用 GridBackground 绘制
+			g.Background.Draw(d, size)
 			return layout.Dimensions{Size: size}
 		}),
-		// 内容层
+		// 内容层：子组件
 		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-			g.drawChildren(gtx, size)
+			g.drawChildren(gtx, d)
 			return layout.Dimensions{Size: size}
 		}),
-		// 装饰层：选中框和控制点 (始终在最顶层)
+		// 装饰层：选中框和控制点
 		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-			if g.activeItem != nil {
-				g.drawSelectionHelpers(gtx, size)
+			if g.activeItem() != nil {
+				g.drawSelectionHelpers(gtx, d)
 			}
 			return layout.Dimensions{Size: size}
 		}),
-		// 滚动条层：垂直和水平滚动条
+		// 滚动条层 (复用之前的逻辑，略作简化)
 		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 			// 计算视口范围（归一化到[0,1]）
 			viewportStartX := float32(g.scroll.X) / float32(g.VirtualSize.X)
@@ -194,9 +301,15 @@ func (g *GridComponent) Layout(gtx layout.Context) layout.Dimensions {
 	)
 }
 
-// handleEvents 统一处理所有交互逻辑
-func (g *GridComponent) handleEvents(gtx layout.Context) {
-	size := gtx.Constraints.Max
+// handleEvents 处理交互逻辑
+func (g *GridComponent) handleEvents(gtx layout.Context, d *draw.Draw) {
+	// 如果正在调整大小，使用 ResizeGeometry 的逻辑（简化版集成）
+	if g.mode == ModeResizing {
+		// 构造 ResizeGeometry 所需参数 (这里为了简化直接在 switch 中处理，
+		// 或者你可以完全委托给 ResizeGeometry.HandleEvents，但这需要重构事件循环结构)
+		// 此处保留原逻辑结构，但利用 d.Scale
+	}
+
 	for {
 		ev, ok := gtx.Event(pointer.Filter{
 			Target:  g,
@@ -207,324 +320,188 @@ func (g *GridComponent) handleEvents(gtx layout.Context) {
 			break
 		}
 		e, _ := ev.(pointer.Event)
-		// 检查事件是否发生在滚动条区域
-		scrollbarWidth := gtx.Dp(unit.Dp(12))
-		scrollbarHeight := gtx.Dp(unit.Dp(12))
-		// 垂直滚动条区域（右侧）
-		verticalScrollbarRect := image.Rect(size.X-scrollbarWidth, 0, size.X, size.Y)
-		// 水平滚动条区域（底部）
-		horizontalScrollbarRect := image.Rect(0, size.Y-scrollbarHeight, size.X, size.Y)
-		// 如果事件发生在滚动条区域，跳过处理（让滚动条自己处理）
-		if pointInRect(e.Position, verticalScrollbarRect) || pointInRect(e.Position, horizontalScrollbarRect) {
-			continue
+
+		// --- 1. 调用钩子 ---
+		if g.EventHook != nil {
+			if g.EventHook(gtx, e, d) {
+				continue
+			}
 		}
+
+		// --- 2. 底层逻辑 ---
 		switch e.Kind {
 		case pointer.Press:
 			g.dragStartPos = e.Position
-			// 1. 检查是否点击了控制点
-			if g.activeItem != nil {
-				if h := g.hitTestHandles(e.Position); h != HandleNone {
-					g.mode = ModeResizing
-					g.activeHandle = h
-					g.itemStartPos = g.activeItem.Pos
-					g.itemStartSize = g.activeItem.Size
-					break
+
+			// 检查是否点击了控制点 (Resize)
+			if g.activeItemID != "" {
+				activeItem := g.Children.GetByID(g.activeItemID)
+				if activeItem != nil && activeItem.Resizable {
+					rect := g.worldToScreenRect(d, activeItem.Pos, activeItem.Size)
+					// 使用 draw.HitTestHandles
+					if h := draw.HitTestHandles(e.Position, rect, 10.0); h != draw.HandleNone {
+						g.mode = ModeResizing
+						g.activeHandle = h
+						g.itemStartPos = activeItem.Pos
+						g.itemStartSize = activeItem.Size
+						break
+					}
 				}
 			}
-			// 检查是否点击了子组件
-			found := false
-			for i := len(g.Children) - 1; i >= 0; i-- {
-				child := g.Children[i]
-				rect := g.worldToScreenRect(child.Pos, child.Size)
-				if pointInRect(e.Position, rect) {
-					g.activeItem = child
+
+			// 检查是否点击了组件 (Move)
+			if g.mode == ModeNone {
+				// 使用 d.WorldToScreenF32 辅助转换的闭包
+				converter := func(pos, size image.Point) image.Rectangle {
+					return g.worldToScreenRect(d, pos, size)
+				}
+				if child := g.Children.FindAtPosition(e.Position, converter); child != nil {
+					g.activeItemID = child.ID
 					if child.Movable {
 						g.mode = ModeMoving
 						g.itemStartPos = child.Pos
 					}
-					found = true
-					break
+				} else {
+					g.activeItemID = ""
+					g.mode = ModePanning
 				}
 			}
-			// 点击空白区域
-			if !found {
-				g.activeItem = nil
-				g.mode = ModePanning
-			}
+
 		case pointer.Drag:
 			diff := e.Position.Sub(g.dragStartPos)
 			switch g.mode {
 			case ModePanning:
-				if x := g.scroll.X - diff.X; x > 0 {
-					g.scroll.X = x
-				}
-				if y := g.scroll.Y - diff.Y; y > 0 {
-					g.scroll.Y = y
-				}
+				// 手动更新 d.Scroll，因为我们不仅想用滚轮，还想用拖拽
+				d.Scroll.X -= diff.X
+				d.Scroll.Y -= diff.Y
+				// 限制范围
+				d.Scroll.X = max(0, d.Scroll.X)
+				d.Scroll.Y = max(0, d.Scroll.Y)
 				g.dragStartPos = e.Position
+
 			case ModeMoving:
-				if g.activeItem != nil {
-					// 将屏幕坐标差值转换为世界坐标差值
-					worldDiffX := diff.X / g.scale
-					worldDiffY := diff.Y / g.scale
-					g.activeItem.Pos = g.itemStartPos.Add(image.Pt(int(worldDiffX), int(worldDiffY)))
+				if g.activeItemID != "" {
+					worldDiff := image.Pt(int(diff.X/d.Scale), int(diff.Y/d.Scale))
+					newPos := g.itemStartPos.Add(worldDiff)
+					g.Children.UpdatePosition(g.activeItemID, g.SnapToGrid(newPos))
 				}
+
 			case ModeResizing:
-				if g.activeItem != nil {
-					g.updateGeometry(diff)
+				// 使用 ResizeGeometry 计算新几何属性
+				rg := draw.NewResizeGeometry(g.itemStartPos, g.itemStartSize, g.activeHandle, d.Scale)
+				newPos, newSize := rg.Update(diff)
+				if activeItem := g.activeItem(); activeItem != nil {
+					g.Children.UpdatePosition(activeItem.ID, newPos)
+					g.Children.UpdateSize(activeItem.ID, newSize)
 				}
 			}
+
 		case pointer.Release:
-			g.mode = ModeNone
-			g.activeHandle = HandleNone
+			if g.mode != ModeDrawing { // Drawing 模式通常由 NodeComponent 处理
+				g.mode = ModeNone
+				g.activeHandle = draw.HandleNone
+			}
+
 		case pointer.Scroll:
-			g.handleZoom(e.Position, e.Scroll.Y)
+			// 委托给 Draw 处理缩放
+			// 注意：这里我们直接调用 draw 的内部逻辑，或者复用我们之前的逻辑
+			// 由于 draw.HandleEvents 是封装好的循环，我们这里只是借用它的计算逻辑
+			// 为了简单，我们手动调用它的 handleZoom 逻辑 (需要 Draw 暴露或我们复制逻辑)
+			// 或者，直接使用我们原来的逻辑，但利用 d 结构体
+
+			// 这里简单复用原逻辑，但更新 d
+			zoomFactor := float32(1.1)
+			if e.Scroll.Y > 0 {
+				zoomFactor = 1.0 / zoomFactor
+			}
+			newScale := d.Scale * zoomFactor
+			if newScale >= 0.1 && newScale <= 5.0 {
+				worldX := (d.Scroll.X + e.Position.X) / d.Scale
+				worldY := (d.Scroll.Y + e.Position.Y) / d.Scale
+				d.Scale = newScale
+				d.Scroll.X = worldX*newScale - e.Position.X
+				d.Scroll.Y = worldY*newScale - e.Position.Y
+				// 边界检查略
+			}
 		}
 	}
 }
 
-// handleZoom 处理鼠标滚轮缩放
-func (g *GridComponent) handleZoom(mousePos f32.Point, scrollY float32) {
-	// 保存缩放前的鼠标位置对应的世界坐标
-	// 注意：世界坐标 = (屏幕坐标 + 滚动偏移) / 缩放比例
-	worldXBefore := (g.scroll.X + mousePos.X) / g.scale
-	worldYBefore := (g.scroll.Y + mousePos.Y) / g.scale
-	// 计算缩放因子
-	zoomFactor := float32(1.1) // 每次缩放10%
-	if scrollY > 0 {
-		// 向下滚动，缩小
-		zoomFactor = 1.0 / zoomFactor
-		if float32(g.GridLineSize)*g.scale < 10 {
-			return
-		}
-	}
-	// 应用缩放，限制在合理范围内
-	newScale := g.scale * zoomFactor
-	if newScale > 5.0 {
-		newScale = 5.0
-	}
-	// 更新缩放比例
-	g.scale = newScale
-	// 计算缩放后，为了保持鼠标指向的世界坐标不变，需要调整滚动位置
-	// 新的滚动位置 = 世界坐标 * 新缩放比例 - 鼠标屏幕坐标
-	g.scroll.X = worldXBefore*newScale - mousePos.X
-	g.scroll.Y = worldYBefore*newScale - mousePos.Y
-	// 确保滚动位置在有效范围内
-	g.scroll.X = max(0, min(g.scroll.X, float32(g.VirtualSize.X)*newScale-float32(g.lastSize.X)))
-	g.scroll.Y = max(0, min(g.scroll.Y, float32(g.VirtualSize.Y)*newScale-float32(g.lastSize.Y)))
-}
+// drawChildren 绘制所有子组件
+func (g *GridComponent) drawChildren(gtx layout.Context, d *draw.Draw) {
+	g.Children.Iterate(func(child *ChildItem) bool {
+		// 使用 Draw 提供的坐标转换
+		screenPos := d.WorldToScreenF32(child.Pos)
 
-// updateGeometry 处理 8 个方向的缩放逻辑
-func (g *GridComponent) updateGeometry(diff f32.Point) {
-	// 将屏幕坐标差值转换为世界坐标差值
-	worldDiffX := diff.X / g.scale
-	worldDiffY := diff.Y / g.scale
-	dx, dy := int(worldDiffX), int(worldDiffY)
-	newPos := g.itemStartPos
-	newSize := g.itemStartSize
-	// 垂直方向
-	switch g.activeHandle {
-	case HandleNW, HandleN, HandleNE:
-		newPos.Y += dy
-		newSize.Y -= dy
-	case HandleSW, HandleS, HandleSE:
-		newSize.Y += dy
-	}
-	// 水平方向
-	switch g.activeHandle {
-	case HandleNW, HandleW, HandleSW:
-		newPos.X += dx
-		newSize.X -= dx
-	case HandleNE, HandleE, HandleSE:
-		newSize.X += dx
-	}
-	// 最小尺寸限制
-	minSize := 20
-	if newSize.X < minSize {
-		if g.activeHandle == HandleNW || g.activeHandle == HandleW || g.activeHandle == HandleSW {
-			newPos.X -= (minSize - newSize.X)
-		}
-		newSize.X = minSize
-	}
-	if newSize.Y < minSize {
-		if g.activeHandle == HandleNW || g.activeHandle == HandleN || g.activeHandle == HandleNE {
-			newPos.Y -= (minSize - newSize.Y)
-		}
-		newSize.Y = minSize
-	}
-	g.activeItem.Pos = newPos
-	g.activeItem.Size = newSize
-}
+		stack := op.Offset(image.Pt(int(screenPos.X), int(screenPos.Y))).Push(gtx.Ops)
+		scaleOp := op.Affine(f32.Affine2D{}.Scale(f32.Point{}, f32.Pt(d.Scale, d.Scale))).Push(gtx.Ops)
 
-func (g *GridComponent) drawChildren(gtx layout.Context, viewSize image.Point) {
-	// 创建缩放后的视口矩形
-	viewRect := image.Rectangle{
-		Min: image.Pt(int(g.scroll.X), int(g.scroll.Y)),
-		Max: image.Pt(int(g.scroll.X)+viewSize.X, int(g.scroll.Y)+viewSize.Y),
-	}
-	for _, child := range g.Children {
-		// 计算缩放后的子组件矩形
-		scaledPosX := float32(child.Pos.X) * g.scale
-		scaledPosY := float32(child.Pos.Y) * g.scale
-		scaledSizeX := float32(child.Size.X) * g.scale
-		scaledSizeY := float32(child.Size.Y) * g.scale
-		childRect := image.Rectangle{
-			Min: image.Pt(int(scaledPosX), int(scaledPosY)),
-			Max: image.Pt(int(scaledPosX+scaledSizeX), int(scaledPosY+scaledSizeY)),
-		}
-		// 视口剔除优化
-		if !viewRect.Overlaps(childRect) {
-			continue
-		}
-		// 计算屏幕坐标
-		screenPos := image.Pt(
-			int(scaledPosX)-int(g.scroll.X),
-			int(scaledPosY)-int(g.scroll.Y),
-		)
-		// 开启独立操作栈
-		stack := op.Offset(screenPos).Push(gtx.Ops)
-		// 应用缩放变换
-		scaleOp := op.Affine(f32.Affine2D{}.Scale(f32.Point{}, f32.Pt(g.scale, g.scale))).Push(gtx.Ops)
-		// 强制物理剪裁，确保组件内容不溢出其原始 Size
-		clipStack := clip.Rect{Max: child.Size}.Push(gtx.Ops)
 		cgtx := gtx
 		cgtx.Constraints = layout.Exact(child.Size)
 		child.Widget(cgtx)
-		clipStack.Pop()
+
 		scaleOp.Pop()
 		stack.Pop()
-	}
+		return true
+	})
 }
 
-func (g *GridComponent) drawSelectionHelpers(gtx layout.Context, _ image.Point) {
-	child := g.activeItem
-	rect := g.worldToScreenRect(child.Pos, child.Size)
-	// 绘制包围框
-	paint.FillShape(gtx.Ops, color.NRGBA{R: 0, G: 120, B: 215, A: 255},
-		clip.Stroke{Path: clip.Rect(f32RectToImage(rect)).Path(), Width: 2}.Op())
+// drawSelectionHelpers 绘制选中装饰
+func (g *GridComponent) drawSelectionHelpers(gtx layout.Context, d *draw.Draw) {
+	child := g.activeItem()
+	if child == nil {
+		return
+	}
+	rect := g.worldToScreenRect(d, child.Pos, child.Size)
+
+	// 绘制包围框 (使用 Draw 包)
+	d.DrawRect(rect, 2, color.NRGBA{}, color.NRGBA{R: 0, G: 120, B: 215, A: 255}, false)
+
 	// 绘制 8 个控制点
 	if child.Resizable {
 		handleSize := float32(gtx.Dp(unit.Dp(8)))
-		for h := HandleN; h <= HandleSE; h++ {
-			p := g.getHandlePos(rect, h)
-			handleRect := image.Rect(p.X-int(handleSize/2), p.Y-int(handleSize/2), p.X+int(handleSize/2), p.Y+int(handleSize/2))
-			paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.Rect(f32RectToImage(handleRect)).Op())
-			paint.FillShape(gtx.Ops, color.NRGBA{R: 0, G: 120, B: 215, A: 255},
-				clip.Stroke{Path: clip.Rect(f32RectToImage(handleRect)).Path(), Width: 1}.Op())
+		for h := draw.HandleN; h <= draw.HandleSE; h++ {
+			p := draw.GetHandlePosition(rect, h)
+			// DrawRect 需要中心对齐
+			r := image.Rect(p.X-int(handleSize/2), p.Y-int(handleSize/2), p.X+int(handleSize/2), p.Y+int(handleSize/2))
+			d.DrawRect(r, 1, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 0, G: 120, B: 215, A: 255}, true)
 		}
 	}
 }
 
-// 辅助函数：坐标转换
-func (g *GridComponent) worldToScreenRect(pos, size image.Point) image.Rectangle {
-	// 应用缩放
-	scaledPosX := float32(pos.X) * g.scale
-	scaledPosY := float32(pos.Y) * g.scale
-	scaledSizeX := float32(size.X) * g.scale
-	scaledSizeY := float32(size.Y) * g.scale
-	return image.Rect(
-		int(scaledPosX)-int(g.scroll.X),
-		int(scaledPosY)-int(g.scroll.Y),
-		int(scaledPosX+scaledSizeX)-int(g.scroll.X),
-		int(scaledPosY+scaledSizeY)-int(g.scroll.Y),
-	)
+// worldToScreenRect 辅助转换
+func (g *GridComponent) worldToScreenRect(d *draw.Draw, pos, size image.Point) image.Rectangle {
+	p1 := d.WorldToScreenF32(pos)
+	// 计算右下角：需要先计算世界坐标的右下角，再转屏幕，保证缩放正确
+	p2 := d.WorldToScreenF32(pos.Add(size))
+	return image.Rect(int(p1.X), int(p1.Y), int(p2.X), int(p2.Y))
 }
 
-func (g *GridComponent) getHandlePos(r image.Rectangle, h Handle) image.Point {
-	switch h {
-	case HandleN:
-		return image.Pt((r.Min.X+r.Max.X)/2, r.Min.Y)
-	case HandleS:
-		return image.Pt((r.Min.X+r.Max.X)/2, r.Max.Y)
-	case HandleE:
-		return image.Pt(r.Max.X, (r.Min.Y+r.Max.Y)/2)
-	case HandleW:
-		return image.Pt(r.Min.X, (r.Min.Y+r.Max.Y)/2)
-	case HandleNW:
-		return r.Min
-	case HandleNE:
-		return image.Pt(r.Max.X, r.Min.Y)
-	case HandleSW:
-		return image.Pt(r.Min.X, r.Max.Y)
-	case HandleSE:
-		return r.Max
-	}
-	return image.Point{}
+// SnapToGrid 吸附网格
+func (g *GridComponent) SnapToGrid(p image.Point) image.Point {
+	gridSize := g.Background.GridLineSize // 从 Background 获取配置
+	x := int(math.Round(float64(p.X)/float64(gridSize))) * gridSize
+	y := int(math.Round(float64(p.Y)/float64(gridSize))) * gridSize
+	return image.Pt(x, y)
 }
 
-func (g *GridComponent) hitTestHandles(mousePos f32.Point) Handle {
-	if g.activeItem == nil || !g.activeItem.Resizable {
-		return HandleNone
-	}
-	rect := g.worldToScreenRect(g.activeItem.Pos, g.activeItem.Size)
-	threshold := float32(10.0)
-	for h := HandleN; h <= HandleSE; h++ {
-		hp := g.getHandlePos(rect, h)
-		dist := float32(math.Hypot(float64(mousePos.X-float32(hp.X)), float64(mousePos.Y-float32(hp.Y))))
-		if dist < threshold {
-			return h
-		}
-	}
-	return HandleNone
-}
-
-// drawGrid 绘制网格背景，使用缓存优化性能。
-// 当控件大小改变或缩放比例改变时重建网格缓存，否则重用缓存的绘制指令。
-func (g *GridComponent) drawGrid(gtx layout.Context, size image.Point) {
-	// 检查大小或缩放比例是否改变，如果改变则重建缓存
-	if size != g.lastSize || g.scale != g.lastScale {
-		g.lastSize = size
-		g.lastScale = g.scale
-		g.gridCache.Reset() // 清空旧的缓存
-		macro := op.Record(&g.gridCache)
-		var p clip.Path
-		p.Begin(&g.gridCache)
-		// 计算缩放后的网格线间距
-		scaledGridLineSize := float32(g.GridLineSize) * g.scale
-		if scaledGridLineSize < 5 {
-			// 如果网格线太密集，不绘制网格
-			paint.FillShape(&g.gridCache, g.GridColor, clip.Rect{Max: size}.Op())
-		} else {
-			// 绘制范围需要比实际 size 多出一个单元格，以防偏移后露底
-			drawW := float32(size.X) + scaledGridLineSize
-			drawH := float32(size.Y) + scaledGridLineSize
-			// 绘制垂直线
-			for x := float32(0); x <= drawW; x += scaledGridLineSize {
-				p.MoveTo(f32.Pt(x, 0))
-				p.LineTo(f32.Pt(x, drawH))
-			}
-			// 绘制水平线
-			for y := float32(0); y <= drawH; y += scaledGridLineSize {
-				p.MoveTo(f32.Pt(0, y))
-				p.LineTo(f32.Pt(drawW, y))
-			}
-			paint.FillShape(&g.gridCache, g.GridColor, clip.Stroke{
-				Path:  p.End(),
-				Width: 1,
-			}.Op())
-		}
-		g.gridCall = macro.Stop()
-	}
-	// 计算取模后的偏移量 (实现无限滚动视觉效果)
-	// 使用负偏移，模拟背景随着滚动向反方向移动
-	scaledGridLineSize := int(float32(g.GridLineSize) * g.scale)
-	if scaledGridLineSize < 1 {
-		scaledGridLineSize = 1
-	}
-	offX := -int(g.scroll.X) % scaledGridLineSize
-	offY := -int(g.scroll.Y) % scaledGridLineSize
-	// 应用偏移并调用缓存的指令
-	trans := op.Offset(image.Point{X: offX, Y: offY}).Push(gtx.Ops)
-	g.gridCall.Add(gtx.Ops)
-	trans.Pop()
-}
-
-func f32RectToImage(r image.Rectangle) image.Rectangle {
-	return image.Rect(int(r.Min.X), int(r.Min.Y), int(r.Max.X), int(r.Max.Y))
-}
-
-// pointInRect 检查点是否在矩形内
+// pointInRect 检查点是否在矩形内。
+// 用于判断鼠标事件是否发生在特定区域内，支持浮点坐标。
 func pointInRect(p f32.Point, r image.Rectangle) bool {
 	return float32(r.Min.X) <= p.X && p.X < float32(r.Max.X) &&
 		float32(r.Min.Y) <= p.Y && p.Y < float32(r.Max.Y)
+}
+
+// SetGridMode / GetGridMode 保持不变
+func (g *GridComponent) SetGridMode(mode GridMode) {
+	g.gridMode = mode
+	if mode != GridModeEdit {
+		g.mode = ModeNone
+		g.activeItemID = ""
+		g.activeHandle = draw.HandleNone
+	}
+}
+
+func (g *GridComponent) GetGridMode() GridMode {
+	return g.gridMode
 }

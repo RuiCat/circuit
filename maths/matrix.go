@@ -68,9 +68,9 @@ func (mdm *MatrixDataManager[T]) IncrementMatrix(row, col int, value T) {
 
 // BuildFromDense 从一个二维切片（稠密表示）构建矩阵数据。
 func (mdm *MatrixDataManager[T]) BuildFromDense(dense [][]T) {
-	for r, rowData := range dense {
-		for c, val := range rowData {
-			mdm.SetMatrix(r, c, val)
+	for r := range dense {
+		for c := range dense[r] {
+			mdm.SetMatrix(r, c, dense[r][c])
 		}
 	}
 }
@@ -174,11 +174,11 @@ func (m *denseMatrix[T]) GetRow(row int) ([]int, Vector[T]) {
 	rowData := m.DataPtr()[start:end] // 直接访问该行的数据切片
 
 	// 遍历行数据，收集非零元素
-	for col, val := range rowData {
+	for col := range rowData {
 		var zero T
-		if val != zero {
+		if rowData[col] != zero {
 			m.rowColsBuf = append(m.rowColsBuf, col)
-			m.rowValsBuf = append(m.rowValsBuf, val)
+			m.rowValsBuf = append(m.rowValsBuf, rowData[col])
 		}
 	}
 
