@@ -69,7 +69,6 @@ func (gb *GridBackground) Draw(d *Draw, size image.Point) {
 		}
 		gb.gridCall = macro.Stop()
 	}
-
 	// 计算取模后的偏移量 (实现无限滚动视觉效果)
 	// 使用负偏移，模拟背景随着滚动向反方向移动
 	scaledGridLineSize := int(float32(gb.GridLineSize) * d.Scale)
@@ -78,7 +77,6 @@ func (gb *GridBackground) Draw(d *Draw, size image.Point) {
 	}
 	offX := -int(d.Scroll.X) % scaledGridLineSize
 	offY := -int(d.Scroll.Y) % scaledGridLineSize
-
 	// 应用偏移并调用缓存的指令
 	trans := op.Offset(image.Point{X: offX, Y: offY}).Push(d.Ops)
 	gb.gridCall.Add(d.Ops)

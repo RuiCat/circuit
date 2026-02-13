@@ -75,9 +75,11 @@ func NewCircuitApp() *CircuitApp {
 				Pos:       image.Pt(200, 400),
 				Widget: func(gtx layout.Context) layout.Dimensions {
 					// 绘制一个绿色矩形（可缩放）
-					rect := image.Rect(0, 0, 180, 120)
+					size := gtx.Constraints.Max
+					rect := image.Rectangle{Max: size}
 					paint.FillShape(gtx.Ops, color.NRGBA{R: 100, G: 255, B: 100, A: 255}, clip.Rect(rect).Op())
-					return layout.Dimensions{Size: image.Pt(180, 120)}
+					// 返回实际使用的大小
+					return layout.Dimensions{Size: size}
 				},
 			},
 		},
@@ -145,7 +147,7 @@ func NewCircuitApp() *CircuitApp {
 					ID:       "seg2",
 					StartIdx: 1,
 					EndIdx:   2,
-					Selected: true, // 选中状态，用于演示
+					Selected: false,
 					Color:    color.NRGBA{R: 0, G: 255, B: 0, A: 255},
 					Width:    3,
 				},

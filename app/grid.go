@@ -192,7 +192,6 @@ func (g *GridComponent) activeItem() *ChildItem {
 // Layout 实现 Gio 的布局接口
 func (g *GridComponent) Layout(gtx layout.Context) layout.Dimensions {
 	size := gtx.Constraints.Max
-
 	// 1. 初始化 Draw 上下文
 	// 将当前的 grid 状态传递给 Draw
 	d := &draw.Draw{
@@ -201,14 +200,11 @@ func (g *GridComponent) Layout(gtx layout.Context) layout.Dimensions {
 		Scale:   g.scale,
 		Scroll:  g.scroll,
 	}
-
 	// 2. 处理事件 (包括 Grid 自身的交互和 Draw 的缩放/平移)
 	g.handleEvents(gtx, d)
-
 	// 3. 同步状态回来 (因为 Draw 可能会处理缩放和滚轮)
 	g.scale = d.Scale
 	g.scroll = d.Scroll
-
 	// 4. 渲染
 	return layout.Stack{}.Layout(gtx,
 		// 背景层：网格
@@ -303,13 +299,6 @@ func (g *GridComponent) Layout(gtx layout.Context) layout.Dimensions {
 
 // handleEvents 处理交互逻辑
 func (g *GridComponent) handleEvents(gtx layout.Context, d *draw.Draw) {
-	// 如果正在调整大小，使用 ResizeGeometry 的逻辑（简化版集成）
-	if g.mode == ModeResizing {
-		// 构造 ResizeGeometry 所需参数 (这里为了简化直接在 switch 中处理，
-		// 或者你可以完全委托给 ResizeGeometry.HandleEvents，但这需要重构事件循环结构)
-		// 此处保留原逻辑结构，但利用 d.Scale
-	}
-
 	for {
 		ev, ok := gtx.Event(pointer.Filter{
 			Target:  g,
@@ -320,19 +309,16 @@ func (g *GridComponent) handleEvents(gtx layout.Context, d *draw.Draw) {
 			break
 		}
 		e, _ := ev.(pointer.Event)
-
 		// --- 1. 调用钩子 ---
 		if g.EventHook != nil {
 			if g.EventHook(gtx, e, d) {
 				continue
 			}
 		}
-
 		// --- 2. 底层逻辑 ---
 		switch e.Kind {
 		case pointer.Press:
 			g.dragStartPos = e.Position
-
 			// 检查是否点击了控制点 (Resize)
 			if g.activeItemID != "" {
 				activeItem := g.Children.GetByID(g.activeItemID)
@@ -348,7 +334,6 @@ func (g *GridComponent) handleEvents(gtx layout.Context, d *draw.Draw) {
 					}
 				}
 			}
-
 			// 检查是否点击了组件 (Move)
 			if g.mode == ModeNone {
 				// 使用 d.WorldToScreenF32 辅助转换的闭包
@@ -356,6 +341,9 @@ func (g *GridComponent) handleEvents(gtx layout.Context, d *draw.Draw) {
 					return g.worldToScreenRect(d, pos, size)
 				}
 				if child := g.Children.FindAtPosition(e.Position, converter); child != nil {
+					if g.gridMode == GridModeView {
+						return
+					}
 					g.activeItemID = child.ID
 					if child.Movable {
 						g.mode = ModeMoving
@@ -366,7 +354,6 @@ func (g *GridComponent) handleEvents(gtx layout.Context, d *draw.Draw) {
 					g.mode = ModePanning
 				}
 			}
-
 		case pointer.Drag:
 			diff := e.Position.Sub(g.dragStartPos)
 			switch g.mode {
@@ -378,14 +365,12 @@ func (g *GridComponent) handleEvents(gtx layout.Context, d *draw.Draw) {
 				d.Scroll.X = max(0, d.Scroll.X)
 				d.Scroll.Y = max(0, d.Scroll.Y)
 				g.dragStartPos = e.Position
-
 			case ModeMoving:
 				if g.activeItemID != "" {
 					worldDiff := image.Pt(int(diff.X/d.Scale), int(diff.Y/d.Scale))
 					newPos := g.itemStartPos.Add(worldDiff)
 					g.Children.UpdatePosition(g.activeItemID, g.SnapToGrid(newPos))
 				}
-
 			case ModeResizing:
 				// 使用 ResizeGeometry 计算新几何属性
 				rg := draw.NewResizeGeometry(g.itemStartPos, g.itemStartSize, g.activeHandle, d.Scale)
@@ -395,34 +380,15 @@ func (g *GridComponent) handleEvents(gtx layout.Context, d *draw.Draw) {
 					g.Children.UpdateSize(activeItem.ID, newSize)
 				}
 			}
-
 		case pointer.Release:
 			if g.mode != ModeDrawing { // Drawing 模式通常由 NodeComponent 处理
 				g.mode = ModeNone
 				g.activeHandle = draw.HandleNone
 			}
-
 		case pointer.Scroll:
 			// 委托给 Draw 处理缩放
-			// 注意：这里我们直接调用 draw 的内部逻辑，或者复用我们之前的逻辑
-			// 由于 draw.HandleEvents 是封装好的循环，我们这里只是借用它的计算逻辑
-			// 为了简单，我们手动调用它的 handleZoom 逻辑 (需要 Draw 暴露或我们复制逻辑)
-			// 或者，直接使用我们原来的逻辑，但利用 d 结构体
+			d.HandlePointerEvent(e)
 
-			// 这里简单复用原逻辑，但更新 d
-			zoomFactor := float32(1.1)
-			if e.Scroll.Y > 0 {
-				zoomFactor = 1.0 / zoomFactor
-			}
-			newScale := d.Scale * zoomFactor
-			if newScale >= 0.1 && newScale <= 5.0 {
-				worldX := (d.Scroll.X + e.Position.X) / d.Scale
-				worldY := (d.Scroll.Y + e.Position.Y) / d.Scale
-				d.Scale = newScale
-				d.Scroll.X = worldX*newScale - e.Position.X
-				d.Scroll.Y = worldY*newScale - e.Position.Y
-				// 边界检查略
-			}
 		}
 	}
 }
@@ -432,14 +398,11 @@ func (g *GridComponent) drawChildren(gtx layout.Context, d *draw.Draw) {
 	g.Children.Iterate(func(child *ChildItem) bool {
 		// 使用 Draw 提供的坐标转换
 		screenPos := d.WorldToScreenF32(child.Pos)
-
 		stack := op.Offset(image.Pt(int(screenPos.X), int(screenPos.Y))).Push(gtx.Ops)
 		scaleOp := op.Affine(f32.Affine2D{}.Scale(f32.Point{}, f32.Pt(d.Scale, d.Scale))).Push(gtx.Ops)
-
 		cgtx := gtx
 		cgtx.Constraints = layout.Exact(child.Size)
 		child.Widget(cgtx)
-
 		scaleOp.Pop()
 		stack.Pop()
 		return true
@@ -449,14 +412,12 @@ func (g *GridComponent) drawChildren(gtx layout.Context, d *draw.Draw) {
 // drawSelectionHelpers 绘制选中装饰
 func (g *GridComponent) drawSelectionHelpers(gtx layout.Context, d *draw.Draw) {
 	child := g.activeItem()
-	if child == nil {
+	if child == nil || g.gridMode == GridModeView {
 		return
 	}
 	rect := g.worldToScreenRect(d, child.Pos, child.Size)
-
 	// 绘制包围框 (使用 Draw 包)
 	d.DrawRect(rect, 2, color.NRGBA{}, color.NRGBA{R: 0, G: 120, B: 215, A: 255}, false)
-
 	// 绘制 8 个控制点
 	if child.Resizable {
 		handleSize := float32(gtx.Dp(unit.Dp(8)))

@@ -130,10 +130,10 @@ func NewNodeComponent(children *NodeChildren) *NodeComponent {
 	return n
 }
 
-// Layout 重写 Layout
+// Layout 绘制实现
 func (n *NodeComponent) Layout(gtx layout.Context) layout.Dimensions {
+	n.GridComponent.Update(gtx)
 	size := gtx.Constraints.Max
-
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 			return n.GridComponent.Layout(gtx)
@@ -146,13 +146,30 @@ func (n *NodeComponent) Layout(gtx layout.Context) layout.Dimensions {
 				Scale:   n.GridComponent.scale,
 				Scroll:  n.GridComponent.scroll,
 			}
-
-			n.drawConnections(gtx, d)
-			n.drawDrawingPreview(gtx, d)
+			n.drawConnections(d)
+			n.drawDrawingPreview(d)
 			n.drawPoints(gtx, d)
 			return layout.Dimensions{Size: size}
 		}),
 	)
+}
+
+// Update 处理交互事件并更新组件状态（缩放、滚动等）。
+// 必须在 Layout 之前调用，以确保所有依赖该状态的子组件都能获取到最新数据。
+func (g *GridComponent) Update(gtx layout.Context) {
+	// 初始化临时的 Draw 上下文用于计算事件
+	d := &draw.Draw{
+		Context: gtx,
+		Ops:     gtx.Ops,
+		Scale:   g.scale,
+		Scroll:  g.scroll,
+	}
+	// 处理事件 (HandlePointerEvent 等)
+	// 注意：这里调用 handleEvents 会消耗掉当前帧的事件队列
+	g.handleEvents(gtx, d)
+	// 将 Draw 中计算出的最新状态同步回 GridComponent
+	g.scale = d.Scale
+	g.scroll = d.Scroll
 }
 
 // handleHookEvent 核心交互逻辑
@@ -171,7 +188,6 @@ func (n *NodeComponent) handleHookEvent(gtx layout.Context, e pointer.Event, d *
 // onPress 处理鼠标按下
 func (n *NodeComponent) onPress(e pointer.Event, d *draw.Draw) bool {
 	gridMode := n.GetGridMode()
-
 	// 1. 检查连接点 (优先级最高)
 	if pt := n.findPointAt(e.Position, d); pt != nil {
 		if gridMode == GridModeEdit && !pt.IsMatrix {
@@ -190,7 +206,6 @@ func (n *NodeComponent) onPress(e pointer.Event, d *draw.Draw) bool {
 			return true
 		}
 	}
-
 	// 2. 检查控制点 (仅编辑模式)
 	if cp, seg := n.findControlPointAt(e.Position, d); cp != nil && gridMode == GridModeEdit {
 		n.clearSelection()
@@ -200,7 +215,6 @@ func (n *NodeComponent) onPress(e pointer.Event, d *draw.Draw) bool {
 		n.mode = ModeEditing
 		return true
 	}
-
 	// 3. 检查线段 (编辑或绘制模式)
 	if seg := n.findSegmentAt(e.Position, d); seg != nil {
 		if gridMode == GridModeEdit {
@@ -211,7 +225,6 @@ func (n *NodeComponent) onPress(e pointer.Event, d *draw.Draw) bool {
 			n.mode = ModeSelecting
 			return true
 		}
-
 		if gridMode == GridModeDraw {
 			// 绘制模式：【关键逻辑】从线段上开始绘制（打断线段）
 			// 1. 找到线段所属的 Connection
@@ -227,7 +240,6 @@ func (n *NodeComponent) onPress(e pointer.Event, d *draw.Draw) bool {
 					break
 				}
 			}
-
 			if targetConn != nil {
 				// 2. 执行打断并在该位置创建新节点
 				if intersectionPoint, ok := n.splitSegmentAtPosition(seg, targetConn, e.Position, d); ok {
@@ -241,9 +253,7 @@ func (n *NodeComponent) onPress(e pointer.Event, d *draw.Draw) bool {
 			}
 		}
 	}
-
 	n.clearSelection()
-
 	// 4. 点击空白处
 	if gridMode == GridModeDraw {
 		// 绘制模式：在空白处创建新点并开始绘制
@@ -259,7 +269,6 @@ func (n *NodeComponent) onPress(e pointer.Event, d *draw.Draw) bool {
 		n.mode = ModeDrawing
 		return true
 	}
-
 	return false
 }
 
@@ -299,14 +308,11 @@ func (n *NodeComponent) onRelease(e pointer.Event, d *draw.Draw) bool {
 func (n *NodeComponent) finishConnection(pos f32.Point, d *draw.Draw) {
 	// 1. 尝试找到鼠标释放位置下的现有点
 	endPt := n.findPointAt(pos, d)
-
 	// 标记是否创建了新的终点
 	createdNewEndPoint := false
-
 	// 2. 如果没有找到，创建一个新点
 	if endPt == nil {
 		snapPos := n.SnapToGrid(n.screenToWorld(pos, d))
-
 		// 优化：如果新计算的位置和起点位置一模一样，就不要创建新点了，直接算作原地点击
 		if n.drawingStartPoint != nil && snapPos.Eq(n.drawingStartPoint.Position) {
 			endPt = n.drawingStartPoint
@@ -320,14 +326,12 @@ func (n *NodeComponent) finishConnection(pos f32.Point, d *draw.Draw) {
 			createdNewEndPoint = true
 		}
 	}
-
 	// 3. 判断操作类型
 	if n.drawingStartPoint != nil {
 		// 情况 A: 起点和终点不同 -> 创建连线
 		if endPt != n.drawingStartPoint {
 			startIdx := n.getPtIdx(n.drawingStartPoint)
 			endIdx := n.getPtIdx(endPt)
-
 			if startIdx != -1 && endIdx != -1 {
 				seg := &Segment{
 					ID:       fmt.Sprintf("seg_%d", time.Now().UnixNano()),
@@ -344,17 +348,13 @@ func (n *NodeComponent) finishConnection(pos f32.Point, d *draw.Draw) {
 			}
 		} else {
 			// 情况 B: 起点和终点相同 (原地点击或拖拽回原点)
-
 			// 如果这个终点是我们刚刚为了这次操作创建的（在 onPress 里创建的），
 			// 并且现在没有连线连着它，它就是个孤立点，需要删除。
-
 			// 如果刚刚在第2步里创建了终点（createdNewEndPoint），但发现位置重叠又变成了起点，
 			// 这种逻辑下 createdNewEndPoint 会是 true 但 point 是同一个，不过上面的 if 逻辑规避了重复添加。
-
 			// 核心逻辑：尝试删除 drawingStartPoint。
 			// 如果它是组件引脚或已连接旧线段，removePointIfUnused 会自动跳过，不用担心误删。
 			n.removePointIfUnused(n.drawingStartPoint)
-
 			// 如果我们在第2步创建了 endPt (并且它不是 StartPoint，虽然这在 else 分支不太可能发生，除非逻辑极其特殊)，
 			// 也尝试清理它
 			if createdNewEndPoint && endPt != n.drawingStartPoint {
@@ -362,7 +362,6 @@ func (n *NodeComponent) finishConnection(pos f32.Point, d *draw.Draw) {
 			}
 		}
 	}
-
 	n.drawingStartPoint = nil
 }
 
@@ -375,26 +374,21 @@ func (n *NodeComponent) splitSegmentAtPosition(seg *Segment, conn *Connection, p
 	if !ok1 || !ok2 {
 		return nil, false
 	}
-
 	// 2. 计算点击位置对应的世界坐标（吸附网格）
 	// 注意：这里我们使用 Draw 包提供的投影算法来找到线段上最近的点，而不是鼠标的精确点击点
 	// 这样可以确保新节点正好在线上
-
 	// 为了简单且符合电路绘制习惯，我们直接取鼠标吸附后的网格点
 	// 假设用户点击位置已经在 findSegmentAt 中验证过足够靠近线段
 	intersectionWorldPos := n.SnapToGrid(n.screenToWorld(pos, d))
-
 	// 3. 创建新的交叉点
 	intersectionPoint := &Point{
 		ID:       fmt.Sprintf("intersect_%d", time.Now().UnixNano()),
 		Position: intersectionWorldPos,
 		IsMatrix: false,
 	}
-
 	// 4. 将新点添加到点列表
 	n.PointList = append(n.PointList, intersectionPoint)
 	intersectionIdx := len(n.PointList) - 1
-
 	// 5. 创建两段新线段来替代旧线段
 	// 第一段：原起点 -> 交叉点
 	seg1 := &Segment{
@@ -406,7 +400,6 @@ func (n *NodeComponent) splitSegmentAtPosition(seg *Segment, conn *Connection, p
 		Color:    seg.Color,
 		Width:    seg.Width,
 	}
-
 	// 第二段：交叉点 -> 原终点
 	seg2 := &Segment{
 		ID:       fmt.Sprintf("%s_b", seg.ID),
@@ -417,7 +410,6 @@ func (n *NodeComponent) splitSegmentAtPosition(seg *Segment, conn *Connection, p
 		Color:    seg.Color,
 		Width:    seg.Width,
 	}
-
 	// 6. 更新 Connection 的线段列表
 	newSegments := []*Segment{}
 	for _, s := range conn.Segments {
@@ -427,7 +419,6 @@ func (n *NodeComponent) splitSegmentAtPosition(seg *Segment, conn *Connection, p
 	}
 	newSegments = append(newSegments, seg1, seg2)
 	conn.Segments = newSegments
-
 	return intersectionPoint, true
 }
 
@@ -438,13 +429,11 @@ func (n *NodeComponent) removePointIfUnused(pt *Point) {
 	if pt.NodeID != "" {
 		return
 	}
-
 	// 2. 获取点在列表中的索引
 	idx := n.getPtIdx(pt)
 	if idx == -1 {
 		return
 	}
-
 	// 3. 检查该点是否被任何线段使用
 	isUsed := false
 	for _, conn := range n.Connections {
@@ -458,16 +447,13 @@ func (n *NodeComponent) removePointIfUnused(pt *Point) {
 			break
 		}
 	}
-
 	// 如果被使用了，则不能删除
 	if isUsed {
 		return
 	}
-
 	// 4. 执行删除操作
 	// 从切片中移除该点
 	n.PointList = append(n.PointList[:idx], n.PointList[idx+1:]...)
-
 	// 5. 【关键】更新所有线段的索引引用
 	// 因为 idx 位置的点被删除了，所有索引大于 idx 的点，其在数组中的位置都前移了 1 位
 	for _, conn := range n.Connections {
@@ -484,7 +470,10 @@ func (n *NodeComponent) removePointIfUnused(pt *Point) {
 
 // --- 绘制逻辑 ---
 
-func (n *NodeComponent) drawConnections(gtx layout.Context, d *draw.Draw) {
+func (n *NodeComponent) drawConnections(d *draw.Draw) {
+	poly := &draw.OrthogonalPolyline{
+		AllPoints: make([]f32.Point, 1),
+	}
 	for _, conn := range n.Connections {
 		for _, seg := range conn.Segments {
 			p1, ok1 := n.getPointWorldPos(seg.StartIdx)
@@ -492,10 +481,8 @@ func (n *NodeComponent) drawConnections(gtx layout.Context, d *draw.Draw) {
 			if !ok1 || !ok2 {
 				continue
 			}
-
-			// 使用 Draw 包的 ManhattanRouting 绘制
-			poly := draw.NewOrthogonalPolyline(p1, p2, seg.Control)
-
+			poly.P1, poly.P2 = p1, p2
+			poly.Control = seg.Control
 			c := seg.Color
 			if c.A == 0 {
 				c.A = 255
@@ -505,9 +492,7 @@ func (n *NodeComponent) drawConnections(gtx layout.Context, d *draw.Draw) {
 				c = color.NRGBA{R: 255, G: 165, B: 0, A: 255}
 				w *= 1.5
 			}
-
 			poly.Add(d, w, c)
-
 			// 绘制控制点
 			if seg.Selected {
 				for _, cp := range seg.Control {
@@ -520,14 +505,17 @@ func (n *NodeComponent) drawConnections(gtx layout.Context, d *draw.Draw) {
 	}
 }
 
-func (n *NodeComponent) drawDrawingPreview(gtx layout.Context, d *draw.Draw) {
+func (n *NodeComponent) drawDrawingPreview(d *draw.Draw) {
 	if n.drawingStartPoint == nil {
 		return
 	}
 	p1, _ := n.getPointWorldPosByID(n.drawingStartPoint)
-
 	// 预览线使用半透明灰色
-	poly := draw.NewOrthogonalPolyline(p1, n.drawingTempPos, nil)
+	poly := &draw.OrthogonalPolyline{
+		P1:        p1,
+		P2:        n.drawingTempPos,
+		AllPoints: make([]f32.Point, 1),
+	}
 	poly.Add(d, 2, color.NRGBA{R: 100, G: 100, B: 100, A: 150})
 }
 
@@ -535,7 +523,6 @@ func (n *NodeComponent) drawPoints(gtx layout.Context, d *draw.Draw) {
 	for _, p := range n.PointList {
 		pos, _ := n.getPointWorldPosByID(p)
 		sp := d.WorldToScreenF32(pos)
-
 		radius := float32(gtx.Dp(unit.Dp(4))) * d.Scale
 		// 绘制点：灰色填充
 		d.DrawCircle(sp, radius, 1, color.NRGBA{R: 50, G: 50, B: 50, A: 255}, color.NRGBA{}, true)
@@ -546,7 +533,9 @@ func (n *NodeComponent) drawPoints(gtx layout.Context, d *draw.Draw) {
 
 func (n *NodeComponent) findSegmentAt(pos f32.Point, d *draw.Draw) *Segment {
 	threshold := float32(8.0)
-
+	poly := &draw.OrthogonalPolyline{
+		AllPoints: make([]f32.Point, 1),
+	}
 	for _, conn := range n.Connections {
 		for _, seg := range conn.Segments {
 			p1, ok1 := n.getPointWorldPos(seg.StartIdx)
@@ -554,11 +543,9 @@ func (n *NodeComponent) findSegmentAt(pos f32.Point, d *draw.Draw) *Segment {
 			if !ok1 || !ok2 {
 				continue
 			}
-
-			poly := draw.NewOrthogonalPolyline(p1, p2, seg.Control)
-			dist := poly.DistanceToPoint(pos, d)
-
-			if dist < threshold {
+			poly.P1, poly.P2 = p1, p2
+			poly.Control = seg.Control
+			if poly.DistanceToPoint(pos, d) < threshold {
 				return seg
 			}
 		}

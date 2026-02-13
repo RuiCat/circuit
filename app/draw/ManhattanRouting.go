@@ -19,9 +19,10 @@ type OrthogonalPolyline struct {
 // NewOrthogonalPolyline 创建新的正交折线
 func NewOrthogonalPolyline(p1, p2 image.Point, control []image.Point) *OrthogonalPolyline {
 	return &OrthogonalPolyline{
-		P1:      p1,
-		P2:      p2,
-		Control: control,
+		P1:        p1,
+		P2:        p2,
+		Control:   control,
+		AllPoints: make([]f32.Point, 1),
 	}
 }
 
@@ -29,7 +30,6 @@ func NewOrthogonalPolyline(p1, p2 image.Point, control []image.Point) *Orthogona
 func (c *OrthogonalPolyline) Add(cd *Draw, width float32, color color.NRGBA) {
 	// 计算正交折线的所有点
 	points := c.CalculatePoints(cd)
-
 	// 使用 DrawPolyline 方法绘制折线
 	if len(points) >= 2 {
 		cd.DrawPolyline(points, width, color)
@@ -41,28 +41,23 @@ func (c *OrthogonalPolyline) Add(cd *Draw, width float32, color color.NRGBA) {
 func (c *OrthogonalPolyline) CalculatePoints(cd *Draw) []f32.Point {
 	s1 := cd.WorldToScreenF32(c.P1)
 	s2 := cd.WorldToScreenF32(c.P2)
-
 	if len(c.Control) == 0 {
 		// 无控制点的正交布线
 		return c.calculateOrthogonalPoints(s1, s2)
 	}
-
 	// 有控制点的正交折线
-	allPoints := []f32.Point{s1}
-
+	allPoints := c.AllPoints[:1]
+	allPoints[0] = s1
 	// 添加所有控制点
 	for _, cp := range c.Control {
 		allPoints = append(allPoints, cd.WorldToScreenF32(cp))
 	}
-
 	// 添加终点
 	allPoints = append(allPoints, s2)
-
 	// 计算正交折线点
 	result := []f32.Point{}
 	prev := allPoints[0]
 	result = append(result, prev)
-
 	for i := 1; i < len(allPoints); i++ {
 		points := c.calculateOrthogonalPoints(prev, allPoints[i])
 		// 跳过第一个点（已经是prev）
@@ -71,7 +66,6 @@ func (c *OrthogonalPolyline) CalculatePoints(cd *Draw) []f32.Point {
 		}
 		prev = allPoints[i]
 	}
-
 	c.AllPoints = result
 	return result
 }
@@ -80,10 +74,8 @@ func (c *OrthogonalPolyline) CalculatePoints(cd *Draw) []f32.Point {
 func (c *OrthogonalPolyline) calculateOrthogonalPoints(p1, p2 f32.Point) []f32.Point {
 	dx := math.Abs(float64(p2.X - p1.X))
 	dy := math.Abs(float64(p2.Y - p1.Y))
-
 	// 容错阈值：1像素
 	const epsilon = 1.0
-
 	if dx < epsilon {
 		// X坐标基本相同，直接画垂直线
 		return []f32.Point{p1, p2}
@@ -108,7 +100,6 @@ func (c *OrthogonalPolyline) DistanceToPoint(pos f32.Point, cd *Draw) float32 {
 	if len(points) < 2 {
 		return math.MaxFloat32
 	}
-
 	minDist := float32(math.MaxFloat32)
 	for i := 0; i < len(points)-1; i++ {
 		dist := DistToSegment(pos, points[i], points[i+1])
@@ -116,7 +107,6 @@ func (c *OrthogonalPolyline) DistanceToPoint(pos f32.Point, cd *Draw) float32 {
 			minDist = dist
 		}
 	}
-
 	return minDist
 }
 

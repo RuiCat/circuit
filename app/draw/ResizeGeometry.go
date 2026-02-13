@@ -59,10 +59,8 @@ func (rg *ResizeGeometry) HandleEvents(gtx layout.Context, rect image.Rectangle,
 	newSize = rg.StartSize
 	handleHit = HandleNone
 	isDragging = false
-
 	// 局部变量记录拖拽起始位置
 	var dragStartPos f32.Point
-
 	// 检查是否有指针事件
 	for {
 		ev, ok := gtx.Event(pointer.Filter{
@@ -71,41 +69,42 @@ func (rg *ResizeGeometry) HandleEvents(gtx layout.Context, rect image.Rectangle,
 		if !ok {
 			break
 		}
-
 		e, _ := ev.(pointer.Event)
+		rg.HandlePointerEvent(e, rect, threshold, &newPos, &newSize, &handleHit, &isDragging, &dragStartPos)
+	}
+	return newPos, newSize, handleHit, isDragging
+}
 
-		switch e.Kind {
-		case pointer.Press:
-			// 检测是否点击了控制点
-			handleHit = HitTestHandles(e.Position, rect, threshold)
-			if handleHit != HandleNone {
-				// 记录初始状态
-				rg.StartPos = image.Pt(rect.Min.X, rect.Min.Y)
-				rg.StartSize = image.Pt(rect.Dx(), rect.Dy())
-				rg.ActiveHandle = handleHit
-				dragStartPos = e.Position
-				isDragging = true
-			}
-
-		case pointer.Drag:
-			if rg.ActiveHandle != HandleNone && isDragging {
-				// 计算拖拽差值
-				diff := e.Position.Sub(dragStartPos)
-				// 更新拖拽起始位置，以便下一次计算相对差值
-				dragStartPos = e.Position
-				newPos, newSize = rg.Update(diff)
-			}
-
-		case pointer.Release:
-			if isDragging {
-				// 重置状态
-				rg.ActiveHandle = HandleNone
-				isDragging = false
-			}
+// HandlePointerEvent 处理单个指针事件
+// 这个方法可以被其他组件调用，将事件委托给 ResizeGeometry 处理
+func (rg *ResizeGeometry) HandlePointerEvent(e pointer.Event, rect image.Rectangle, threshold float32, newPos, newSize *image.Point, handleHit *Handle, isDragging *bool, dragStartPos *f32.Point) {
+	switch e.Kind {
+	case pointer.Press:
+		// 检测是否点击了控制点
+		*handleHit = HitTestHandles(e.Position, rect, threshold)
+		if *handleHit != HandleNone {
+			// 记录初始状态
+			rg.StartPos = image.Pt(rect.Min.X, rect.Min.Y)
+			rg.StartSize = image.Pt(rect.Dx(), rect.Dy())
+			rg.ActiveHandle = *handleHit
+			*dragStartPos = e.Position
+			*isDragging = true
+		}
+	case pointer.Drag:
+		if rg.ActiveHandle != HandleNone && *isDragging {
+			// 计算拖拽差值
+			diff := e.Position.Sub(*dragStartPos)
+			// 更新拖拽起始位置，以便下一次计算相对差值
+			*dragStartPos = e.Position
+			*newPos, *newSize = rg.Update(diff)
+		}
+	case pointer.Release:
+		if *isDragging {
+			// 重置状态
+			rg.ActiveHandle = HandleNone
+			*isDragging = false
 		}
 	}
-
-	return newPos, newSize, handleHit, isDragging
 }
 
 // Update 根据屏幕坐标的拖拽差值更新组件的位置和大小
@@ -116,10 +115,8 @@ func (rg *ResizeGeometry) Update(diff f32.Point) (newPos, newSize image.Point) {
 	worldDiffX := diff.X / rg.Scale
 	worldDiffY := diff.Y / rg.Scale
 	dx, dy := int(worldDiffX), int(worldDiffY)
-
 	newPos = rg.StartPos
 	newSize = rg.StartSize
-
 	// 垂直方向
 	switch rg.ActiveHandle {
 	case HandleNW, HandleN, HandleNE:
@@ -128,7 +125,6 @@ func (rg *ResizeGeometry) Update(diff f32.Point) (newPos, newSize image.Point) {
 	case HandleSW, HandleS, HandleSE:
 		newSize.Y += dy
 	}
-
 	// 水平方向
 	switch rg.ActiveHandle {
 	case HandleNW, HandleW, HandleSW:
@@ -137,10 +133,8 @@ func (rg *ResizeGeometry) Update(diff f32.Point) (newPos, newSize image.Point) {
 	case HandleNE, HandleE, HandleSE:
 		newSize.X += dx
 	}
-
 	// 应用最小尺寸限制
 	newPos, newSize = rg.applyMinSizeConstraint(newPos, newSize)
-
 	return newPos, newSize
 }
 
@@ -152,14 +146,12 @@ func (rg *ResizeGeometry) applyMinSizeConstraint(pos, size image.Point) (image.P
 		}
 		size.X = rg.MinSize
 	}
-
 	if size.Y < rg.MinSize {
 		if rg.ActiveHandle == HandleNW || rg.ActiveHandle == HandleN || rg.ActiveHandle == HandleNE {
 			pos.Y -= (rg.MinSize - size.Y)
 		}
 		size.Y = rg.MinSize
 	}
-
 	return pos, size
 }
 
