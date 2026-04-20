@@ -71,14 +71,14 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 		config := elements[i].Config()
 
 		// 分配内部节点
-		for i := 0; i < config.InternalNum(); i++ {
-			elements[i].SetNodesInternal(i, currentInternalNodeID)
+		for j := 0; j < config.InternalNum(); j++ {
+			elements[i].SetNodesInternal(j, currentInternalNodeID)
 			currentInternalNodeID++
 		}
 
 		// 分配电压源
-		for i := 0; i < config.VoltageNum(); i++ {
-			elements[i].SetVoltSource(i, currentVoltageID)
+		for j := 0; j < config.VoltageNum(); j++ {
+			elements[i].SetVoltSource(j, currentVoltageID)
 			currentVoltageID++
 		}
 	}
