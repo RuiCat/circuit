@@ -33,6 +33,8 @@ type Config struct {
 	OrigValue []int    // 数据备份索引，指向需要备份/恢复的参数在ValueInit中的索引。
 	Voltage   []string // 电压源名称列表，定义元件内部的电压源标识。
 	Internal  []string // 内部引脚名称列表，定义元件的内部节点标识。
+
+	CanCacheStamp bool // 允许引脚电压缓存优化。仅 DoStep 计算只依赖引脚电压的元件可启用（如 Diode, Transistor）。
 }
 
 // Base 默认配置信息。

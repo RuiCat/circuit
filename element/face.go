@@ -90,6 +90,7 @@ type ConfigFace interface {
 	ValueNum() int                // 获取元件参数数量。
 	VoltageNum() int              // 获取电压源数量。
 	Reset(base NodeFace)          // 重置元件状态到初始值。
+	CanOptimizeStamp() bool       // 是否允许引脚电压缓存优化。
 }
 
 // ElementFace 元件实现接口，提供元件的动态行为实现。
