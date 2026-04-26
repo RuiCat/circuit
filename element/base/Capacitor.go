@@ -17,9 +17,12 @@ var CapacitorType element.NodeType = element.AddElement(0, &Capacitor{
 	},
 })
 
-// Capacitor 电容
+// Capacitor 电容元件结构体，继承element.Config
+// 实现电容的伴随模型（companion model），使用梯形积分法进行暂态仿真
 type Capacitor struct{ *element.Config }
 
+// StartIteration 电容的迭代初始化
+// 计算历史电流源 I_hist = (2C/dt) * v_prev + I_cap_prev，用于伴随模型的电流源贡献
 func (Capacitor) StartIteration(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	dt := time.TimeStep()
 	c := value.GetFloat64(0)
@@ -28,6 +31,8 @@ func (Capacitor) StartIteration(mna mna.Mna, time mna.Time, value element.NodeFa
 	value.SetFloat64(2, I_hist)
 }
 
+// Stamp 电容的MNA矩阵加盖操作
+// 计算等效电导 G_eq = 2C/dt，并将其添加到MNA矩阵中
 func (Capacitor) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	dt := time.TimeStep()
 	c := value.GetFloat64(0)
@@ -39,11 +44,15 @@ func (Capacitor) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	mna.StampAdmittance(value.GetNodes(0), value.GetNodes(1), G_eq)
 }
 
+// DoStep 电容的步进计算
+// 将历史电流源 I_hist 加盖到MNA右侧向量中，实现伴随模型的电流源贡献
 func (Capacitor) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	I_hist := value.GetFloat64(2)
 	mna.StampCurrentSource(value.GetNodes(1), value.GetNodes(0), I_hist)
 }
 
+// CalculateCurrent 计算电容的电流
+// 使用 I_cap = G_eq * v_diff - I_hist 计算流经电容的电流，其中 v_diff 为两端电压差
 func (Capacitor) CalculateCurrent(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	v1 := mna.GetNodeVoltage(value.GetNodes(0))
 	v2 := mna.GetNodeVoltage(value.GetNodes(1))

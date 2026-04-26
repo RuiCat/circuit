@@ -4,12 +4,13 @@ import (
 	"reflect"
 )
 
-// BaseRead 基本类型读
+// BaseRead 使用反射将字节数组中的二进制数据读取到任意Go变量中
+// 支持所有基本类型、指针、映射、切片、数组、结构体和接口的递归读取
 func BaseRead(r *Read, v interface{}) error {
 	return baseRead(r, reflect.ValueOf(v))
 }
 
-// baseRead 基本类型读实现
+// baseRead 基本类型读取的递归实现，根据反射类型分发到对应的Read方法
 func baseRead(r *Read, v reflect.Value) error {
 	if !v.IsValid() || !v.CanSet() {
 		return ErrInvalidData
@@ -187,7 +188,8 @@ func baseRead(r *Read, v reflect.Value) error {
 	return nil
 }
 
-// typetoValue 类型到值
+// typetoValue 根据reflect.Kind创建对应类型的零值反射对象
+// 用于接口类型的反序列化，先读取类型标识再创建对应类型的值
 func typetoValue(t reflect.Kind) (v reflect.Value, _ bool) {
 	switch t {
 	case reflect.Bool:

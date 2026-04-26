@@ -4,12 +4,13 @@ import (
 	"reflect"
 )
 
-// BaseWrite 基础类型写
+// BaseWrite 使用反射将任意Go变量序列化为二进制字节数据
+// 支持所有基本类型、指针、映射、切片、数组、结构体和接口的递归写入
 func BaseWrite(w *Write, v interface{}) error {
 	return baseWrite(w, reflect.ValueOf(v))
 }
 
-// baseWrite 基础类型写实现
+// baseWrite 基础类型写入的递归实现，根据反射类型分发到对应的Write方法
 func baseWrite(w *Write, v reflect.Value) error {
 	if !v.IsValid() {
 		return ErrInvalidData

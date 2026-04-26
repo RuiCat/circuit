@@ -17,7 +17,14 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 	// 初始化阶段：获取电路规模并创建求解器
 	nodesNum, voltageSourcesNum := con.GetNodeNum(), con.GetVoltageSourcesNum()
 	// 创建LU分解器
-	luSolver, err := maths.NewLU[float64](nodesNum + voltageSourcesNum)
+	systemSize := nodesNum + voltageSourcesNum
+	var luSolver maths.LU[float64]
+	var err error
+	if con.ParallelOpts != nil && con.ParallelOpts.StampWorkers > 1 {
+		luSolver, err = maths.NewParallelLU[float64](systemSize, con.ParallelOpts.StampWorkers)
+	} else {
+		luSolver, err = maths.NewLU[float64](systemSize)
+	}
 	if err != nil {
 		return fmt.Errorf("LU分解器初始化失败: %v", err)
 	}
@@ -41,6 +48,17 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 		con.Z.Rollback()
 		// 还原解向量X和元件内部状态到上一次收敛结果
 		con.CallMark(element.MarkRollbackElements)
+		// 触发点步长预调整：如果步长会越过最近的触发点，截断步长
+		for _, tr := range con.Triggers() {
+			if !tr.Triggered && tr.Time > con.CurrentTime() {
+				remaining := tr.Time - con.CurrentTime()
+				if remaining > 0 && remaining < con.CurrentStep()*0.999 {
+					con.SetTimeStep(remaining)
+					needLinearStamp = true
+					break
+				}
+			}
+		}
 		// 线性元件处理
 		if needLinearStamp {
 			// 需要重新加盖线性元件
@@ -67,7 +85,9 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 			con.A.Rollback()
 			con.Z.Rollback()
 			// 遍历所有非线性元件，计算其贡献
-			con.CallMark(element.MarkDoStep)
+			if err := doStep(con); err != nil {
+				return err
+			}
 			// 求解MNA方程
 			if err := luSolver.Decompose(con.GetA()); err != nil {
 				return fmt.Errorf("矩阵分解失败（时间=%.6e，步长=%.6e）: %v", con.CurrentTime(), con.CurrentStep(), err)
@@ -95,7 +115,9 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 				con.A.Rollback()
 				con.Z.Rollback()
 				// 重新计算所有非线性元件的贡献
-				con.CallMark(element.MarkDoStep)
+				if err := doStep(con); err != nil {
+					return err
+				}
 				// 重新求解MNA方程
 				if err := luSolver.Decompose(con.GetA()); err != nil {
 					return fmt.Errorf("元件迭代中矩阵分解失败: %v", err)
@@ -161,6 +183,15 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 	return nil
 }
 
+// doStep 执行一步 DoStep，根据 ParallelOpts 选择串行或并行
+func doStep(con *element.Context) error {
+	if con.ParallelOpts != nil {
+		return con.ParallelCallMark(element.MarkDoStep)
+	}
+	con.CallMark(element.MarkDoStep)
+	return nil
+}
+
 // extractAndValidateVoltages 从MNA求解器提取节点电压并验证有效性
 func extractAndValidateVoltages(mnaSolver mna.Mna, nodesNum int, voltages []float64) bool {
 	allValid := true
@@ -172,123 +203,6 @@ func extractAndValidateVoltages(mnaSolver mna.Mna, nodesNum int, voltages []floa
 		}
 	}
 	return allValid
-}
-
-// ParallelTransientSimulation 并行瞬态仿真，使用并行MarkDoStep和可选的并行LU求解器
-func ParallelTransientSimulation(con *element.Context, call func([]float64), opts element.ParallelOptions) error {
-	nodesNum, voltageSourcesNum := con.GetNodeNum(), con.GetVoltageSourcesNum()
-	systemSize := nodesNum + voltageSourcesNum
-
-	var luSolver maths.LU[float64]
-	var err error
-	if opts.StampWorkers > 1 {
-		luSolver, err = maths.NewParallelLU[float64](systemSize, opts.StampWorkers)
-	} else {
-		luSolver, err = maths.NewLU[float64](systemSize)
-	}
-	if err != nil {
-		return fmt.Errorf("LU分解器初始化失败: %v", err)
-	}
-
-	voltages := make([]float64, nodesNum)
-	needLinearStamp := true
-
-	con.CallMark(element.MarkReset)
-	con.ResetTimeStepCount()
-	for !con.IsSimulationFinished() {
-		if !con.IncrementTimeStepCount() {
-			return fmt.Errorf("达到最大时间步数限制 %f，仿真可能陷入无限循环", con.Time.MaxTimeStep())
-		}
-		con.ResetNonlinearIter()
-		con.A.Rollback()
-		con.Z.Rollback()
-		con.CallMark(element.MarkRollbackElements)
-
-		if needLinearStamp {
-			needLinearStamp = false
-			con.GetA().Base().Zero()
-			con.GetZ().Base().Zero()
-			con.CallMark(element.MarkStartIteration)
-			con.CallMark(element.MarkStamp)
-			con.Update()
-		} else {
-			con.CallMark(element.MarkStartIteration)
-		}
-
-		newtonConverged := false
-		newtonIterCount := 0
-		for con.NextNonlinearIter() {
-			newtonIterCount++
-			if err := element.ParallelCallMark(con, element.MarkDoStep, opts); err != nil {
-				return err
-			}
-			if err := luSolver.Decompose(con.GetA()); err != nil {
-				return fmt.Errorf("矩阵分解失败（时间=%.6e，步长=%.6e）: %v", con.CurrentTime(), con.CurrentStep(), err)
-			}
-			if err := luSolver.SolveReuse(con.GetZ(), con.GetX()); err != nil {
-				return fmt.Errorf("方程求解失败（时间=%.6e）: %v", con.CurrentTime(), err)
-			}
-			if err := con.CalculateMNAResidual(con); err != nil {
-				return fmt.Errorf("残差计算失败: %v", err)
-			}
-			con.CheckResidualConvergence()
-			if con.IsConverged() && newtonIterCount >= 2 {
-				newtonConverged = true
-				break
-			}
-			con.ResetElemIter()
-			for con.NextElemIter() {
-				con.A.Rollback()
-				con.Z.Rollback()
-				if err := element.ParallelCallMark(con, element.MarkDoStep, opts); err != nil {
-					return err
-				}
-				if err := luSolver.Decompose(con.GetA()); err != nil {
-					return fmt.Errorf("元件迭代中矩阵分解失败: %v", err)
-				}
-				if err := luSolver.SolveReuse(con.GetZ(), con.GetX()); err != nil {
-					return fmt.Errorf("元件迭代中方程求解失败: %v", err)
-				}
-				if err := con.CalculateMNAResidual(con); err != nil {
-					return fmt.Errorf("残差计算失败: %v", err)
-				}
-				con.CheckResidualConvergence()
-				if con.IsConverged() {
-					con.CallMark(element.MarkUpdateElements)
-					break
-				}
-			}
-			if con.IsElemIterExhausted() {
-				return fmt.Errorf("经过 %d 次元件迭代后仍未收敛", con.MaxElemIter())
-			}
-		}
-		if !newtonConverged {
-			return fmt.Errorf("牛顿迭代在时间 %.6e 未收敛（达到最大迭代次数 %d）", con.CurrentTime(), con.MaxNonlinearIter())
-		}
-		con.CallMark(element.MarkCalculateCurrent)
-		con.CallMark(element.MarkStepFinished)
-		if !extractAndValidateVoltages(con, nodesNum, voltages) {
-			return fmt.Errorf("检测到无效电压值（NaN/Inf）在时间 %.6e，停止仿真", con.CurrentTime())
-		}
-		con.UpdateResidualHistory()
-		if con.ShouldAdjustStepSize() {
-			needLinearStamp = true
-		}
-		if con.IsResidualConverged() {
-			if err := advanceTimeSimple(con); err != nil {
-				return fmt.Errorf("时间推进失败: %v", err)
-			}
-			con.CallMark(element.MarkUpdateElements)
-			con.ResetTimeStepCount()
-			call(voltages)
-		} else {
-			needLinearStamp = true
-			continue
-		}
-	}
-	// 将X恢复到指向最后一次收敛解（原因同TransientSimulation）。
-	con.CallMark(element.MarkUpdateElements)
-	return nil
 }
 
 // advanceTimeSimple 简单时间推进方法
@@ -303,10 +217,23 @@ func advanceTimeSimple(con *element.Context) error {
 	targetTime := con.TargetTime()
 	// 计算下一个时间
 	nextTime := currentTime + timeStep
+	// 触发点截断：确保不会越过未触发的触发点
+	triggers := con.Triggers()
+	for i := range triggers {
+		if !triggers[i].Triggered && triggers[i].Time > currentTime && nextTime > triggers[i].Time {
+			nextTime = triggers[i].Time
+		}
+	}
 	if nextTime > targetTime {
 		nextTime = targetTime
 	}
 	// 更新仿真时间
 	con.SetTime(nextTime)
+	// 标记已到达的触发点
+	for i := range triggers {
+		if !triggers[i].Triggered && nextTime >= triggers[i].Time {
+			triggers[i].Triggered = true
+		}
+	}
 	return nil
 }

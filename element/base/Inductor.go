@@ -17,9 +17,12 @@ var InductorType element.NodeType = element.AddElement(3, &Inductor{
 	},
 })
 
-// Inductor 电感器
+// Inductor 电感元件结构体，继承element.Config
+// 实现电感的伴随模型，使用梯形积分法或后向欧拉法进行暂态仿真
 type Inductor struct{ *element.Config }
 
+// StartIteration 电感的迭代初始化
+// 计算历史电流源 I_hist = v_diff * G_eq + I_hist_prev，用于伴随模型的电流源贡献
 func (Inductor) StartIteration(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	dt := time.TimeStep()
 	if dt <= 0 {
@@ -35,6 +38,8 @@ func (Inductor) StartIteration(mna mna.Mna, time mna.Time, value element.NodeFac
 	}
 }
 
+// Stamp 电感的MNA矩阵加盖操作
+// 计算等效电导 G_eq，根据迭代收敛情况选择梯形积分法（G_eq = dt/2L）或后向欧拉法（G_eq = dt/L）
 func (Inductor) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	inductance := value.GetFloat64(0)
 	dt := time.TimeStep()
@@ -55,11 +60,15 @@ func (Inductor) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	mna.StampAdmittance(value.GetNodes(0), value.GetNodes(1), G_eq)
 }
 
+// DoStep 电感的步进计算
+// 将历史电流源 I_hist 加盖到MNA右侧向量中
 func (Inductor) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	I_hist := value.GetFloat64(3)
 	mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), I_hist)
 }
 
+// CalculateCurrent 计算电感的电流
+// 使用 I = G_eq * v_diff - I_hist 计算流经电感的电流
 func (Inductor) CalculateCurrent(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	G_eq := value.GetFloat64(2)
 	if G_eq > 0 {

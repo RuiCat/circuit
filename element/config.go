@@ -25,16 +25,15 @@ func SetPin(pinType PinType, pin ...string) (pins []Pin) {
 // Config 元件配置结构体，存储元件的静态配置信息。
 // 这些配置在元件创建时初始化，并在整个仿真过程中保持不变。
 type Config struct {
-	Name      string   // 元件名称（如 "r" 表示电阻）。
-	Pin       []Pin    // 引脚列表，定义元件的外部连接点。
-	ValueInit []any    // 初始化数据，存储元件的参数初始值（如电阻值、电压值等）。
-	ValueName []string // 参数名称。
-	Current   []int    // 电流数据索引，指向ValueInit中存储电流值的索引位置。
-	OrigValue []int    // 数据备份索引，指向需要备份/恢复的参数在ValueInit中的索引。
-	Voltage   []string // 电压源名称列表，定义元件内部的电压源标识。
-	Internal  []string // 内部引脚名称列表，定义元件的内部节点标识。
-
-	CanCacheStamp bool // 允许引脚电压缓存优化。仅 DoStep 计算只依赖引脚电压的元件可启用（如 Diode, Transistor）。
+	Name          string   // 元件名称（如 "r" 表示电阻）。
+	Pin           []Pin    // 引脚列表，定义元件的外部连接点。
+	ValueInit     []any    // 初始化数据，存储元件的参数初始值（如电阻值、电压值等）。
+	ValueName     []string // 参数名称。
+	Current       []int    // 电流数据索引，指向ValueInit中存储电流值的索引位置。
+	OrigValue     []int    // 数据备份索引，指向需要备份/恢复的参数在ValueInit中的索引。
+	Voltage       []string // 电压源名称列表，定义元件内部的电压源标识。
+	Internal      []string // 内部引脚名称列表，定义元件的内部节点标识。
+	CanCacheStamp bool     // 允许引脚电压缓存优化。仅 DoStep 计算只依赖引脚电压的元件可启用（如 Diode, Transistor）。
 }
 
 // Base 默认配置信息。

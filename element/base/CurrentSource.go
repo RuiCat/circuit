@@ -16,9 +16,12 @@ var CurrentSourceType element.NodeType = element.AddElement(1, &CurrentSource{
 	},
 })
 
-// CurrentSource 电流源
+// CurrentSource 独立电流源元件结构体，继承element.Config
+// 实现独立电流源的MNA加盖行为
 type CurrentSource struct{ *element.Config }
 
+// Stamp 电流源的MNA矩阵加盖操作
+// 将电流值 I 直接加盖到MNA右侧向量中，方向从 n1 流向 n2
 func (CurrentSource) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), value.GetFloat64(0))
 }

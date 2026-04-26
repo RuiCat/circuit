@@ -11,6 +11,8 @@ import (
 	"testing"
 )
 
+// TestRunSimpleBranchELF 验证虚拟机分支指令的执行正确性
+// 编译并运行包含分支指令的RISC-V ELF程序，验证条件跳转行为
 func TestRunSimpleBranchELF(t *testing.T) {
 	cmd := exec.Command("make")
 	cmd.Dir = "."

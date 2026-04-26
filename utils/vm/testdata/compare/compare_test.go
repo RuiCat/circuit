@@ -11,6 +11,8 @@ import (
 	"testing"
 )
 
+// TestRunSimpleCompareELF 验证虚拟机比较指令的执行正确性
+// 编译并运行包含比较指令的RISC-V ELF程序，验证比较操作的结果
 func TestRunSimpleCompareELF(t *testing.T) {
 	cmd := exec.Command("make")
 	cmd.Dir = "."

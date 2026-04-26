@@ -7,6 +7,8 @@ import (
 	"testing"
 )
 
+// TestCapacitor 验证电容元件的暂态仿真正确性
+// 测试电路：电压源串联电阻后接电容，验证稳态时电容电压
 func TestCapacitor(t *testing.T) {
 	netlist := `
 	v1 [1,-1]

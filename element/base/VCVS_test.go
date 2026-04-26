@@ -7,6 +7,8 @@ import (
 	"testing"
 )
 
+// TestVCVS 验证压控电压源（VCVS）元件的仿真正确性
+// 测试电路：电压源控制VCVS输出驱动负载电阻，验证电压放大关系
 func TestVCVS(t *testing.T) {
 	netlist := `
 	v1 [0,-1]

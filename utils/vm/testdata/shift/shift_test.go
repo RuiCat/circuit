@@ -11,6 +11,8 @@ import (
 	"testing"
 )
 
+// TestRunSimpleShiftELF 验证虚拟机移位指令的执行正确性
+// 编译并运行包含移位指令的RISC-V ELF程序，验证左移和右移操作
 func TestRunSimpleShiftELF(t *testing.T) {
 	cmd := exec.Command("make")
 	cmd.Dir = "."

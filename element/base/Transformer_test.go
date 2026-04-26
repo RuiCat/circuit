@@ -7,6 +7,8 @@ import (
 	"testing"
 )
 
+// TestTransformer 验证变压器元件的仿真正确性
+// 测试电路：电压源驱动变压器原边，副边接负载电阻，验证变压和传输特性
 func TestTransformer(t *testing.T) {
 	netlist := `
 	v1 [0,-1] [1,0,50,0,5]

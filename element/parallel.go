@@ -1,6 +1,7 @@
 package element
 
 import (
+	"circuit/mna"
 	"runtime"
 	"sync"
 )
@@ -11,32 +12,26 @@ type ParallelOptions struct {
 	CacheThreshold float64 // 缓存阈值，<=0 则禁用缓存
 }
 
-var (
-	stampCaches   map[NodeFace]*StampCache // 节点→盖章缓存映射
-	cacheTime     float64                  // 当前仿真时间，用于判断是否需要清空缓存
-	cacheMu       sync.Mutex               // 缓存访问互斥锁
-)
-
 // ResetStampCaches 重置所有盖章缓存
-func ResetStampCaches() {
-	cacheMu.Lock()
-	defer cacheMu.Unlock()
-	stampCaches = make(map[NodeFace]*StampCache)
+func (con *Context) ResetStampCaches() {
+	con.cacheMu.Lock()
+	defer con.cacheMu.Unlock()
+	con.stampCaches = make(map[NodeFace]*mna.StampCache)
 }
 
 // ParallelCallMark 并行执行指定阶段回调
-// 根据不同阶段分发处理：Stamp 和 DoStep 采用并行，其余顺序执行
-func ParallelCallMark(con *Context, mark Mark, opts ParallelOptions) error {
-	cacheMu.Lock()
-	if stampCaches == nil {
-		stampCaches = make(map[NodeFace]*StampCache)
+// 根据不同阶段分发处理：DoStep 采用并行，其余顺序执行
+func (con *Context) ParallelCallMark(mark Mark) error {
+	con.cacheMu.Lock()
+	if con.stampCaches == nil {
+		con.stampCaches = make(map[NodeFace]*mna.StampCache)
 	}
 	curTime := con.CurrentTime()
-	if curTime != cacheTime {
-		stampCaches = make(map[NodeFace]*StampCache)
-		cacheTime = curTime
+	if curTime != con.cacheTime {
+		con.stampCaches = make(map[NodeFace]*mna.StampCache)
+		con.cacheTime = curTime
 	}
-	cacheMu.Unlock()
+	con.cacheMu.Unlock()
 
 	switch mark {
 	case MarkReset:
@@ -61,7 +56,7 @@ func ParallelCallMark(con *Context, mark Mark, opts ParallelOptions) error {
 		con.CallMark(MarkStamp)
 		return nil
 	case MarkDoStep:
-		return parallelDoStep(con, opts)
+		return con.parallelDoStep()
 	case MarkCalculateCurrent:
 		con.CallMark(MarkCalculateCurrent)
 		return nil
@@ -76,19 +71,19 @@ func ParallelCallMark(con *Context, mark Mark, opts ParallelOptions) error {
 
 // parallelDoStep 并行执行 DoStep 阶段
 // 将节点列表分片，每个工作线程处理一片，支持可选的盖章缓存优化
-func parallelDoStep(con *Context, opts ParallelOptions) error {
-	workers := opts.StampWorkers
+func (con *Context) parallelDoStep() error {
+	workers := con.ParallelOpts.StampWorkers
 	if workers < 1 {
 		workers = runtime.GOMAXPROCS(0)
 	}
-	useCache := opts.CacheThreshold > 0
+	useCache := con.ParallelOpts.CacheThreshold > 0
 
 	n := len(con.Nodelist)
 	if n == 0 {
 		return nil
 	}
 
-	collectors := make([]*StampCollector, n)
+	collectors := make([]*mna.StampCollector, n)
 	var collectorMu sync.Mutex
 
 	var wg sync.WaitGroup
@@ -114,36 +109,36 @@ func parallelDoStep(con *Context, opts ParallelOptions) error {
 				}
 
 				if useCache && elemFace.CanOptimizeStamp() {
-					cacheMu.Lock()
-					cache := stampCaches[node]
-					cacheMu.Unlock()
+					con.cacheMu.Lock()
+					cache := con.stampCaches[node]
+					con.cacheMu.Unlock()
 
 					if cache != nil && !cache.NeedsBuild() && !cache.HasChanged(con) {
-						collector := NewStampCollector(con)
-						collector.records = append(collector.records, cache.GetCached()...)
+						collector := mna.NewStampCollector(con)
+						collector.Records = append(collector.Records, cache.GetCached()...)
 						collectorMu.Lock()
 						collectors[idx] = collector
 						collectorMu.Unlock()
 						continue
 					}
 
-					collector := NewStampCollector(con)
+					collector := mna.NewStampCollector(con)
 					elemFace.DoStep(collector, con.Time, node)
 
-					cacheMu.Lock()
+					con.cacheMu.Lock()
 					if cache == nil {
-						cache = newStampCache(collector, opts.CacheThreshold)
-						stampCaches[node] = cache
+						cache = mna.NewStampCache(collector, con.ParallelOpts.CacheThreshold)
+						con.stampCaches[node] = cache
 					} else {
 						cache.Update(collector)
 					}
-					cacheMu.Unlock()
+					con.cacheMu.Unlock()
 
 					collectorMu.Lock()
 					collectors[idx] = collector
 					collectorMu.Unlock()
 				} else {
-					collector := NewStampCollector(con)
+					collector := mna.NewStampCollector(con)
 					elemFace.DoStep(collector, con.Time, node)
 					collectorMu.Lock()
 					collectors[idx] = collector
@@ -164,35 +159,35 @@ func parallelDoStep(con *Context, opts ParallelOptions) error {
 }
 
 // applyRecord 根据记录的操作类型，将盖章记录应用到上下文
-func applyRecord(con *Context, r *RecordedStamp) {
+func applyRecord(con *Context, r *mna.RecordedStamp) {
 	switch r.Op {
-	case OpAdmittance:
+	case mna.OpAdmittance:
 		con.StampAdmittance(r.N1, r.N2, r.Value)
-	case OpImpedance:
+	case mna.OpImpedance:
 		con.StampImpedance(r.N1, r.N2, r.Value)
-	case OpCurrentSource:
+	case mna.OpCurrentSource:
 		con.StampCurrentSource(r.N1, r.N2, r.Value)
-	case OpVoltageSource:
+	case mna.OpVoltageSource:
 		con.StampVoltageSource(r.N1, r.N2, r.ID1, r.Value)
-	case OpVCVS:
+	case mna.OpVCVS:
 		con.StampVCVS(r.N1, r.N2, r.N3, r.N4, r.ID1, r.Value)
-	case OpCCCS:
+	case mna.OpCCCS:
 		con.StampCCCS(r.N1, r.N2, r.ID1, r.Value)
-	case OpCCVS:
+	case mna.OpCCVS:
 		con.StampCCVS(r.N1, r.N2, r.ID1, r.ID2, r.Value)
-	case OpVCCS:
+	case mna.OpVCCS:
 		con.StampVCCS(r.N1, r.N2, r.N3, r.N4, r.Value)
-	case OpMatrix:
+	case mna.OpMatrix:
 		con.StampMatrix(r.N1, r.N2, r.Value)
-	case OpMatrixSet:
+	case mna.OpMatrixSet:
 		con.StampMatrixSet(r.N1, r.N2, r.Value)
-	case OpRightSide:
+	case mna.OpRightSide:
 		con.StampRightSide(r.N1, r.Value)
-	case OpRightSideSet:
+	case mna.OpRightSideSet:
 		con.StampRightSideSet(r.N1, r.Value)
-	case OpUpdateVoltageSource:
+	case mna.OpUpdateVoltageSource:
 		con.UpdateVoltageSource(r.ID1, r.Value)
-	case OpIncrementVoltageSource:
+	case mna.OpIncrementVoltageSource:
 		con.IncrementVoltageSource(r.ID1, r.Value)
 	}
 }

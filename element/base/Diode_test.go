@@ -7,6 +7,8 @@ import (
 	"testing"
 )
 
+// TestDiode 验证二极管元件的仿真正确性
+// 测试电路：电压源串联电阻后接二极管，验证节点电压和二极管电流
 func TestDiode(t *testing.T) {
 	netlist := `
 	v1 [1,-1]

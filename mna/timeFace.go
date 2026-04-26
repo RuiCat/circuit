@@ -5,6 +5,12 @@ package mna
 // 输出：状态导数向量（dx/dt）+ 错误信息
 type DerivativeFunc func([]float64) ([]float64, error)
 
+// Trigger 仿真触发点，当仿真时间到达 Time 时触发
+type Trigger struct {
+	Time      float64 // 触发时间
+	Triggered bool    // 是否已触发
+}
+
 // Time 仿真时间接口，提供仿真过程中的时间相关信息
 // 用于管理仿真时间步长、控制收敛行为，支持自适应步长调整
 type Time interface {
@@ -126,6 +132,15 @@ type Time interface {
 	IsConverged() bool
 	// IsSimulationFinished 检查仿真是否完成（达到目标时间）
 	IsSimulationFinished() bool
+
+	// ------------------------------
+	// 触发点管理
+	// ------------------------------
+
+	// SetTriggers 设置触发点列表
+	SetTriggers(triggers []Trigger)
+	// Triggers 获取触发点列表
+	Triggers() []Trigger
 
 	// ------------------------------
 	// 仿真推进核心方法（完整流程闭环）

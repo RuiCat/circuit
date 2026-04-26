@@ -7,6 +7,8 @@ import (
 	"testing"
 )
 
+// TestInductor 验证电感元件的暂态仿真正确性
+// 测试电路：电压源串联电阻后接电感，验证稳态时电感电流
 func TestInductor(t *testing.T) {
 	netlist := `
 	v1 [1,-1]

@@ -12,6 +12,11 @@ type Context struct {
 	*mna.MnaUpdateType[float64]                // 求解矩阵。
 	Nodelist                    []NodeFace     // 元件列表。
 	WaitGroup                   sync.WaitGroup // 并发限制。
+	CompactNodeID               map[mna.NodeID]int // 原始节点ID→紧凑索引的映射。
+	ParallelOpts                *ParallelOptions   // 并行仿真选项，nil=串行模式。
+	stampCaches                 map[NodeFace]*mna.StampCache // 元件盖章缓存。
+	cacheTime                   float64            // 缓存时间戳。
+	cacheMu                     sync.Mutex         // 缓存访问互斥锁。
 }
 
 // Update 将对矩阵A和向量Z的暂存修改应用到底层数据结构中。
@@ -28,6 +33,15 @@ func (con *Context) Rollback() {
 	for i := range con.Nodelist {
 		con.Nodelist[i].Rollback()
 	}
+}
+
+// GetRawNodeVoltage 从原始节点ID获取电压。
+func (con *Context) GetRawNodeVoltage(rawNodeID mna.NodeID) float64 {
+	compactIdx, ok := con.CompactNodeID[rawNodeID]
+	if !ok {
+		return 0
+	}
+	return con.GetNodeVoltage(mna.NodeID(compactIdx))
 }
 
 // CallMark 统一调用。

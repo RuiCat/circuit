@@ -7,6 +7,8 @@ import (
 	"testing"
 )
 
+// TestCurrentSource 验证独立电流源元件的仿真正确性
+// 测试电路：电压源串联电阻后接电流源，验证节点电压和电流源电流
 func TestCurrentSource(t *testing.T) {
 	netlist := `
 	v1 [1,-1]

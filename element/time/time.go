@@ -90,6 +90,9 @@ type TimeMNA struct {
 	predDer   []float64 // 预测导数
 	corrState []float64 // 校正状态
 	corrDer   []float64 // 校正导数
+
+	// 触发点管理
+	triggers []mna.Trigger // 仿真触发点列表
 }
 
 // NewTimeMNA 创建通用TimeMNAImpl实例
@@ -123,6 +126,7 @@ func NewTimeMNA(targetTime float64) (*TimeMNA, error) {
 		maxElemIter:       defaultMaxElem,
 		currElemIter:      0,
 		localTruncError:   0.0,
+		triggers:          nil,
 	}, nil
 }
 
@@ -218,6 +222,17 @@ func (t *TimeMNA) SetIterationLimits(maxNonlinIter, maxElemIter int) error {
 	t.maxNonlinIter = maxNonlinIter
 	t.maxElemIter = maxElemIter
 	return nil
+}
+
+// SetTriggers 设置触发点列表
+func (t *TimeMNA) SetTriggers(triggers []mna.Trigger) {
+	t.triggers = make([]mna.Trigger, len(triggers))
+	copy(t.triggers, triggers)
+}
+
+// Triggers 获取触发点列表
+func (t *TimeMNA) Triggers() []mna.Trigger {
+	return t.triggers
 }
 
 // SetMaxTimeSteps 设置最大时间步数限制
@@ -683,6 +698,23 @@ func (t *TimeMNA) AdvanceTimeStep(mnaSolver mna.Mna, derFunc mna.DerivativeFunc)
 	if err := t.initializeIfNeeded(mnaSolver, derFunc); err != nil {
 		return err
 	}
+	// 步长预调整：如果步长会越过最近的触发点，截断步长
+	var nearestTriggerTime float64
+	var hasNearestTrigger bool
+	for i := range t.triggers {
+		if !t.triggers[i].Triggered && t.triggers[i].Time > t.currentTime {
+			if !hasNearestTrigger || t.triggers[i].Time < nearestTriggerTime {
+				nearestTriggerTime = t.triggers[i].Time
+				hasNearestTrigger = true
+			}
+		}
+	}
+	if hasNearestTrigger {
+		nextIfFullStep := t.currentTime + t.currentStep
+		if nextIfFullStep > nearestTriggerTime {
+			t.currentStep = nearestTriggerTime - t.currentTime
+		}
+	}
 	// 执行预测-校正步骤
 	if err := t.performPredictionCorrection(derFunc); err != nil {
 		return err
@@ -693,8 +725,15 @@ func (t *TimeMNA) AdvanceTimeStep(mnaSolver mna.Mna, derFunc mna.DerivativeFunc)
 	}
 	// 更新历史数据（用校正后的状态/导数）
 	t.UpdateHistory()
-	// 推进仿真时间（确保不超过目标时间）
+	// 推进仿真时间
 	nextTime := t.currentTime + t.currentStep
+	// 标记所有已到达的触发点
+	for i := range t.triggers {
+		if !t.triggers[i].Triggered && nextTime >= t.triggers[i].Time {
+			t.triggers[i].Triggered = true
+		}
+	}
+	// 不超过目标时间
 	if nextTime > t.targetTime {
 		nextTime = t.targetTime
 		t.currentStep = nextTime - t.currentTime // 最后一步调整步长

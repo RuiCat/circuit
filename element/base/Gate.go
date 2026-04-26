@@ -19,7 +19,7 @@ const (
 // GateType 定义了逻辑门
 var GateType element.NodeType = element.AddElement(12, &Gate{ // 使用通用的逻辑门实现
 	&element.Config{
-		Name: "X",
+		Name: "U",
 		Pin:  element.SetPin(element.PinBoolean, "in1", "in2", "out"),
 		ValueInit: []any{
 			int(GateInverter), // 0: 逻辑门类型

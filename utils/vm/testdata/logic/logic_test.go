@@ -11,6 +11,8 @@ import (
 	"testing"
 )
 
+// TestRunSimpleLogicELF 验证虚拟机逻辑指令的执行正确性
+// 编译并运行包含逻辑指令的RISC-V ELF程序，验证与、或、异或等逻辑操作
 func TestRunSimpleLogicELF(t *testing.T) {
 	cmd := exec.Command("make")
 	cmd.Dir = "."

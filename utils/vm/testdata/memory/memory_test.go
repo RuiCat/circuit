@@ -11,6 +11,8 @@ import (
 	"testing"
 )
 
+// TestRunSimpleMemoryELF 验证虚拟机访存指令的执行正确性
+// 编译并运行包含内存读写指令的RISC-V ELF程序，验证加载和存储操作
 func TestRunSimpleMemoryELF(t *testing.T) {
 	cmd := exec.Command("make")
 	cmd.Dir = "."
