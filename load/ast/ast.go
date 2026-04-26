@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strings"
 )
 
 // 常量定义 - 用于词法分析和语法分析的关键字和符号
@@ -23,6 +24,8 @@ const (
 	tokenCommentLine       = "//"     // // 行注释
 	tokenCommentBlockStart = "/*"     // /* 块注释开始
 	tokenCommentBlockEnd   = "*/"     // */ 块注释结束
+	tokenSubckt            = ".subckt" // 子电路定义开始
+	tokenEnds              = ".ends"   // 子电路定义结束
 )
 
 // ElementNode 表示元件定义节点
@@ -48,36 +51,73 @@ type CommentNode struct {
 	Line int    // 行号
 }
 
+// SubCircuitDef 表示子电路定义（.subckt / .ends 块）
+type SubCircuitDef struct {
+	Name     string          // 子电路名称
+	Ports    []Value         // 端口节点列表
+	Elements []*ElementNode  // 子电路内的元件
+	Defs     []*SubCircuitDef // 嵌套的子电路定义
+	Line     int             // 行号
+}
+
 // ParseTree 解析树
 type ParseTree struct {
-	ElementNodes []*ElementNode    // 元件列表
-	CommentNodes []*CommentNode    // 注释列表
-	ValueNodes   map[string]string // 变量列表
+	ElementNodes   []*ElementNode     // 顶层元件列表
+	SubCircuitDefs []*SubCircuitDef   // 顶层子电路定义
+	CommentNodes   []*CommentNode     // 注释列表
+	ValueNodes     map[string]string  // 变量列表
+}
+
+// printSubCircuitDef 递归打印子电路定义
+func printSubCircuitDef(def *SubCircuitDef, indent string) {
+	fmt.Printf("%s.subckt %s 端口:%v (行号: %d)\n", indent, def.Name, portNames(def.Ports), def.Line)
+	for _, elem := range def.Elements {
+		fmt.Printf("%s  %s%s (行号: %d)\n", indent, elem.Type, elem.ID, elem.Line)
+		fmt.Printf("%s    引脚: %v\n", indent, pinValues(elem.Pins))
+		if len(elem.Values) > 0 {
+			fmt.Printf("%s    值: %v\n", indent, pinValues(elem.Values))
+		}
+	}
+	for _, sub := range def.Defs {
+		printSubCircuitDef(sub, indent+"  ")
+	}
+	fmt.Printf("%s.ends %s\n", indent, def.Name)
+}
+
+func portNames(ports []Value) string {
+	names := make([]string, len(ports))
+	for i, p := range ports {
+		names[i] = p.Value
+	}
+	return strings.Join(names, ", ")
+}
+
+func pinValues(vals []Value) string {
+	strs := make([]string, len(vals))
+	for i, v := range vals {
+		if v.IsVar {
+			strs[i] = "%" + v.Value
+		} else {
+			strs[i] = v.Value
+		}
+	}
+	return strings.Join(strs, ", ")
 }
 
 // String 打印
 func (parseTree *ParseTree) String() {
 	// 打印解析树用于调试
-	fmt.Printf("解析成功! 找到 %d 个元件, %d 个值设置, %d 个注释\n",
-		len(parseTree.ElementNodes), len(parseTree.ValueNodes), len(parseTree.CommentNodes))
+	fmt.Printf("解析成功! 找到 %d 个元件, %d 个子电路定义, %d 个值设置, %d 个注释\n",
+		len(parseTree.ElementNodes), len(parseTree.SubCircuitDefs), len(parseTree.ValueNodes), len(parseTree.CommentNodes))
 	for i, n := range parseTree.ElementNodes {
 		fmt.Printf("\n元件 %d: %s%s (行号: %d)\n", i+1, n.Type, n.ID, n.Line)
-		fmt.Printf("  引脚 (%d 个): ", len(n.Pins))
-		for j := range n.Pins {
-			fmt.Printf("%s(variable:%v) ", n.Pins[j].Value, n.Pins[j].IsVar)
-			if j < len(n.Pins)-1 {
-				fmt.Printf(", ")
-			}
+		fmt.Printf("  引脚 (%d 个): %s\n", len(n.Pins), pinValues(n.Pins))
+		if len(n.Values) > 0 {
+			fmt.Printf("  值 (%d 个): %s\n", len(n.Values), pinValues(n.Values))
 		}
-		fmt.Printf("\n")
-		fmt.Printf("  值 (%d 个): ", len(n.Values))
-		for j := range n.Values {
-			fmt.Printf("%s(variable:%v) ", n.Values[j].Value, n.Values[j].IsVar)
-			if j < len(n.Values)-1 {
-				fmt.Printf(", ")
-			}
-		}
-		fmt.Printf("\n")
+	}
+	for _, def := range parseTree.SubCircuitDefs {
+		printSubCircuitDef(def, "")
 	}
 	for Name := range parseTree.ValueNodes {
 		fmt.Printf("\n值设置: %s = %s\n", Name, parseTree.ValueNodes[Name])
@@ -92,6 +132,14 @@ func NewParseTree(r io.Reader) (parseTree *ParseTree, err error) {
 	return NewParseTreeDirect(r)
 }
 
+// currentTarget 返回当前正在添加元素的列表
+func currentTarget(subcktStack []*SubCircuitDef, parseTree *ParseTree) *[]*ElementNode {
+	if len(subcktStack) > 0 {
+		return &subcktStack[len(subcktStack)-1].Elements
+	}
+	return &parseTree.ElementNodes
+}
+
 // NewParseTreeDirect 直接生成网表解析树（流式处理，不先收集 tokens）
 func NewParseTreeDirect(r io.Reader) (parseTree *ParseTree, err error) {
 	scanner := bufio.NewScanner(r)
@@ -102,6 +150,8 @@ func NewParseTreeDirect(r io.Reader) (parseTree *ParseTree, err error) {
 	}
 	lineNum := 1
 	var pendingToken *string = nil
+	var subcktStack []*SubCircuitDef
+
 	for {
 		var token string
 		if pendingToken != nil {
@@ -133,12 +183,63 @@ func NewParseTreeDirect(r io.Reader) (parseTree *ParseTree, err error) {
 			}
 			continue
 		}
+		// 处理子电路定义 .subckt
+		if token[0] == '.' {
+			lower := strings.ToLower(token)
+			if lower == tokenSubckt {
+				def, err := parseSubCircuitDef(scanner, &lineNum)
+				if err != nil {
+					return nil, err
+				}
+				subcktStack = append(subcktStack, def)
+				continue
+			}
+			if lower == tokenEnds {
+				if len(subcktStack) == 0 {
+					return nil, errorAtLine(lineNum, "意外的 .ends，没有对应的 .subckt")
+				}
+				// 消费 .ends 后可选的子电路名称
+				for scanner.Scan() {
+					tok := scanner.Text()
+					if tok == tokenSpace || tok == tokenTab {
+						continue
+					}
+					if tok == tokenNewline {
+						lineNum++
+						break
+					}
+					// 可选名称，消费后继续读取到行尾
+					for scanner.Scan() {
+						t := scanner.Text()
+						if t == tokenNewline {
+							lineNum++
+							break
+						}
+					}
+					break
+				}
+				def := subcktStack[len(subcktStack)-1]
+				subcktStack = subcktStack[:len(subcktStack)-1]
+				// 添加到父级
+				if len(subcktStack) > 0 {
+					parent := subcktStack[len(subcktStack)-1]
+					parent.Defs = append(parent.Defs, def)
+				} else {
+					parseTree.SubCircuitDefs = append(parseTree.SubCircuitDefs, def)
+				}
+				continue
+			}
+			// 其他 .xxx 命令，暂时忽略
+			continue
+		}
 		// 处理元件定义
 		if len(token) > 0 && isLetter(token[0]) {
-			hasMore, err := parseElementDefinitionFromScanner(scanner, token, lineNum, parseTree)
+			hasMore, elem, err := parseElementDefinitionFromScanner(scanner, token, lineNum)
 			if err != nil {
 				return nil, err
 			}
+			target := currentTarget(subcktStack, parseTree)
+			*target = append(*target, elem)
 			// 如果还有未处理的 token，保存它供下一次循环处理
 			if hasMore && scanner.Scan() {
 				nextToken := scanner.Text()
@@ -257,20 +358,83 @@ func errorAtLine(lineNum int, format string, args ...interface{}) error {
 	return fmt.Errorf("第 %d 行: %s", lineNum, msg)
 }
 
+// parseSubCircuitDef 解析 .subckt 定义头部（名称和端口列表）
+func parseSubCircuitDef(scanner *bufio.Scanner, lineNum *int) (*SubCircuitDef, error) {
+	def := &SubCircuitDef{
+		Line: *lineNum,
+	}
+	// 读取子电路名称
+	nameFound := false
+	for scanner.Scan() {
+		token := scanner.Text()
+		if token == tokenSpace || token == tokenTab {
+			continue
+		}
+		if token == tokenNewline || token == tokenEnds {
+			return nil, errorAtLine(*lineNum, ".subckt 缺少名称")
+		}
+		def.Name = token
+		nameFound = true
+		break
+	}
+	if !nameFound {
+		return nil, errorAtLine(*lineNum, ".subckt 缺少名称")
+	}
+	// 读取端口列表，直到换行
+	for scanner.Scan() {
+		token := scanner.Text()
+		if token == tokenNewline {
+			(*lineNum)++
+			break
+		}
+		if token == tokenSpace || token == tokenTab {
+			continue
+		}
+		def.Ports = append(def.Ports, Value{Value: token, Line: *lineNum})
+	}
+	return def, nil
+}
+
+// parseSubCircuitInstance 解析 X 子电路实例（读取子电路名称）
+func parseSubCircuitInstance(scanner *bufio.Scanner, elementType string, elementID string, pins []Value, lineNum int) (bool, *ElementNode, error) {
+	var values []Value
+	for {
+		if !scanner.Scan() {
+			return false, &ElementNode{
+				Type: elementType, ID: elementID, Pins: pins, Values: values, Line: lineNum,
+			}, errorAtLine(lineNum, "X 实例缺少子电路名称")
+		}
+		token := scanner.Text()
+		if token == tokenSpace || token == tokenTab {
+			continue
+		}
+		if token == tokenNewline {
+			return false, &ElementNode{
+				Type: elementType, ID: elementID, Pins: pins, Values: values, Line: lineNum,
+			}, errorAtLine(lineNum, "X 实例缺少子电路名称")
+		}
+		values = append(values, Value{Value: token, Line: lineNum})
+		break
+	}
+	return false, &ElementNode{
+		Type: elementType, ID: elementID, Pins: pins, Values: values, Line: lineNum,
+	}, nil
+}
+
 // parseElementDefinitionFromScanner 从 scanner 解析元件定义
-func parseElementDefinitionFromScanner(scanner *bufio.Scanner, elementType string, lineNum int, parseTree *ParseTree) (bool, error) {
+func parseElementDefinitionFromScanner(scanner *bufio.Scanner, elementType string, lineNum int) (bool, *ElementNode, error) {
 	// 读取元件ID，跳过空格和制表符
 	var elementID string
 	for {
 		if !scanner.Scan() {
-			return false, errorAtLine(lineNum, "缺少元件 ID")
+			return false, nil, errorAtLine(lineNum, "缺少元件 ID")
 		}
 		token := scanner.Text()
 		if token == tokenSpace || token == tokenTab {
 			continue
 		}
 		if !isNumber(token) {
-			return false, errorAtLine(lineNum, "元件 ID 必须是数字")
+			return false, nil, errorAtLine(lineNum, "元件 ID 必须是数字")
 		}
 		elementID = token
 		break
@@ -278,14 +442,14 @@ func parseElementDefinitionFromScanner(scanner *bufio.Scanner, elementType strin
 	// 读取引脚列表开始标记，跳过空格和制表符
 	for {
 		if !scanner.Scan() {
-			return false, errorAtLine(lineNum, "缺少引脚列表")
+			return false, nil, errorAtLine(lineNum, "缺少引脚列表")
 		}
 		token := scanner.Text()
 		if token == tokenSpace || token == tokenTab {
 			continue
 		}
 		if token != tokenLBracket {
-			return false, errorAtLine(lineNum, "缺少引脚列表开始标记 [")
+			return false, nil, errorAtLine(lineNum, "缺少引脚列表开始标记 [")
 		}
 		break
 	}
@@ -293,9 +457,14 @@ func parseElementDefinitionFromScanner(scanner *bufio.Scanner, elementType strin
 	// 解析引脚列表
 	pins, err := parseValueListFromScanner(scanner, lineNum)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
-	// parseValueListFromScanner 已经消耗了 ]，所以这里不需要再读取
+
+	// X 类型：子电路实例，引脚后直接跟子电路名称
+	if strings.EqualFold(elementType, "x") {
+		return parseSubCircuitInstance(scanner, elementType, elementID, pins, lineNum)
+	}
+
 	// 解析可选的值列表
 	var values []Value
 	hasMore := false
@@ -314,7 +483,7 @@ func parseElementDefinitionFromScanner(scanner *bufio.Scanner, elementType strin
 			// 找到值列表开始标记
 			values, err = parseValueListFromScanner(scanner, lineNum)
 			if err != nil {
-				return false, err
+				return false, nil, err
 			}
 			// parseValueListFromScanner 已经消耗了 ]，所以这里不需要再检查
 			hasMore = scanner.Scan()
@@ -326,15 +495,13 @@ func parseElementDefinitionFromScanner(scanner *bufio.Scanner, elementType strin
 			break
 		}
 	}
-	parseTree.ElementNodes = append(parseTree.ElementNodes, &ElementNode{
+	return hasMore, &ElementNode{
 		Type:   elementType,
 		ID:     elementID,
 		Pins:   pins,
 		Values: values,
 		Line:   lineNum,
-	})
-	// 返回是否还有未处理的 token
-	return hasMore, nil
+	}, nil
 }
 
 // isLetter 检查是否是字母

@@ -13,6 +13,7 @@ type Context struct {
 	Nodelist                    []NodeFace     // 元件列表。
 	WaitGroup                   sync.WaitGroup // 并发限制。
 	CompactNodeID               map[mna.NodeID]int // 原始节点ID→紧凑索引的映射。
+	HierarchicalNodeID           map[string]mna.NodeID // 层级路径(如"X1.out")→紧凑节点ID的映射。
 	ParallelOpts                *ParallelOptions   // 并行仿真选项，nil=串行模式。
 	stampCaches                 map[NodeFace]*mna.StampCache // 元件盖章缓存。
 	cacheTime                   float64            // 缓存时间戳。
@@ -42,6 +43,15 @@ func (con *Context) GetRawNodeVoltage(rawNodeID mna.NodeID) float64 {
 		return 0
 	}
 	return con.GetNodeVoltage(mna.NodeID(compactIdx))
+}
+
+// GetHierarchicalNodeVoltage 从层级路径（如 "X1.out"）获取电压。
+func (con *Context) GetHierarchicalNodeVoltage(path string) float64 {
+	compactIdx, ok := con.HierarchicalNodeID[path]
+	if !ok {
+		return 0
+	}
+	return con.GetNodeVoltage(compactIdx)
 }
 
 // CallMark 统一调用。

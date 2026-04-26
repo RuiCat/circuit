@@ -6,6 +6,7 @@ import (
 	"circuit/mna"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -17,45 +18,92 @@ func LoadString(s string) (con *element.Context, err error) {
 
 // LoadContext 加载仿真网表。
 func LoadContext(r io.Reader) (con *element.Context, err error) {
-	// 解析网表
 	parseTree, err := ast.NewParseTree(r)
 	if err != nil {
 		return nil, err
 	}
 
-	// 创建元件列表
+	// 构建子电路定义查找表（扁平化，大小写不敏感）
+	subcktMap := buildSubcircuitMap(parseTree.SubCircuitDefs)
+
+	// === 第一阶段：展开子电路实例为平铺元件列表 ===
+	allElementNodes := make([]*ast.ElementNode, 0, len(parseTree.ElementNodes))
+	nodeNameToID := make(map[string]mna.NodeID)
+
+	// 先收集顶层非X元件
+	for _, elem := range parseTree.ElementNodes {
+		if !strings.EqualFold(elem.Type, "x") {
+			allElementNodes = append(allElementNodes, elem)
+		}
+	}
+
+	// 从所有顶层引脚（含 X 实例引脚）确定内部节点起始编号
+	maxExternalNodeID := mna.NodeID(0)
+	for _, elem := range parseTree.ElementNodes {
+		for _, pin := range elem.Pins {
+			if id, err := strconv.Atoi(pin.Value); err == nil && mna.NodeID(id) > maxExternalNodeID {
+				maxExternalNodeID = mna.NodeID(id)
+			}
+		}
+	}
+
+	// 展开 X 实例
+	nextNodeID := maxExternalNodeID + 1
+	for _, elem := range parseTree.ElementNodes {
+		if !strings.EqualFold(elem.Type, "x") {
+			continue
+		}
+		if len(elem.Values) == 0 {
+			return nil, fmt.Errorf("第 %d 行: X 实例缺少子电路名称", elem.Line)
+		}
+		subcktName := elem.Values[0].Value
+		subckt, ok := subcktMap[strings.ToLower(subcktName)]
+		if !ok {
+			return nil, fmt.Errorf("第 %d 行: 子电路 '%s' 未定义", elem.Line, subcktName)
+		}
+		instanceName := strings.ToUpper(elem.Type) + elem.ID
+
+		expanded, err := expandSubCircuitInstance(
+			subckt, elem.Pins, instanceName, subcktMap,
+			&nextNodeID, nodeNameToID, parseTree,
+		)
+		if err != nil {
+			return nil, err
+		}
+		allElementNodes = append(allElementNodes, expanded...)
+	}
+
+	// === 第二阶段：从所有平铺节点创建元件实例 ===
 	var elements []element.NodeFace
 	maxNodeID := mna.NodeID(0)
+	usedNodes := make(map[mna.NodeID]struct{})
 
-	// 第一遍扫描：创建元件并收集引脚节点
-	for _, elemNode := range parseTree.ElementNodes {
+	for _, elemNode := range allElementNodes {
 		element, err := createElementFromAST(elemNode)
 		if err != nil {
 			return nil, err
 		}
 
-		// 检查引脚数量是否足够
 		config := element.Config()
 		pinNum := config.PinNum()
 		if len(elemNode.Pins) < pinNum {
 			return nil, fmt.Errorf("第 %d 行: 元件 '%s' 引脚数量不足。需要 %d，得到 %d", elemNode.Line, elemNode.Type, pinNum, len(elemNode.Pins))
 		}
 
-		// 设置引脚节点
 		for i := 0; i < pinNum; i++ {
-			// 解析节点ID
 			nodeID, err := strconv.Atoi(elemNode.Pins[i].Value)
 			if err != nil {
 				return nil, fmt.Errorf("第 %d 行: 引脚 %d 的节点ID无效 '%s'", elemNode.Line, i, elemNode.Pins[i].Value)
 			}
-			// 获得最大节点ID,也就是节点数量
 			element.SetNodePin(i, mna.NodeID(nodeID))
 			if mna.NodeID(nodeID) > maxNodeID {
 				maxNodeID = mna.NodeID(nodeID)
 			}
+			if nodeID >= 0 {
+				usedNodes[mna.NodeID(nodeID)] = struct{}{}
+			}
 		}
 
-		// 设置元件参数值
 		if err := setElementValues(element, elemNode.Values, parseTree); err != nil {
 			return nil, fmt.Errorf("第 %d 行: %v", elemNode.Line, err)
 		}
@@ -63,37 +111,64 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 		elements = append(elements, element)
 	}
 
-	// 分配内部节点和电压源
+	// === 第三阶段：节点压缩 ===
+	rawIDs := make([]mna.NodeID, 0, len(usedNodes))
+	for id := range usedNodes {
+		rawIDs = append(rawIDs, id)
+	}
+	sort.Slice(rawIDs, func(i, j int) bool { return rawIDs[i] < rawIDs[j] })
+	compactNodeID := make(map[mna.NodeID]int, len(rawIDs))
+	for i, id := range rawIDs {
+		compactNodeID[id] = i
+	}
+
+	for _, elem := range elements {
+		cfg := elem.Config()
+		for i := 0; i < cfg.PinNum(); i++ {
+			rawID := elem.GetNodes(i)
+			if compactID, ok := compactNodeID[rawID]; ok {
+				elem.SetNodePin(i, mna.NodeID(compactID))
+			}
+		}
+	}
+
+	if len(rawIDs) > 0 {
+		maxNodeID = mna.NodeID(len(rawIDs) - 1)
+	} else {
+		maxNodeID = 0
+	}
+
+	// === 第四阶段：分配内部节点和电压源编号 ===
 	currentVoltageID := mna.VoltageID(0)
 	currentInternalNodeID := maxNodeID + 1
 
 	for i := range elements {
 		config := elements[i].Config()
-
-		// 分配内部节点
 		for j := 0; j < config.InternalNum(); j++ {
 			elements[i].SetNodesInternal(j, currentInternalNodeID)
 			currentInternalNodeID++
 		}
-
-		// 分配电压源
 		for j := 0; j < config.VoltageNum(); j++ {
 			elements[i].SetVoltSource(j, currentVoltageID)
 			currentVoltageID++
 		}
 	}
 
-	// 计算总节点数和电压源数量
 	nodesNum := int(currentInternalNodeID)
 	voltageSourcesNum := int(currentVoltageID)
 
-	// 创建上下文
+	// === 第五阶段：创建上下文 ===
 	con = &element.Context{}
 	con.Nodelist = elements
+	con.CompactNodeID = compactNodeID
+	con.HierarchicalNodeID = make(map[string]mna.NodeID, len(nodeNameToID))
+	for hierName, rawID := range nodeNameToID {
+		if compactID, ok := compactNodeID[rawID]; ok {
+			con.HierarchicalNodeID[hierName] = mna.NodeID(compactID)
+		}
+	}
 
-	// 创建可更新的矩阵和向量
 	mnaUpdate := mna.NewMnaUpdate(nodesNum, voltageSourcesNum)
-	// 类型断言为具体类型
 	if mnaUpdateType, ok := mnaUpdate.(*mna.MnaUpdateType[float64]); ok {
 		con.MnaUpdateType = mnaUpdateType
 	} else {
@@ -198,4 +273,136 @@ func setElementValues(element element.NodeFace, values []ast.Value, parseTree *a
 	// 元件初始化
 	config.Reset(element)
 	return nil
+}
+
+// buildSubcircuitMap 递归收集所有 SubCircuitDefs 到 flat lookup map（大小写不敏感）
+func buildSubcircuitMap(defs []*ast.SubCircuitDef) map[string]*ast.SubCircuitDef {
+	result := make(map[string]*ast.SubCircuitDef)
+	var add func([]*ast.SubCircuitDef)
+	add = func(list []*ast.SubCircuitDef) {
+		for _, def := range list {
+			result[strings.ToLower(def.Name)] = def
+			add(def.Defs)
+		}
+	}
+	add(defs)
+	return result
+}
+
+// cloneElementNode 深拷贝 ElementNode
+func cloneElementNode(elem *ast.ElementNode) *ast.ElementNode {
+	pins := make([]ast.Value, len(elem.Pins))
+	copy(pins, elem.Pins)
+	values := make([]ast.Value, len(elem.Values))
+	copy(values, elem.Values)
+	return &ast.ElementNode{
+		Type:   elem.Type,
+		ID:     elem.ID,
+		Pins:   pins,
+		Values: values,
+		Line:   elem.Line,
+	}
+}
+
+// isNumber 检查字符串是否表示数字
+func isNumber(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	if s[0] == '-' || s[0] == '+' {
+		if len(s) > 1 {
+			return s[1] >= '0' && s[1] <= '9'
+		}
+		return false
+	}
+	return s[0] >= '0' && s[0] <= '9'
+}
+
+// expandSubCircuitInstance 递归展开 X 子电路实例为平铺元件列表
+func expandSubCircuitInstance(
+	subckt *ast.SubCircuitDef,
+	instancePins []ast.Value,
+	instanceName string,
+	allSubckts map[string]*ast.SubCircuitDef,
+	nextNodeID *mna.NodeID,
+	nodeNameToID map[string]mna.NodeID,
+	parseTree *ast.ParseTree,
+) ([]*ast.ElementNode, error) {
+	// 构建端口映射（大小写不敏感）：端口名 → 外部引脚值
+	portMap := make(map[string]string)
+	for i, port := range subckt.Ports {
+		if i < len(instancePins) {
+			portMap[strings.ToLower(port.Value)] = instancePins[i].Value
+		}
+	}
+
+	// 记录端口→外部节点的映射，用于层级路径查找
+	for i, port := range subckt.Ports {
+		if i < len(instancePins) {
+			hierName := instanceName + "." + port.Value
+			if id, err := strconv.Atoi(instancePins[i].Value); err == nil {
+				nodeNameToID[hierName] = mna.NodeID(id)
+			}
+		}
+	}
+
+	var flatElements []*ast.ElementNode
+
+	for _, elem := range subckt.Elements {
+		newElem := cloneElementNode(elem)
+		newElem.ID = instanceName + "." + elem.ID
+
+		for i, pin := range elem.Pins {
+			newElem.Pins[i].Value = resolveSubcircuitPin(
+				pin.Value, portMap, instanceName, nextNodeID, nodeNameToID,
+			)
+		}
+
+		if strings.EqualFold(elem.Type, "x") && len(elem.Values) > 0 {
+			nestedName := elem.Values[0].Value
+			nestedSubckt, ok := allSubckts[strings.ToLower(nestedName)]
+			if !ok {
+				return nil, fmt.Errorf("第 %d 行: 子电路 '%s' 未定义 (在被 '%s' 引用的子电路 '%s' 中)",
+					elem.Line, nestedName, instanceName, subckt.Name)
+			}
+			nestedInstanceName := instanceName + "." + strings.ToUpper(elem.Type) + elem.ID
+
+			nestedElements, err := expandSubCircuitInstance(
+				nestedSubckt, newElem.Pins, nestedInstanceName,
+				allSubckts, nextNodeID, nodeNameToID, parseTree,
+			)
+			if err != nil {
+				return nil, err
+			}
+			flatElements = append(flatElements, nestedElements...)
+		} else {
+			flatElements = append(flatElements, newElem)
+		}
+	}
+
+	return flatElements, nil
+}
+
+// resolveSubcircuitPin 解析子电路中的引脚值：端口名替换 / GND保留 / 内部节点分配唯一ID
+func resolveSubcircuitPin(
+	pinValue string,
+	portMap map[string]string,
+	instanceName string,
+	nextNodeID *mna.NodeID,
+	nodeNameToID map[string]mna.NodeID,
+) string {
+	if mapped, ok := portMap[strings.ToLower(pinValue)]; ok {
+		return mapped
+	}
+	if pinValue == "0" || pinValue == "-1" {
+		return pinValue
+	}
+	hierName := instanceName + "." + pinValue
+	if existingID, ok := nodeNameToID[hierName]; ok {
+		return strconv.Itoa(int(existingID))
+	}
+	newID := *nextNodeID
+	*nextNodeID++
+	nodeNameToID[hierName] = newID
+	return strconv.Itoa(int(newID))
 }
