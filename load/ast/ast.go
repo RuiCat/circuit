@@ -423,21 +423,38 @@ func parseSubCircuitInstance(scanner *bufio.Scanner, elementType string, element
 
 // parseElementDefinitionFromScanner 从 scanner 解析元件定义
 func parseElementDefinitionFromScanner(scanner *bufio.Scanner, elementType string, lineNum int) (bool, *ElementNode, error) {
-	// 读取元件ID，跳过空格和制表符
+	// 检查 elementType 是否包含数字后缀（如 U1, R12），如果包含了直接拆分
 	var elementID string
-	for {
-		if !scanner.Scan() {
-			return false, nil, errorAtLine(lineNum, "缺少元件 ID")
+	if len(elementType) > 1 && isNumber(elementType[1:]) {
+		elementID = elementType[1:]
+		elementType = elementType[:1]
+	} else if len(elementType) > 2 && elementType[len(elementType)-1] >= '0' && elementType[len(elementType)-1] <= '9' {
+		// 拆分多字母类型+数字后缀，如 opamp1 → opamp + 1
+		for i := 1; i < len(elementType); i++ {
+			if elementType[i] >= '0' && elementType[i] <= '9' {
+				elementID = elementType[i:]
+				elementType = elementType[:i]
+				break
+			}
 		}
-		token := scanner.Text()
-		if token == tokenSpace || token == tokenTab {
-			continue
+	}
+
+	if elementID == "" {
+		// 读取元件ID，跳过空格和制表符
+		for {
+			if !scanner.Scan() {
+				return false, nil, errorAtLine(lineNum, "缺少元件 ID")
+			}
+			token := scanner.Text()
+			if token == tokenSpace || token == tokenTab {
+				continue
+			}
+			if !isNumber(token) {
+				return false, nil, errorAtLine(lineNum, "元件 ID 必须是数字")
+			}
+			elementID = token
+			break
 		}
-		if !isNumber(token) {
-			return false, nil, errorAtLine(lineNum, "元件 ID 必须是数字")
-		}
-		elementID = token
-		break
 	}
 	// 读取引脚列表开始标记，跳过空格和制表符
 	for {
@@ -529,6 +546,19 @@ func SplitTokens(data []byte, atEOF bool) (advance int, token []byte, err error)
 	if atEOF && len(data) == 0 {
 		return 0, nil, nil
 	}
+	// 标识符扫描：字母开头后跟字母或数字
+	if isLetterStart(data[0]) {
+		for i := 1; i < len(data); i++ {
+			c := data[i]
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+				return i, data[:i], nil
+			}
+		}
+		if atEOF {
+			return len(data), data, nil
+		}
+		return 0, nil, nil
+	}
 	for i := range data {
 		switch data[i] {
 		case '#':
@@ -571,4 +601,9 @@ func SplitTokens(data []byte, atEOF bool) (advance int, token []byte, err error)
 		return len(data), data, nil
 	}
 	return 0, nil, nil
+}
+
+// isLetterStart 判断字符是否是字母
+func isLetterStart(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
 }

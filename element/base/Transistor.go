@@ -24,10 +24,13 @@ var TransistorType element.NodeType = element.AddElement(9, &Transistor{
 			float64(0),        // 9: 最小电导
 			float64(0),        // 电流记录
 			float64(0),        // 电流记录
-			float64(0),        // 电流记录
+		float64(0),        // 电流记录
 		},
-		ValueName: []string{"pnp", "beta", "model", "lastvbc", "lastvbe", "vcrit", "ic", "ie", "ib", "gmin", "i1", "i2", "i3"},
-		OrigValue: []int{3, 4, 6, 7, 8},
+		ValueName: []string{"PNP", "hFE", "model", "vbc_last", "vbe_last", "Vcrit", "Ic", "Ie", "Ib", "gmin"},
+		Current:   []int{7, 8, 6},
+		OrigValue: []int{3, 4},
+		CanCacheStamp: true,
+		Flags:         element.FlagNonlinear,
 	},
 })
 

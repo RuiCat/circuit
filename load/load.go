@@ -73,6 +73,27 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 		allElementNodes = append(allElementNodes, expanded...)
 	}
 
+	// 解析顶层元件中的命名引脚（非数字节点名如 s0n, t0n, nop0 等）
+	for _, elemNode := range allElementNodes {
+		for i := range elemNode.Pins {
+			pinVal := elemNode.Pins[i].Value
+			if pinVal == "0" || pinVal == "-1" {
+				continue
+			}
+			if _, err := strconv.Atoi(pinVal); err == nil {
+				continue
+			}
+			if existingID, ok := nodeNameToID[pinVal]; ok {
+				elemNode.Pins[i].Value = strconv.Itoa(int(existingID))
+			} else {
+				newID := nextNodeID
+				nextNodeID++
+				nodeNameToID[pinVal] = newID
+				elemNode.Pins[i].Value = strconv.Itoa(int(newID))
+			}
+		}
+	}
+
 	// === 第二阶段：从所有平铺节点创建元件实例 ===
 	var elements []element.NodeFace
 	maxNodeID := mna.NodeID(0)
@@ -161,6 +182,12 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 	con = &element.Context{}
 	con.Nodelist = elements
 	con.CompactNodeID = compactNodeID
+	for _, elem := range elements {
+		if elem.Config().Flags&element.FlagReactive != 0 {
+			con.HasReactive = true
+			break
+		}
+	}
 	con.HierarchicalNodeID = make(map[string]mna.NodeID, len(nodeNameToID))
 	for hierName, rawID := range nodeNameToID {
 		if compactID, ok := compactNodeID[rawID]; ok {
@@ -383,7 +410,7 @@ func expandSubCircuitInstance(
 	return flatElements, nil
 }
 
-// resolveSubcircuitPin 解析子电路中的引脚值：端口名替换 / GND保留 / 内部节点分配唯一ID
+// resolveSubcircuitPin 解析子电路中的引脚值：端口名替换 / 数字保留 / 内部节点分配唯一ID
 func resolveSubcircuitPin(
 	pinValue string,
 	portMap map[string]string,
@@ -394,7 +421,7 @@ func resolveSubcircuitPin(
 	if mapped, ok := portMap[strings.ToLower(pinValue)]; ok {
 		return mapped
 	}
-	if pinValue == "0" || pinValue == "-1" {
+	if _, err := strconv.Atoi(pinValue); err == nil {
 		return pinValue
 	}
 	hierName := instanceName + "." + pinValue

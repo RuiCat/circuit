@@ -14,6 +14,7 @@ var InductorType element.NodeType = element.AddElement(3, &Inductor{
 		ValueName: []string{"L", "I_init", "G_eq", "I_hist"},
 		Current:   []int{0},
 		OrigValue: []int{2, 3},
+		Flags:     element.FlagReactive,
 	},
 })
 

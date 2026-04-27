@@ -101,4 +101,5 @@ type ElementFace interface {
 	DoStep(mna mna.Mna, time mna.Time, value NodeFace)           // 执行仿真步长计算。
 	CalculateCurrent(mna mna.Mna, time mna.Time, value NodeFace) // 计算元件电流。
 	StepFinished(mna mna.Mna, time mna.Time, value NodeFace)     // 步长迭代结束时的回调。
+	AddDerivative(mna mna.Mna, time mna.Time, value NodeFace, der []float64) // 向导数向量累加 dx/dt。
 }

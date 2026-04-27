@@ -32,6 +32,8 @@ var DiodeType element.NodeType = element.AddElement(2, &Diode{
 		ValueName: []string{"Is", "Vz", "N", "Rs", "T", "V_old", "NVt", "invNVt", "Vt", "invVt", "zoffset", "vcrit", "vzcrit", "leakage", "Gmin"},
 		Current:   []int{0},
 		OrigValue: []int{5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
+		CanCacheStamp: true,
+		Flags:         element.FlagNonlinear,
 	},
 })
 

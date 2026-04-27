@@ -8,16 +8,31 @@ import (
 	"math"
 )
 
-// TransientSimulation 执行瞬态仿真，使用元件回调函数和LU求解器实现迭代计算
+// TransientSimulation 执行瞬态仿真，使用元件回调函数和LU求解器实现迭代计算。
 // 参数：
 //
 //	con: 包含电路所有信息的上下文
 //	call: 每步成功后的回调函数，接收节点电压数组
+//
+// 仿真流程：
+//  1. 初始化阶段：创建LU求解器，重置所有元件
+//  2. 主时间迭代循环（在每个时间步内）：
+//     a. 对纯DC电路（无储能元件），用3阶Adams-Bashford预测提供Newton初始猜测
+//     b. 线性元件加盖：Stamp线性贡献到MNA矩阵
+//     c. 非线性迭代（Newton-Raphson法）：
+//     - DoStep计算元件非线性贡献
+//     - LU分解 + 前代/回代求解
+//     - 残差计算与收敛检查
+//     - 如不收敛进入元件次级迭代循环
+//     d. 后处理：计算电流、更新元件状态、提取节点电压
+//     e. 纯DC电路：估计局部截断误差(LTE)并自适应调整步长
+//     f. 推进仿真时间，调用用户回调
 func TransientSimulation(con *element.Context, call func([]float64)) error {
 	// 初始化阶段：获取电路规模并创建求解器
 	nodesNum, voltageSourcesNum := con.GetNodeNum(), con.GetVoltageSourcesNum()
 	// 创建LU分解器
 	systemSize := nodesNum + voltageSourcesNum
+
 	var luSolver maths.LU[float64]
 	var err error
 	if con.ParallelOpts != nil && con.ParallelOpts.StampWorkers > 1 {
@@ -34,14 +49,27 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 	needLinearStamp := true
 	// 初始化所有元件状态
 	con.CallMark(element.MarkReset)
-	// 主时间迭代循环
+
+	tm := con.Time.(*TimeMNA)
+	successfulSteps := 0
+
 	con.ResetTimeStepCount()
 	for !con.IsSimulationFinished() {
 		// 检查是否超过最大时间步数
 		if !con.IncrementTimeStepCount() {
 			return fmt.Errorf("达到最大时间步数限制 %f，仿真可能陷入无限循环", con.Time.MaxTimeStep())
 		}
-		// 重置当前时间步的非线性迭代状态
+
+		// 预测阶段：对纯 DC 电路，用 Adams-Bashford 预测提供 Newton 初始猜测
+		// 并通过 LTE 估计增长步长；含储能元件的电路使用固定小步长。
+		if !con.HasReactiveElements() && successfulSteps >= 3 {
+			if err := tm.Predict(); err == nil {
+				for i := range systemSize {
+					con.GetX().Set(i, tm.predState[i])
+				}
+			}
+		}
+
 		con.ResetNonlinearIter()
 		// 回滚到线性状态（丢弃非线性迭代的修改）
 		con.A.Rollback()
@@ -133,6 +161,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 				// 如果整个系统现在已经收敛，则更新状态并返回
 				if con.IsConverged() {
 					con.CallMark(element.MarkUpdateElements)
+					newtonConverged = true
 					break
 				}
 			}
@@ -152,7 +181,26 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 		if !extractAndValidateVoltages(con, nodesNum, voltages) {
 			return fmt.Errorf("检测到无效电压值（NaN/Inf）在时间 %.6e，停止仿真", con.CurrentTime())
 		}
-		// 更新残差历史并调整步长
+
+		// 积分误差估计与步长自适应
+		// 仅对纯 DC 电路（无储能元件）执行步长调整，快速跳过稳定状态。
+		// 含储能元件的电路使用固定步长以保证数值稳定性。
+		if !con.HasReactiveElements() {
+			if successfulSteps >= 3 {
+				tm.EstimateLTE()
+				if err := tm.AdjustStepSize(); err != nil {
+					return fmt.Errorf("步长调整失败: %v", err)
+				}
+			} else {
+				deriv := con.ComputeStateDerivative()
+				convergedState := make([]float64, systemSize)
+				for i := range systemSize {
+					convergedState[i] = con.GetX().Get(i)
+				}
+				_ = bootstrapHistory(tm, convergedState, deriv, successfulSteps)
+			}
+		}
+
 		con.UpdateResidualHistory()
 		if con.ShouldAdjustStepSize() {
 			needLinearStamp = true // 步长变化较大，需要重新加盖线性元件
@@ -168,6 +216,11 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 			// 重置计数
 			con.ResetTimeStepCount()
 			// 调用用户回调函数
+			if !con.HasReactiveElements() && successfulSteps >= 3 {
+				tm.UpdateHistory()
+			}
+			successfulSteps++
+
 			call(voltages)
 		} else {
 			// 残差不可接受，减小步长并重新计算当前步
@@ -175,11 +228,49 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 			continue
 		}
 	}
+
 	// 将X恢复到指向最后一次收敛解。
 	// 循环内的最后一次MarkUpdateElements调用了UpdateX，它会交换
 	// X和LastX，使得MnaType.X指向"待求解"缓冲区。再次交换
 	// 使MnaType.X指向收敛解缓冲区。
 	con.CallMark(element.MarkUpdateElements)
+	return nil
+}
+
+// bootstrapHistory 在前 3 个成功步累积历史数据，为 3 阶 Adams 方法初始化。
+// stepIdx: 0, 1, 2 分别对应 historyStates[2], [1], [0]。
+// 仅在纯 DC 电路中使用，含储能元件的电路不启用历史记录。
+func bootstrapHistory(tm *TimeMNA, state, deriv []float64, stepIdx int) error {
+	if tm.historyInited {
+		return nil
+	}
+
+	if tm.predState == nil {
+		tm.predState = make([]float64, len(state))
+		tm.predDer = make([]float64, len(state))
+		tm.corrState = make([]float64, len(state))
+		tm.corrDer = make([]float64, len(state))
+	}
+
+	switch stepIdx {
+	case 0:
+		tm.historyStates[2] = make([]float64, len(state))
+		tm.historyDers[2] = make([]float64, len(state))
+		copy(tm.historyStates[2], state)
+		copy(tm.historyDers[2], deriv)
+	case 1:
+		tm.historyStates[1] = make([]float64, len(state))
+		tm.historyDers[1] = make([]float64, len(state))
+		copy(tm.historyStates[1], state)
+		copy(tm.historyDers[1], deriv)
+	case 2:
+		tm.historyStates[0] = make([]float64, len(state))
+		tm.historyDers[0] = make([]float64, len(state))
+		copy(tm.historyStates[0], state)
+		copy(tm.historyDers[0], deriv)
+		tm.historyInited = true
+	}
+
 	return nil
 }
 
@@ -206,8 +297,9 @@ func extractAndValidateVoltages(mnaSolver mna.Mna, nodesNum int, voltages []floa
 }
 
 // advanceTimeSimple 简单时间推进方法
+// 步长已在别处确定（DC电路由AdjustStepSize调整，含储能元件电路使用固定步长），
+// 此函数仅负责：currentTime += currentStep、触发点截断、目标时间截断
 func advanceTimeSimple(con *element.Context) error {
-	// 检查仿真状态
 	if con.IsSimulationFinished() {
 		return nil
 	}

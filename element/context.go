@@ -8,16 +8,35 @@ import (
 
 // Context 上下文。
 type Context struct {
-	mna.Time                                   // 时间接口。
-	*mna.MnaUpdateType[float64]                // 求解矩阵。
-	Nodelist                    []NodeFace     // 元件列表。
-	WaitGroup                   sync.WaitGroup // 并发限制。
-	CompactNodeID               map[mna.NodeID]int // 原始节点ID→紧凑索引的映射。
-	HierarchicalNodeID           map[string]mna.NodeID // 层级路径(如"X1.out")→紧凑节点ID的映射。
-	ParallelOpts                *ParallelOptions   // 并行仿真选项，nil=串行模式。
+	mna.Time                                                 // 时间接口。
+	*mna.MnaUpdateType[float64]                              // 求解矩阵。
+	Nodelist                    []NodeFace                   // 元件列表。
+	WaitGroup                   sync.WaitGroup               // 并发限制。
+	CompactNodeID               map[mna.NodeID]int           // 原始节点ID→紧凑索引的映射。
+	HierarchicalNodeID          map[string]mna.NodeID        // 层级路径(如"X1.out")→紧凑节点ID的映射。
+	ParallelOpts                *ParallelOptions             // 并行仿真选项，nil=串行模式。
 	stampCaches                 map[NodeFace]*mna.StampCache // 元件盖章缓存。
-	cacheTime                   float64            // 缓存时间戳。
-	cacheMu                     sync.Mutex         // 缓存访问互斥锁。
+	cacheTime                   float64                      // 缓存时间戳。
+	cacheMu                     sync.Mutex                   // 缓存访问互斥锁。
+	HasReactive                 bool                         // 电路中包含储能元件（电容/电感）
+}
+
+// ComputeStateDerivative 基于当前 MNA 解和元件状态计算状态导数向量 dx/dt。
+// 通过 ElementFace.AddDerivative 接口分发，仅储能元件贡献非零导数。
+func (con *Context) ComputeStateDerivative() []float64 {
+	n := con.GetNodeNum() + con.GetVoltageSourcesNum()
+	der := make([]float64, n)
+	for _, elem := range con.Nodelist {
+		if elem.Config().Flags&FlagReactive != 0 {
+			ElementList[elem.Type()].AddDerivative(con, con.Time, elem, der)
+		}
+	}
+	return der
+}
+
+// HasReactiveElements 返回电路中是否包含储能元件（电容或电感）。
+func (con *Context) HasReactiveElements() bool {
+	return con.HasReactive
 }
 
 // Update 将对矩阵A和向量Z的暂存修改应用到底层数据结构中。

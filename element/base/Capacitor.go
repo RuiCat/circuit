@@ -14,6 +14,7 @@ var CapacitorType element.NodeType = element.AddElement(0, &Capacitor{
 		ValueName: []string{"C", "G_eq", "I_hist", "V_diff", "I_cap"},
 		Current:   []int{4},
 		OrigValue: []int{1, 2, 3, 4},
+		Flags:     element.FlagReactive,
 	},
 })
 
@@ -62,4 +63,20 @@ func (Capacitor) CalculateCurrent(mna mna.Mna, time mna.Time, value element.Node
 	I_hist := value.GetFloat64(2)
 	I_cap := G_eq*v_diff - I_hist
 	value.SetFloat64(4, I_cap)
+}
+
+// AddDerivative 向导数向量 der 累加电容的 dv/dt 贡献：dv/dt = I_cap / C
+func (Capacitor) AddDerivative(mna mna.Mna, time mna.Time, value element.NodeFace, der []float64) {
+	C := value.GetFloat64(0)
+	iCap := value.GetFloat64(4)
+	if C > 0 {
+		n1 := int(value.GetNodes(0))
+		n2 := int(value.GetNodes(1))
+		if n1 >= 0 && n1 < mna.GetNodeNum() {
+			der[n1] += -iCap / C
+		}
+		if n2 >= 0 && n2 < mna.GetNodeNum() {
+			der[n2] += iCap / C
+		}
+	}
 }

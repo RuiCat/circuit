@@ -6,6 +6,13 @@ import (
 	"strings"
 )
 
+// 元件特性位标记，用于 Config.Flags。
+const (
+	FlagNone      uint8 = 0
+	FlagReactive  uint8 = 1 << iota // 储能元件（电容/电感），影响步长自适应
+	FlagNonlinear                    // 非线性元件（三极管/二极管），需 Newton-Raphson 迭代
+)
+
 // Pin 引脚。
 type Pin struct {
 	Name string  // 引脚名称。
@@ -34,6 +41,7 @@ type Config struct {
 	Voltage       []string // 电压源名称列表，定义元件内部的电压源标识。
 	Internal      []string // 内部引脚名称列表，定义元件的内部节点标识。
 	CanCacheStamp bool     // 允许引脚电压缓存优化。仅 DoStep 计算只依赖引脚电压的元件可启用（如 Diode, Transistor）。
+	Flags         uint8    // 元件特性位标记，如 FlagReactive、FlagNonlinear。
 }
 
 // Base 默认配置信息。
@@ -82,3 +90,7 @@ func (Config) CalculateCurrent(mna mna.Mna, time mna.Time, value NodeFace) {}
 
 // StepFinished 步长迭代结束时的回调（空实现）。
 func (Config) StepFinished(mna mna.Mna, time mna.Time, value NodeFace) {}
+
+// AddDerivative 向导数向量 der 累加该元件的状态变量时间导数贡献（空实现）。
+// 仅储能元件（含 FlagReactive 标记）需覆盖此方法。
+func (Config) AddDerivative(mna mna.Mna, time mna.Time, value NodeFace, der []float64) {}
