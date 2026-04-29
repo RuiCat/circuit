@@ -299,6 +299,11 @@ func (t *TimeMNA) MinTimeStep() float64 {
 	return t.minStep
 }
 
+// CorrState 返回校正状态缓冲区，用于外界写入 Newton 收敛后的解。
+func (t *TimeMNA) CorrState() *[]float64 {
+	return &t.corrState
+}
+
 // GoodIterations 获取当前步数
 func (t *TimeMNA) GoodIterations() int {
 	// 返回已成功完成的时间步数

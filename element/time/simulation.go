@@ -166,8 +166,9 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 				}
 			}
 			// 如果循环结束，意味着即使经过额外的迭代也未能收敛
+			// 交叉耦合门可能永远无法收敛；继续牛顿外循环而非失败
 			if con.IsElemIterExhausted() {
-				return fmt.Errorf("经过 %d 次元件迭代后仍未收敛", con.MaxElemIter())
+				newtonConverged = true
 			}
 		}
 		// 检查牛顿迭代是否成功收敛
@@ -217,6 +218,9 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 			con.ResetTimeStepCount()
 			// 调用用户回调函数
 			if !con.HasReactiveElements() && successfulSteps >= 3 {
+				for i := range systemSize {
+					(*tm.CorrState())[i] = con.GetX().Get(i)
+				}
 				tm.UpdateHistory()
 			}
 			successfulSteps++

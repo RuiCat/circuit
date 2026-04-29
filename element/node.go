@@ -12,6 +12,28 @@ type Node struct {
 	VoltSource   []mna.VoltageID // 电压索引列表，存储元件内部电压源对应的MNA节点ID。
 	Nodes        []mna.NodeID    // 节点索引列表，存储元件引脚对应的MNA节点ID。
 	NodeInternal []mna.NodeID    // 内部索引列表，存储元件内部节点对应的MNA节点ID。
+	Children     []NodeFace      // 子元件列表，用于层级元件封装子电路。
+	Parent       NodeFace        // 父元件引用，nil 表示顶层元件。
+}
+
+// SetChildren 设置子元件列表。
+func (node *Node) SetChildren(c []NodeFace) {
+	node.Children = c
+}
+
+// GetChildren 获取子元件列表。
+func (node *Node) GetChildren() []NodeFace {
+	return node.Children
+}
+
+// SetParent 设置父元件引用。
+func (node *Node) SetParent(p NodeFace) {
+	node.Parent = p
+}
+
+// GetParent 获取父元件引用。
+func (node *Node) GetParent() NodeFace {
+	return node.Parent
 }
 
 // Base 获取元件的底层节点结构体指针。

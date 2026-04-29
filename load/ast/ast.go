@@ -30,11 +30,12 @@ const (
 
 // ElementNode 表示元件定义节点
 type ElementNode struct {
-	Type   string  // 元件类型，如 "v", "r", "c"
-	ID     string  // 元件ID，如 "1"
-	Pins   []Value // 引脚列表
-	Values []Value // 值列表
-	Line   int     // 行号
+	Type     string         // 元件类型，如 "v", "r", "c"
+	ID       string         // 元件ID，如 "1"
+	Pins     []Value        // 引脚列表
+	Values   []Value        // 值列表
+	Line     int            // 行号
+	Children []*ElementNode // 子元件（用于层级封装元件 X）
 }
 
 // ValueNode 表示值设置节点

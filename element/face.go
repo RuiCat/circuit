@@ -78,6 +78,10 @@ type NodeFace interface {
 	SetNodePins(n ...mna.NodeID)                     // 设置引脚节点索引。
 	SetNodesInternal(i int, n mna.NodeID)            // 设置指定内部节点对应的MNA节点索引。
 	SetVoltSource(i int, n mna.VoltageID)            // 设置指定电压源对应的MNA节点索引。
+	SetChildren(c []NodeFace)                        // 设置子元件列表。
+	GetChildren() []NodeFace                         // 获取子元件列表。
+	SetParent(p NodeFace)                            // 设置父元件引用。
+	GetParent() NodeFace                             // 获取父元件引用。
 }
 
 // ConfigFace 元件配置接口，提供元件的静态配置信息。

@@ -26,11 +26,12 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 	// 构建子电路定义查找表（扁平化，大小写不敏感）
 	subcktMap := buildSubcircuitMap(parseTree.SubCircuitDefs)
 
-	// === 第一阶段：展开子电路实例为平铺元件列表 ===
+	// === 第一阶段：展开子电路实例为平铺元件列表，同时构建层级封装元件的 AST 节点 ===
 	allElementNodes := make([]*ast.ElementNode, 0, len(parseTree.ElementNodes))
+	wrapperNodes := make([]*ast.ElementNode, 0) // 层级封装元件 AST 节点
 	nodeNameToID := make(map[string]mna.NodeID)
 
-	// 先收集顶层非X元件
+	// 先收集顶层非 X 元件
 	for _, elem := range parseTree.ElementNodes {
 		if !strings.EqualFold(elem.Type, "x") {
 			allElementNodes = append(allElementNodes, elem)
@@ -47,7 +48,7 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 		}
 	}
 
-	// 展开 X 实例
+	// 展开 X 实例，同时创建层级封装元件
 	nextNodeID := maxExternalNodeID + 1
 	for _, elem := range parseTree.ElementNodes {
 		if !strings.EqualFold(elem.Type, "x") {
@@ -70,7 +71,19 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 		if err != nil {
 			return nil, err
 		}
+
+		// 创建层级封装元件的 AST 节点
+		wrapperNode := &ast.ElementNode{
+			Type:     "X",
+			ID:       elem.ID,
+			Pins:     elem.Pins,
+			Values:   elem.Values,
+			Line:     elem.Line,
+			Children: expanded,
+		}
+		wrapperNodes = append(wrapperNodes, wrapperNode)
 		allElementNodes = append(allElementNodes, expanded...)
+		allElementNodes = append(allElementNodes, wrapperNode)
 	}
 
 	// 解析顶层元件中的命名引脚（非数字节点名如 s0n, t0n, nop0 等）
@@ -98,14 +111,22 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 	var elements []element.NodeFace
 	maxNodeID := mna.NodeID(0)
 	usedNodes := make(map[mna.NodeID]struct{})
+	astToInstance := make(map[*ast.ElementNode]element.NodeFace)
 
 	for _, elemNode := range allElementNodes {
-		element, err := createElementFromAST(elemNode)
+		var instance element.NodeFace
+		var err error
+
+		if strings.EqualFold(elemNode.Type, "X") {
+			instance, err = createWrapperInstance(elemNode)
+		} else {
+			instance, err = createElementFromAST(elemNode)
+		}
 		if err != nil {
 			return nil, err
 		}
 
-		config := element.Config()
+		config := instance.Config()
 		pinNum := config.PinNum()
 		if len(elemNode.Pins) < pinNum {
 			return nil, fmt.Errorf("第 %d 行: 元件 '%s' 引脚数量不足。需要 %d，得到 %d", elemNode.Line, elemNode.Type, pinNum, len(elemNode.Pins))
@@ -116,7 +137,7 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 			if err != nil {
 				return nil, fmt.Errorf("第 %d 行: 引脚 %d 的节点ID无效 '%s'", elemNode.Line, i, elemNode.Pins[i].Value)
 			}
-			element.SetNodePin(i, mna.NodeID(nodeID))
+			instance.SetNodePin(i, mna.NodeID(nodeID))
 			if mna.NodeID(nodeID) > maxNodeID {
 				maxNodeID = mna.NodeID(nodeID)
 			}
@@ -125,11 +146,28 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 			}
 		}
 
-		if err := setElementValues(element, elemNode.Values, parseTree); err != nil {
+		if err := setElementValues(instance, elemNode.Values, parseTree); err != nil {
 			return nil, fmt.Errorf("第 %d 行: %v", elemNode.Line, err)
 		}
 
-		elements = append(elements, element)
+		elements = append(elements, instance)
+		astToInstance[elemNode] = instance
+	}
+
+	// 建立层级封装元件的父子关系
+	for _, wrapperNode := range wrapperNodes {
+		wrapperInst := astToInstance[wrapperNode]
+		if wrapperInst == nil {
+			continue
+		}
+		var children []element.NodeFace
+		for _, childAST := range wrapperNode.Children {
+			if childInst := astToInstance[childAST]; childInst != nil {
+				childInst.SetParent(wrapperInst)
+				children = append(children, childInst)
+			}
+		}
+		wrapperInst.SetChildren(children)
 	}
 
 	// === 第三阶段：节点压缩 ===
@@ -245,6 +283,54 @@ func createElementFromAST(elemNode *ast.ElementNode) (element.NodeFace, error) {
 	return node, nil
 }
 
+// createWrapperInstance 为层级封装元件 X 创建实例。
+// 层级封装元件的 Config 根据其引脚动态生成。
+func createWrapperInstance(elemNode *ast.ElementNode) (element.NodeFace, error) {
+	// 创建引脚名称列表
+	pinNames := make([]string, len(elemNode.Pins))
+	for i, p := range elemNode.Pins {
+		pinNames[i] = p.Value
+	}
+
+	subcktName := ""
+	if len(elemNode.Values) > 0 {
+		subcktName = elemNode.Values[0].Value
+	}
+
+	config := &element.Config{
+		Name: "X",
+		Pin:  element.SetPin(element.PinBoolean, pinNames...),
+		ValueInit: []any{
+			subcktName,
+		},
+		ValueName: []string{"subckt"},
+	}
+
+	// 查找 Wrapper 的 NodeType
+	nodeType := element.NodeType(17)
+	if nt, ok := element.ElementListName["X"]; ok {
+		nodeType = nt
+	}
+
+	node := &element.Node{
+		ConfigPtr:    config,
+		NodeType:     nodeType,
+		NodeValue:    make([]any, config.ValueNum()),
+		OrigValue:    make(map[int]any),
+		Nodes:        make([]mna.NodeID, config.PinNum()),
+		VoltSource:   make([]mna.VoltageID, config.VoltageNum()),
+		NodeInternal: make([]mna.NodeID, config.InternalNum()),
+	}
+
+	copy(node.NodeValue, config.ValueInit)
+
+	for _, n := range config.OrigValue {
+		node.OrigValue[n] = config.ValueInit[n]
+	}
+
+	return node, nil
+}
+
 // setElementValues 设置元件参数值
 func setElementValues(element element.NodeFace, values []ast.Value, parseTree *ast.ParseTree) error {
 	config := element.Config()
@@ -323,11 +409,12 @@ func cloneElementNode(elem *ast.ElementNode) *ast.ElementNode {
 	values := make([]ast.Value, len(elem.Values))
 	copy(values, elem.Values)
 	return &ast.ElementNode{
-		Type:   elem.Type,
-		ID:     elem.ID,
-		Pins:   pins,
-		Values: values,
-		Line:   elem.Line,
+		Type:     elem.Type,
+		ID:       elem.ID,
+		Pins:     pins,
+		Values:   values,
+		Line:     elem.Line,
+		Children: elem.Children,
 	}
 }
 

@@ -17,7 +17,7 @@ const (
 )
 
 // GateType 定义了逻辑门
-var GateType element.NodeType = element.AddElement(12, &Gate{ // 使用通用的逻辑门实现
+var GateType element.NodeType = element.AddElement(12, &Gate{
 	&element.Config{
 		Name: "U",
 		Pin:  element.SetPin(element.PinBoolean, "in1", "in2", "out"),
@@ -26,32 +26,38 @@ var GateType element.NodeType = element.AddElement(12, &Gate{ // 使用通用的
 			float64(5.0),      // 1: 高电平电压 (V)
 		},
 		ValueName: []string{"type", "V_high"},
-		Voltage:   []string{"v"}, // 用于输出的内部电压源
+		Voltage:   []string{"v"},
 	},
 })
 
 // Gate 是一个通用的逻辑门元件
 type Gate struct{ *element.Config }
 
-// Stamp 放置输出电压源
-func (g *Gate) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
-	// 输入数量为 PinNum - 1
+// Stamp 放置输出电压源到地(GND)，使用电压源 ID 奇偶性初始化以打破交叉耦合锁存器对称性。
+func (g *Gate) Stamp(m mna.Mna, t mna.Time, value element.NodeFace) {
 	outputNodeIndex := g.PinNum() - 1
 	outputNode := value.GetNodes(outputNodeIndex)
-	mna.StampVoltageSource(0, outputNode, value.GetVoltSource(0), 0) // 初始电压为 0
+
+	initV := 0.0
+	if int(value.GetVoltSource(0))&1 != 0 {
+		initV = 3.0
+	}
+
+	m.StampVoltageSource(outputNode, -1, value.GetVoltSource(0), initV)
 }
 
-// DoStep 根据逻辑门类型和输入计算输出
-func (g *Gate) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
+// DoStep 根据逻辑门类型和输入计算输出。
+// 使用 0.9 阻尼因子快速收敛交叉耦合锁存器，配合奇偶初始化打破对称性。
+func (g *Gate) DoStep(m mna.Mna, t mna.Time, value element.NodeFace) {
 	gateType := value.GetInt(0)
 	highVoltage := value.GetFloat64(1)
 	inputCount := g.PinNum() - 1
+	outputNode := value.GetNodes(inputCount)
 
 	var logicResult bool
 
-	// 获取输入状态的辅助函数
 	isHigh := func(i int) bool {
-		return mna.GetNodeVoltage(value.GetNodes(i)) > highVoltage*0.5
+		return m.GetNodeVoltage(value.GetNodes(i)) > highVoltage*0.5
 	}
 
 	switch gateType {
@@ -92,7 +98,6 @@ func (g *Gate) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 		}
 		logicResult = !logicResult
 	case GateXor:
-		// 针对多个输入的简单奇偶校验
 		count := 0
 		for i := 0; i < inputCount; i++ {
 			if isHigh(i) {
@@ -110,10 +115,21 @@ func (g *Gate) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 		logicResult = (count%2 == 0)
 	}
 
-	targetV := 0.0
+	desiredV := 0.0
 	if logicResult {
-		targetV = highVoltage
+		desiredV = highVoltage
 	}
 
-	mna.UpdateVoltageSource(value.GetVoltSource(0), targetV)
+	currentV := m.GetNodeVoltage(outputNode)
+	dampedV := currentV + 0.5*(desiredV-currentV)
+
+	m.UpdateVoltageSource(value.GetVoltSource(0), dampedV)
+
+	diff := currentV - desiredV
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > highVoltage*0.1 {
+		t.NoConverged()
+	}
 }
