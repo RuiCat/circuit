@@ -18,10 +18,12 @@ type StampCache struct {
 // collector: 加盖收集器，用于获取加盖记录
 // threshold: 变化检测阈值
 func NewStampCache(collector *StampCollector, threshold float64) *StampCache {
+	contributions := make([]RecordedStamp, len(collector.Records))
+	copy(contributions, collector.Records)
 	return &StampCache{
 		NodeSnapshots: make(map[NodeID]float64),
 		VsrcSnapshots: make(map[VoltageID]float64),
-		Contributions: collector.Records,
+		Contributions: contributions,
 		Threshold:     threshold,
 		Valid:         true,
 	}

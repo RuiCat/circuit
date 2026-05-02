@@ -50,9 +50,6 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 	// 初始化所有元件状态
 	con.CallMark(element.MarkReset)
 
-	tm := con.Time.(*TimeMNA)
-	successfulSteps := 0
-
 	con.ResetTimeStepCount()
 	for !con.IsSimulationFinished() {
 		// 检查是否超过最大时间步数
@@ -62,11 +59,9 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 
 		// 预测阶段：对纯 DC 电路，用 Adams-Bashford 预测提供 Newton 初始猜测
 		// 并通过 LTE 估计增长步长；含储能元件的电路使用固定小步长。
-		if !con.HasReactiveElements() && successfulSteps >= 3 {
-			if err := tm.Predict(); err == nil {
-				for i := range systemSize {
-					con.GetX().Set(i, tm.predState[i])
-				}
+		if !con.HasReactiveElements() && con.Time.GoodIterations() >= 3 {
+			if err := con.Time.Predict(); err == nil {
+				con.Time.CopyPredStateToX(con.GetX())
 			}
 		}
 
@@ -187,9 +182,9 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 		// 仅对纯 DC 电路（无储能元件）执行步长调整，快速跳过稳定状态。
 		// 含储能元件的电路使用固定步长以保证数值稳定性。
 		if !con.HasReactiveElements() {
-			if successfulSteps >= 3 {
-				tm.EstimateLTE()
-				if err := tm.AdjustStepSize(); err != nil {
+			if con.Time.GoodIterations() >= 3 {
+				con.Time.EstimateLTE()
+				if err := con.Time.AdjustStepSize(); err != nil {
 					return fmt.Errorf("步长调整失败: %v", err)
 				}
 			} else {
@@ -198,7 +193,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 				for i := range systemSize {
 					convergedState[i] = con.GetX().Get(i)
 				}
-				_ = bootstrapHistory(tm, convergedState, deriv, successfulSteps)
+				con.Time.BootstrapHistory(convergedState, deriv, con.Time.GoodIterations())
 			}
 		}
 
@@ -209,7 +204,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 		// 检查残差是否可接受并推进时间
 		if con.IsResidualConverged() {
 			// 残差可接受，推进时间
-			if err := advanceTimeSimple(con); err != nil {
+			if err := con.Time.AdvanceTimeSimple(); err != nil {
 				return fmt.Errorf("时间推进失败: %v", err)
 			}
 			// 接受求解状态
@@ -217,13 +212,11 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 			// 重置计数
 			con.ResetTimeStepCount()
 			// 调用用户回调函数
-			if !con.HasReactiveElements() && successfulSteps >= 3 {
-				for i := range systemSize {
-					(*tm.CorrState())[i] = con.GetX().Get(i)
-				}
-				tm.UpdateHistory()
+			if !con.HasReactiveElements() && con.Time.GoodIterations() >= 3 {
+				con.Time.SetCorrStateFromX(con.GetX())
+				con.Time.UpdateHistory()
 			}
-			successfulSteps++
+			con.Time.IncrementGoodSteps()
 
 			call(voltages)
 		} else {
@@ -238,43 +231,6 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 	// X和LastX，使得MnaType.X指向"待求解"缓冲区。再次交换
 	// 使MnaType.X指向收敛解缓冲区。
 	con.CallMark(element.MarkUpdateElements)
-	return nil
-}
-
-// bootstrapHistory 在前 3 个成功步累积历史数据，为 3 阶 Adams 方法初始化。
-// stepIdx: 0, 1, 2 分别对应 historyStates[2], [1], [0]。
-// 仅在纯 DC 电路中使用，含储能元件的电路不启用历史记录。
-func bootstrapHistory(tm *TimeMNA, state, deriv []float64, stepIdx int) error {
-	if tm.historyInited {
-		return nil
-	}
-
-	if tm.predState == nil {
-		tm.predState = make([]float64, len(state))
-		tm.predDer = make([]float64, len(state))
-		tm.corrState = make([]float64, len(state))
-		tm.corrDer = make([]float64, len(state))
-	}
-
-	switch stepIdx {
-	case 0:
-		tm.historyStates[2] = make([]float64, len(state))
-		tm.historyDers[2] = make([]float64, len(state))
-		copy(tm.historyStates[2], state)
-		copy(tm.historyDers[2], deriv)
-	case 1:
-		tm.historyStates[1] = make([]float64, len(state))
-		tm.historyDers[1] = make([]float64, len(state))
-		copy(tm.historyStates[1], state)
-		copy(tm.historyDers[1], deriv)
-	case 2:
-		tm.historyStates[0] = make([]float64, len(state))
-		tm.historyDers[0] = make([]float64, len(state))
-		copy(tm.historyStates[0], state)
-		copy(tm.historyDers[0], deriv)
-		tm.historyInited = true
-	}
-
 	return nil
 }
 
@@ -298,38 +254,4 @@ func extractAndValidateVoltages(mnaSolver mna.Mna, nodesNum int, voltages []floa
 		}
 	}
 	return allValid
-}
-
-// advanceTimeSimple 简单时间推进方法
-// 步长已在别处确定（DC电路由AdjustStepSize调整，含储能元件电路使用固定步长），
-// 此函数仅负责：currentTime += currentStep、触发点截断、目标时间截断
-func advanceTimeSimple(con *element.Context) error {
-	if con.IsSimulationFinished() {
-		return nil
-	}
-	// 获取当前时间和步长
-	currentTime := con.CurrentTime()
-	timeStep := con.CurrentStep()
-	targetTime := con.TargetTime()
-	// 计算下一个时间
-	nextTime := currentTime + timeStep
-	// 触发点截断：确保不会越过未触发的触发点
-	triggers := con.Triggers()
-	for i := range triggers {
-		if !triggers[i].Triggered && triggers[i].Time > currentTime && nextTime > triggers[i].Time {
-			nextTime = triggers[i].Time
-		}
-	}
-	if nextTime > targetTime {
-		nextTime = targetTime
-	}
-	// 更新仿真时间
-	con.SetTime(nextTime)
-	// 标记已到达的触发点
-	for i := range triggers {
-		if !triggers[i].Triggered && nextTime >= triggers[i].Time {
-			triggers[i].Triggered = true
-		}
-	}
-	return nil
 }

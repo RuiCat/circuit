@@ -1,5 +1,7 @@
 package mna
 
+import "circuit/maths"
+
 // DerivativeFunc 多变量导数函数类型定义
 // 输入：当前状态向量（MNA解向量X）
 // 输出：状态导数向量（dx/dt）+ 错误信息
@@ -67,8 +69,10 @@ type Time interface {
 	MaxTimeStep() float64
 	// MinTimeStep 获取最小允许步长
 	MinTimeStep() float64
-	// GoodIterations 获取当前步数
+	// GoodIterations 获取已成功完成的时间步数
 	GoodIterations() int
+	// IncrementGoodSteps 递增已成功完成的时间步计数
+	IncrementGoodSteps()
 	// ResidualNorm 获取当前MNA残差范数
 	ResidualNorm() float64
 
@@ -78,6 +82,8 @@ type Time interface {
 
 	// Predict 3阶Adams-Bashford预测：计算下一时间步预测状态
 	Predict() error
+	// CopyPredStateToX 将预测状态复制到MNA解向量X，用于Newton初始猜测
+	CopyPredStateToX(x maths.Vector[float64])
 	// Correct 3阶Adams-Moulton校正：基于预测值优化状态
 	Correct() error
 	// ------------------------------
@@ -90,8 +96,13 @@ type Time interface {
 	//	initialState - 初始状态向量（MNA解向量X的初始值）
 	//	derFunc      - 导数计算函数
 	InitHistory(initialState []float64, derFunc DerivativeFunc) error
+	// BootstrapHistory 在前3个成功步累积历史数据，为3阶Adams方法初始化
+	// stepIdx: 0, 1, 2 分别对应 historyStates[2], [1], [0]
+	BootstrapHistory(state, deriv []float64, stepIdx int)
 	// UpdateHistory 推进历史数据缓存（使用循环缓冲区优化，避免频繁内存分配）
 	UpdateHistory()
+	// SetCorrStateFromX 从MNA解向量X复制当前收敛状态到校正缓冲区，供UpdateHistory使用
+	SetCorrStateFromX(x maths.Vector[float64])
 
 	// ------------------------------
 	// MNA残差计算
@@ -152,4 +163,6 @@ type Time interface {
 	//	mnaSolver - MNA矩阵求解器（用于获取A/Z/X，计算残差）
 	//	derFunc   - 多变量导数计算函数（dx/dt）
 	AdvanceTimeStep(mnaSolver Mna, derFunc DerivativeFunc) error
+	// AdvanceTimeSimple 简单时间推进：currentTime += currentStep + 触发点截断 + 目标时间截断
+	AdvanceTimeSimple() error
 }

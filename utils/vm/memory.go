@@ -43,7 +43,7 @@ func (dm *DeviceManager) FindDevice(addr uint32) (dev Device, _ uint32) {
 		dev = dm.devices[i]
 		base := dev.GetBaseAddr()
 		size := dev.GetSize()
-		if addr >= base && addr < base+size {
+		if addr >= base && size > 0 && addr < base+size {
 			return dev, addr - base
 		}
 	}

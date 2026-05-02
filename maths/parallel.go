@@ -62,10 +62,9 @@ func (pm *ParallelMatrixVectorMul[T]) MatrixVectorMultiply(x Vector[T]) Vector[T
 		go func(s, e int) {
 			defer wg.Done()
 			for i := s; i < e; i++ {
-				cols, vals := pm.GetRow(i)
 				var sum T
-				for jIdx, col := range cols {
-					sum += vals.Get(jIdx) * x.Get(col)
+				for j := 0; j < pm.Cols(); j++ {
+					sum += pm.Get(i, j) * x.Get(j)
 				}
 				result.Set(i, sum)
 			}

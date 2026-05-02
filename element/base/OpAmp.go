@@ -34,6 +34,8 @@ func (OpAmp) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	mna.StampImpedance(-1, value.GetNodes(0), 1e16)
 	mna.StampImpedance(-1, value.GetNodes(1), 1e16)
 	// 输出引脚通过压控电压源连接
+	// 注意：当前模型为理想线性VCVS，未实现输出饱和限制（Vmax/Vmin）
+	// 在负反馈电路中会正确收敛，开环大信号时输出电压可能无界
 	gain := value.GetFloat64(2)
 	mna.StampVCVS(
 		value.GetNodes(2), -1, // Vout to Gnd
@@ -51,8 +53,6 @@ func (OpAmp) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	vd := vp - vn
 
 	// 更新内部状态值
-	// 改为使用VCVS模型后，DoStep不再需要计算和更新电压源
-	// MNA求解器会处理，我们只需在这里读取最终状态即可
 	vout := mna.GetNodeVoltage(value.GetNodes(2))
 	value.SetFloat64(3, vd)
 	value.SetFloat64(6, vout)

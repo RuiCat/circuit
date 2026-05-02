@@ -32,8 +32,7 @@ var DiodeType element.NodeType = element.AddElement(2, &Diode{
 		ValueName: []string{"Is", "Vz", "N", "Rs", "T", "V_old", "NVt", "invNVt", "Vt", "invVt", "zoffset", "vcrit", "vzcrit", "leakage", "Gmin"},
 		Current:   []int{0},
 		OrigValue: []int{5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
-		CanCacheStamp: true,
-		Flags:         element.FlagNonlinear,
+		Flags:         element.FlagNonlinear | element.FlagCacheStamp,
 	},
 })
 
@@ -85,7 +84,7 @@ func (Diode) Reset(base element.NodeFace) {
 
 	// 计算齐纳偏移量和临界电压
 	var zoffset, vzcrit float64
-	if Vz == 0 {
+	if Vz == 0 || Vt <= 0 {
 		zoffset = 0
 		vzcrit = 0
 	} else {
@@ -200,6 +199,9 @@ func (Diode) CalculateCurrent(mna mna.Mna, time mna.Time, value element.NodeFace
 // limitDiodeStep 限制二极管电压步长（基于CircuitJS1算法）
 func limitDiodeStep(vnew, vold float64, time mna.Time, value element.NodeFace) float64 {
 	vscale := value.GetFloat64(6)
+	if vscale == 0 {
+		return vnew
+	}
 	vcrit := value.GetFloat64(11)
 	Vt := value.GetFloat64(8)
 	vzcrit := value.GetFloat64(12)
@@ -286,7 +288,7 @@ func doDiodeStep(mna mna.Mna, time mna.Time, value element.NodeFace, voltdiff fl
 	subIterations := time.GoodIterations()
 	if subIterations > 100 {
 		// 缓慢增加gmin，但最大值限制在1e-6
-		extraGmin := math.Exp(-12 * math.Log(10) * float64(1-subIterations/1000.))
+		extraGmin := math.Exp(-12 * math.Log(10) * (1 - float64(subIterations)/1000.0))
 		if extraGmin > 1e-6 {
 			extraGmin = 1e-6
 		}

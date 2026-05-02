@@ -14,3 +14,14 @@ const (
 	MarkUpdateElements               // 更新元件状态。
 	MarkRollbackElements             // 回滚元件状态。
 )
+
+// 元件特性位标记
+type Flag uint8
+
+// 元件特性位标记，用于 Config.Flags
+const (
+	FlagNone       Flag = 0
+	FlagReactive   Flag = 1 << iota // 储能元件（电容/电感），影响步长自适应
+	FlagNonlinear                   // 非线性元件（三极管/二极管），需 Newton-Raphson 迭代
+	FlagCacheStamp                  // 允许引脚电压缓存优化（DoStep 仅依赖引脚电压的元件）
+)

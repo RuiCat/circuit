@@ -94,16 +94,16 @@ type ConfigFace interface {
 	ValueNum() int                // 获取元件参数数量。
 	VoltageNum() int              // 获取电压源数量。
 	Reset(base NodeFace)          // 重置元件状态到初始值。
-	CanOptimizeStamp() bool       // 是否允许引脚电压缓存优化。
+	IsFlag(flag Flag) bool        // 检查 Flags 中是否设置了指定的特性位。
 }
 
 // ElementFace 元件实现接口，提供元件的动态行为实现。
 // 所有元件类型都必须实现此接口，以定义其在仿真过程中的行为。
 type ElementFace interface {
-	StartIteration(mna mna.Mna, time mna.Time, value NodeFace)   // 步长迭代开始时的回调。
-	Stamp(mna mna.Mna, time mna.Time, value NodeFace)            // 加盖线性贡献到MNA矩阵。
-	DoStep(mna mna.Mna, time mna.Time, value NodeFace)           // 执行仿真步长计算。
-	CalculateCurrent(mna mna.Mna, time mna.Time, value NodeFace) // 计算元件电流。
-	StepFinished(mna mna.Mna, time mna.Time, value NodeFace)     // 步长迭代结束时的回调。
+	StartIteration(mna mna.Mna, time mna.Time, value NodeFace)               // 步长迭代开始时的回调。
+	Stamp(mna mna.Mna, time mna.Time, value NodeFace)                        // 加盖线性贡献到MNA矩阵。
+	DoStep(mna mna.Mna, time mna.Time, value NodeFace)                       // 执行仿真步长计算。
+	CalculateCurrent(mna mna.Mna, time mna.Time, value NodeFace)             // 计算元件电流。
+	StepFinished(mna mna.Mna, time mna.Time, value NodeFace)                 // 步长迭代结束时的回调。
 	AddDerivative(mna mna.Mna, time mna.Time, value NodeFace, der []float64) // 向导数向量累加 dx/dt。
 }

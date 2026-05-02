@@ -57,12 +57,9 @@ func (v *denseVector[T]) Copy(a Vector[T]) {
 		v.dataManager.Copy(target.dataManager)
 	default:
 		// 异类型逐个元素复制（兼容稀疏等其他实现）
+		target.Zero()
 		for i := 0; i < v.Length(); i++ {
-			val := v.Get(i)
-			var zero T
-			if val != zero { // 非零元素才复制（优化）
-				target.Set(i, val)
-			}
+			target.Set(i, v.Get(i))
 		}
 	}
 }

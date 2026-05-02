@@ -49,7 +49,7 @@ func (v Vec3) Length() float64 {
 // Normalize 向量归一化
 func (v Vec3) Normalize() Vec3 {
 	length := v.Length()
-	if length == 0 {
+	if length < 1e-12 {
 		return Vec3{}
 	}
 	return Vec3{X: v.X / length, Y: v.Y / length, Z: v.Z / length}

@@ -29,8 +29,7 @@ var TransistorType element.NodeType = element.AddElement(9, &Transistor{
 		ValueName: []string{"PNP", "hFE", "model", "vbc_last", "vbe_last", "Vcrit", "Ic", "Ie", "Ib", "gmin"},
 		Current:   []int{7, 8, 6},
 		OrigValue: []int{3, 4},
-		CanCacheStamp: true,
-		Flags:         element.FlagNonlinear,
+		Flags:         element.FlagNonlinear | element.FlagCacheStamp,
 	},
 })
 

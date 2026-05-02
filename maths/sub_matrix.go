@@ -152,6 +152,7 @@ func (m *subMatrix[T]) Copy(a Matrix[T]) {
 	if a.Rows() != m.rows || a.Cols() != m.cols {
 		panic("dimension mismatch for copy")
 	}
+	a.Zero()
 	for r := 0; r < m.rows; r++ {
 		// GetRow 效率可能不高，但更通用
 		cols, vals := m.GetRow(r)

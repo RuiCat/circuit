@@ -551,6 +551,11 @@ func (vmst *VmState) VmImaStep(count int) VmMcauseCode {
 func (vmst *VmState) GetVelementAddr(reg_start_idx uint32, element_idx uint32, sew_bytes uint32) uint32 {
 	const VLEN_BYTES = 16 // VLEN (向量寄存器的物理大小) 在此实现中固定为128位（16字节）。
 
+	// 验证 sew_bytes 为合法的SEW值 (1,2,4,8,16)
+	if sew_bytes == 0 || sew_bytes > VLEN_BYTES || sew_bytes&(sew_bytes-1) != 0 {
+		return 0
+	}
+
 	// 计算一个128位的物理向量寄存器可以容纳多少个当前SEW的元素。
 	elements_per_reg := VLEN_BYTES / sew_bytes
 
@@ -565,6 +570,11 @@ func (vmst *VmState) GetVelementAddr(reg_start_idx uint32, element_idx uint32, s
 	actual_reg_idx := reg_start_idx + reg_offset
 	// `addr` 是最终的字节地址，即在整个 `Vregs` 数组中的偏移量。
 	addr := actual_reg_idx*VLEN_BYTES + element_offset_in_reg
+
+	// 边界检查：确保地址在 Vregs 数组范围内
+	if int(addr+sew_bytes) > len(vmst.Core.Vregs) {
+		return 0
+	}
 
 	return addr
 }

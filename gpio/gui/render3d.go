@@ -98,11 +98,16 @@ func (r *Renderer3D) SetCamera(pos, target Vec3) {
 	r.cameraPos = pos
 	// 计算相机方向（看向目标）
 	forward := target.Sub(pos).Normalize()
-	// 计算右向量和上向量
+	// 选择与 forward 正交的上向量，避免万向节锁
 	up := NewVec3(0, 1, 0)
 	if math.Abs(forward.Dot(up)) > 0.99 {
-		// 避免万向节锁，使用另一个上方向
-		up = NewVec3(0, 0, 1)
+		// forward 接近 Y 轴，改用 Z 轴作为参考上方向；
+		// 若 forward 也接近 Z 轴，则退化为 X 轴
+		if math.Abs(forward.Z) > 0.99 {
+			up = NewVec3(1, 0, 0)
+		} else {
+			up = NewVec3(0, 0, 1)
+		}
 	}
 	right := forward.Cross(up).Normalize()
 	realUp := right.Cross(forward).Normalize()

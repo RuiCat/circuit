@@ -1,6 +1,7 @@
 package time
 
 import (
+	"circuit/maths"
 	"circuit/mna"
 	"errors"
 	"fmt"
@@ -54,7 +55,8 @@ type TimeMNA struct {
 
 	// 时间步控制
 	maxTimeSteps  int // 最大时间步数限制
-	timeStepCount int // 当前时间步计数
+	timeStepCount int // 当前时间步内尝试计数（防死循环）
+	goodStepCount int // 已成功完成的时间步数
 
 	// 收敛状态管理
 	residualConverged bool // 残差收敛标记
@@ -112,6 +114,7 @@ func NewTimeMNA(targetTime float64) (*TimeMNA, error) {
 		maxStep:           5e-4,
 		maxTimeSteps:      10000, // 默认最大时间步数
 		timeStepCount:     0,
+		goodStepCount:     0,
 		residualConverged: false,
 		absTol:            defaultAbsTol,
 		relTol:            defaultRelTol,
@@ -300,14 +303,27 @@ func (t *TimeMNA) MinTimeStep() float64 {
 }
 
 // CorrState 返回校正状态缓冲区，用于外界写入 Newton 收敛后的解。
+// 推荐使用 SetCorrStateFromX 替代直接操作返回值。
 func (t *TimeMNA) CorrState() *[]float64 {
 	return &t.corrState
 }
 
-// GoodIterations 获取当前步数
+// SetCorrStateFromX 从MNA解向量X复制当前收敛状态到校正缓冲区。
+// 用于在 Newton 收敛后将解写入校正状态，供 UpdateHistory 使用。
+func (t *TimeMNA) SetCorrStateFromX(x maths.Vector[float64]) {
+	for i := range t.corrState {
+		t.corrState[i] = x.Get(i)
+	}
+}
+
+// GoodIterations 获取已成功完成的时间步数
 func (t *TimeMNA) GoodIterations() int {
-	// 返回已成功完成的时间步数
-	return t.timeStepCount
+	return t.goodStepCount
+}
+
+// IncrementGoodSteps 递增已成功完成的时间步计数（由仿真循环在每步成功后调用）
+func (t *TimeMNA) IncrementGoodSteps() {
+	t.goodStepCount++
 }
 
 // ResidualNorm 获取当前MNA残差范数
@@ -349,6 +365,13 @@ func (t *TimeMNA) Predict() error {
 		t.predState[i] = stateN[i] + h*(abCoeff1*derN[i]-abCoeff2*derN1[i]+abCoeff3*derN2[i])
 	}
 	return nil
+}
+
+// CopyPredStateToX 将预测状态复制到MNA解向量X，用于Newton迭代的初始猜测。
+func (t *TimeMNA) CopyPredStateToX(x maths.Vector[float64]) {
+	for i := range t.predState {
+		x.Set(i, t.predState[i])
+	}
 }
 
 // Correct 3阶Adams-Moulton校正：基于预测值优化状态
@@ -450,6 +473,39 @@ func (t *TimeMNA) InitHistory(initialState []float64, derFunc mna.DerivativeFunc
 	return nil
 }
 
+// BootstrapHistory 在前 3 个成功步累积历史数据，为 3 阶 Adams 方法初始化。
+// stepIdx: 0, 1, 2 分别对应 historyStates[2], [1], [0]。
+// 仅在纯 DC 电路中使用，含储能元件的电路不启用历史记录。
+func (t *TimeMNA) BootstrapHistory(state, deriv []float64, stepIdx int) {
+	if t.historyInited {
+		return
+	}
+	if t.predState == nil {
+		t.predState = make([]float64, len(state))
+		t.predDer = make([]float64, len(state))
+		t.corrState = make([]float64, len(state))
+		t.corrDer = make([]float64, len(state))
+	}
+	switch stepIdx {
+	case 0:
+		t.historyStates[2] = make([]float64, len(state))
+		t.historyDers[2] = make([]float64, len(state))
+		copy(t.historyStates[2], state)
+		copy(t.historyDers[2], deriv)
+	case 1:
+		t.historyStates[1] = make([]float64, len(state))
+		t.historyDers[1] = make([]float64, len(state))
+		copy(t.historyStates[1], state)
+		copy(t.historyDers[1], deriv)
+	case 2:
+		t.historyStates[0] = make([]float64, len(state))
+		t.historyDers[0] = make([]float64, len(state))
+		copy(t.historyStates[0], state)
+		copy(t.historyDers[0], deriv)
+		t.historyInited = true
+	}
+}
+
 // UpdateHistory 推进历史数据缓存（使用循环缓冲区优化，避免频繁内存分配）
 func (t *TimeMNA) UpdateHistory() {
 	// 使用循环缓冲区思想：将新数据放在位置0，旧数据向后移动
@@ -513,12 +569,13 @@ func (t *TimeMNA) CalculateMNAResidual(mnaSolver mna.Mna) error {
 
 // CheckResidualConvergence 检查残差是否收敛
 func (t *TimeMNA) CheckResidualConvergence() {
-	// 收敛条件：残差范数 ≤ 动态阈值
-	if t.residualHist[0] == t.residualHist[1] && t.residualHist[1] == t.residualHist[2] {
+	// 初始状态（历史全为零，尚未产生残差）：视为收敛，允许推进
+	if t.residualHist[0] == 0 && t.residualHist[1] == 0 && t.residualHist[2] == 0 {
 		t.residualConverged = true
-	} else {
-		t.residualConverged = t.residualNorm <= t.residualTol
+		return
 	}
+	// 收敛条件：残差范数 ≤ 动态阈值
+	t.residualConverged = t.residualNorm <= t.residualTol
 }
 
 // ------------------------------
@@ -730,19 +787,44 @@ func (t *TimeMNA) AdvanceTimeStep(mnaSolver mna.Mna, derFunc mna.DerivativeFunc)
 	}
 	// 更新历史数据（用校正后的状态/导数）
 	t.UpdateHistory()
-	// 推进仿真时间
+	// 推进仿真时间并处理触发点（到达目标时间时同步调整步长）
+	t.advanceTimeAndTriggers(true)
+	return nil
+}
+
+// AdvanceTimeSimple 简单时间推进方法
+// 步长已在别处确定（DC电路由AdjustStepSize调整，含储能元件电路使用固定步长），
+// 此方法仅负责：currentTime += currentStep、触发点截断、目标时间截断
+func (t *TimeMNA) AdvanceTimeSimple() error {
+	if t.IsSimulationFinished() {
+		return nil
+	}
+	t.advanceTimeAndTriggers(false)
+	return nil
+}
+
+// advanceTimeAndTriggers 计算 nextTime、截断触发点和目标时间、推进 currentTime 并标记触发点。
+// adjustStep 为 true 时，在到达目标时间时同步调整步长（AdvanceTimeStep 路径需要）。
+func (t *TimeMNA) advanceTimeAndTriggers(adjustStep bool) {
 	nextTime := t.currentTime + t.currentStep
+	// 触发点截断：确保不会越过未触发的触发点
+	for i := range t.triggers {
+		if !t.triggers[i].Triggered && t.triggers[i].Time > t.currentTime && nextTime > t.triggers[i].Time {
+			nextTime = t.triggers[i].Time
+		}
+	}
+	// 不超过目标时间
+	if nextTime > t.targetTime {
+		nextTime = t.targetTime
+		if adjustStep {
+			t.currentStep = nextTime - t.currentTime
+		}
+	}
+	t.currentTime = nextTime
 	// 标记所有已到达的触发点
 	for i := range t.triggers {
 		if !t.triggers[i].Triggered && nextTime >= t.triggers[i].Time {
 			t.triggers[i].Triggered = true
 		}
 	}
-	// 不超过目标时间
-	if nextTime > t.targetTime {
-		nextTime = t.targetTime
-		t.currentStep = nextTime - t.currentTime // 最后一步调整步长
-	}
-	t.currentTime = nextTime
-	return nil
 }

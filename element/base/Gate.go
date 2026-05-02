@@ -33,14 +33,17 @@ var GateType element.NodeType = element.AddElement(12, &Gate{
 // Gate 是一个通用的逻辑门元件
 type Gate struct{ *element.Config }
 
-// Stamp 放置输出电压源到地(GND)，使用电压源 ID 奇偶性初始化以打破交叉耦合锁存器对称性。
+// Stamp 放置输出电压源到地(GND)，使用上一收敛电压值初始化以避免时间步间的虚假瞬态脉冲。
+// 首次时间步(t=0)时使用电压源 ID 奇偶性初始化以打破交叉耦合锁存器对称性。
 func (g *Gate) Stamp(m mna.Mna, t mna.Time, value element.NodeFace) {
 	outputNodeIndex := g.PinNum() - 1
 	outputNode := value.GetNodes(outputNodeIndex)
 
-	initV := 0.0
-	if int(value.GetVoltSource(0))&1 != 0 {
-		initV = 3.0
+	initV := m.GetNodeVoltage(outputNode)
+	if t.Time() == 0.0 && initV == 0.0 {
+		if int(value.GetVoltSource(0))&1 != 0 {
+			initV = 3.0
+		}
 	}
 
 	m.StampVoltageSource(outputNode, -1, value.GetVoltSource(0), initV)
@@ -121,7 +124,7 @@ func (g *Gate) DoStep(m mna.Mna, t mna.Time, value element.NodeFace) {
 	}
 
 	currentV := m.GetNodeVoltage(outputNode)
-	dampedV := currentV + 0.5*(desiredV-currentV)
+	dampedV := currentV + 0.75*(desiredV-currentV)
 
 	m.UpdateVoltageSource(value.GetVoltSource(0), dampedV)
 

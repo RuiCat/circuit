@@ -6,13 +6,6 @@ import (
 	"strings"
 )
 
-// 元件特性位标记，用于 Config.Flags。
-const (
-	FlagNone      uint8 = 0
-	FlagReactive  uint8 = 1 << iota // 储能元件（电容/电感），影响步长自适应
-	FlagNonlinear                    // 非线性元件（三极管/二极管），需 Newton-Raphson 迭代
-)
-
 // Pin 引脚。
 type Pin struct {
 	Name string  // 引脚名称。
@@ -32,16 +25,15 @@ func SetPin(pinType PinType, pin ...string) (pins []Pin) {
 // Config 元件配置结构体，存储元件的静态配置信息。
 // 这些配置在元件创建时初始化，并在整个仿真过程中保持不变。
 type Config struct {
-	Name          string   // 元件名称（如 "r" 表示电阻）。
-	Pin           []Pin    // 引脚列表，定义元件的外部连接点。
-	ValueInit     []any    // 初始化数据，存储元件的参数初始值（如电阻值、电压值等）。
-	ValueName     []string // 参数名称。
-	Current       []int    // 电流数据索引，指向ValueInit中存储电流值的索引位置。
-	OrigValue     []int    // 数据备份索引，指向需要备份/恢复的参数在ValueInit中的索引。
-	Voltage       []string // 电压源名称列表，定义元件内部的电压源标识。
-	Internal      []string // 内部引脚名称列表，定义元件的内部节点标识。
-	CanCacheStamp bool     // 允许引脚电压缓存优化。仅 DoStep 计算只依赖引脚电压的元件可启用（如 Diode, Transistor）。
-	Flags         uint8    // 元件特性位标记，如 FlagReactive、FlagNonlinear。
+	Name      string   // 元件名称（如 "r" 表示电阻）。
+	Pin       []Pin    // 引脚列表，定义元件的外部连接点。
+	ValueInit []any    // 初始化数据，存储元件的参数初始值（如电阻值、电压值等）。
+	ValueName []string // 参数名称。
+	Current   []int    // 电流数据索引，指向ValueInit中存储电流值的索引位置。
+	OrigValue []int    // 数据备份索引，指向需要备份/恢复的参数在ValueInit中的索引。
+	Voltage   []string // 电压源名称列表，定义元件内部的电压源标识。
+	Internal  []string // 内部引脚名称列表，定义元件的内部节点标识。
+	Flags     Flag     // 元件特性位标记，如 FlagReactive、FlagNonlinear、FlagCacheStamp。
 }
 
 // Base 默认配置信息。
@@ -50,6 +42,11 @@ func (config *Config) Base(ele ast.ElementNode) *Config { return config }
 // GetName 元件名称。
 func (config *Config) GetName() string {
 	return strings.ToUpper(config.Name)
+}
+
+// IsFlag 检查 Flags 中是否设置了指定的特性位。
+func (config *Config) IsFlag(flag Flag) bool {
+	return config.Flags&flag != 0
 }
 
 // Reset 重置元件状态到初始值。

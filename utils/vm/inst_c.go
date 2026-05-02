@@ -97,9 +97,7 @@ func handleC1(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, VmMc
 				((uint32(ir)>>2)&1)<<5 // bit 5
 
 			imm_s := signExtend(imm, 10)
-			// 注意：C.ADDI16SP 的立即数是 16 字节对齐的，所以要乘以 16
-			// 但如果你的 signExtend 只是处理了位，这里需要手动补上最后的 0
-			final_imm := int32(imm_s)
+			final_imm := int32(imm_s) << 4
 			if final_imm == 0 {
 				return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 			}

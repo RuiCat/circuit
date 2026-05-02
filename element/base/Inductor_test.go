@@ -39,16 +39,16 @@ func TestInductor(t *testing.T) {
 		t.Errorf("节点1电压不正确: 期望 %v, 实际 %v", expectedVoltage, node1Voltage)
 	}
 
-	// 节点0电压应为约4.7619V（电感有限阻抗下的分压）
+	// 节点0电压应为约4.5454V（向后欧拉法第一步：R_eq = L/h = 1000Ω，分压 5*1000/1100）
 	node0Voltage := con.GetNodeVoltage(0)
-	expectedNode0Voltage := 4.761904761904762 // 5 * (2000/2100)
+	expectedNode0Voltage := 4.545454545454546 // 5 * (1000/1100)
 	if math.Abs(node0Voltage-expectedNode0Voltage) > 1e-6 {
 		t.Errorf("节点0电压不正确: 期望 %v, 实际 %v", expectedNode0Voltage, node0Voltage)
 	}
 
-	// 电压源电流应为约-0.00238095A
+	// 电压源电流应为约-0.00454545A
 	voltageSourceCurrent := con.GetVoltageSourceCurrent(0)
-	expectedCurrent := -0.002380952380952381 // -5/2100
+	expectedCurrent := -0.004545454545454545 // -5/1100
 	if math.Abs(voltageSourceCurrent-expectedCurrent) > 1e-6 {
 		t.Errorf("电压源电流不正确: 期望 %v, 实际 %v", expectedCurrent, voltageSourceCurrent)
 	}

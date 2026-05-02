@@ -39,6 +39,14 @@ func handleLoadFP_S(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32
 	imm := int32(ir&0xfff00000) >> 20
 	addr := vmst.Core.Regs[rs1id] + uint32(imm)
 
+	// 虚拟地址翻译
+	paddr, fault := vmst.TranslateAddress(addr, VmMemAccessLoad)
+	if fault != CAUSE_TRAP_CODE_OK {
+		vmst.Core.Mtval = addr
+		return 0, 0, 0, fault
+	}
+	addr = paddr
+
 	// 对齐检查
 	if addr&3 != 0 {
 		vmst.Core.Mtval = addr
@@ -81,6 +89,14 @@ func handleStoreFP_S(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint3
 	imm := int32(imm_unsigned<<20) >> 20
 
 	addr := vmst.Core.Regs[rs1id] + uint32(imm)
+
+	// 虚拟地址翻译
+	paddr, fault := vmst.TranslateAddress(addr, VmMemAccessStore)
+	if fault != CAUSE_TRAP_CODE_OK {
+		vmst.Core.Mtval = addr
+		return 0, 0, 0, fault
+	}
+	addr = paddr
 
 	// 对齐检查
 	if addr&3 != 0 {

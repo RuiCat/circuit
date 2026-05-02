@@ -45,7 +45,7 @@ type Voltage struct{ *element.Config }
 func (Voltage) Reset(base element.NodeFace) {
 	// 初始化噪声值
 	if base.GetInt(0) == WfNOISE {
-		base.SetFloat64(7, (rand.NormFloat64()*2-1)*base.GetFloat64(4)+base.GetFloat64(1))
+		base.SetFloat64(7, rand.NormFloat64()*base.GetFloat64(4)+base.GetFloat64(1))
 	}
 }
 
@@ -70,7 +70,7 @@ func (Voltage) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 func (Voltage) StepFinished(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 更新噪声值
 	if value.GetInt(0) == WfNOISE {
-		value.SetFloat64(7, (rand.NormFloat64()*2-1)*value.GetFloat64(4)+value.GetFloat64(1))
+		value.SetFloat64(7, rand.NormFloat64()*value.GetFloat64(4)+value.GetFloat64(1))
 	}
 }
 

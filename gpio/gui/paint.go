@@ -19,8 +19,8 @@ const (
 	White      Color = 0xFFFF
 	Black      Color = 0x0000
 	Blue       Color = 0x001F
-	BRed       Color = 0xF81F
-	GRed       Color = 0xFFE0
+	BRed       Color = 0xF810 // 蓝红色
+	GRed       Color = 0xFF80 // 绿红色 (不同于 Yellow=0xFFE0)
 	GBlue      Color = 0x07FF
 	Red        Color = 0xF800
 	Magenta    Color = 0xF81F
@@ -200,7 +200,7 @@ func (p *Paint) SetRotate(rotate Rotate) error {
 		}
 		return nil
 	default:
-		return errors.New("rotate must be 0, 90, 180, or 270")
+		return errors.New("rotate must be Rotate0, Rotate90, Rotate180, or Rotate270")
 	}
 }
 
@@ -241,15 +241,15 @@ func (p *Paint) transform(x, y int) (int, int) {
 }
 
 // SetPixel 使用给定颜色在(x, y)位置设置一个像素。
-// 坐标在可见区域空间中（旋转后）。
-func (p *Paint) SetPixel(x, y int, color Color) error {
+// 坐标在可见区域空间中（旋转后）。越界像素静默跳过。
+func (p *Paint) SetPixel(x, y int, color Color) {
 	if x < 0 || x >= p.Width || y < 0 || y >= p.Height {
-		return errors.New("coordinates out of bounds")
+		return
 	}
 	// 转换到内存缓冲区坐标
 	xm, ym := p.transform(x, y)
 	if xm < 0 || xm >= p.WidthMemory || ym < 0 || ym >= p.HeightMemory {
-		return errors.New("transformed coordinates out of bounds")
+		return
 	}
 	// 如果有显示回调函数，则使用它
 	if p.displayFunc != nil {
@@ -262,7 +262,6 @@ func (p *Paint) SetPixel(x, y int, color Color) error {
 			p.Image[index] = color
 		}
 	}
-	return nil
 }
 
 // Clear 使用给定颜色清除整个显示。
@@ -344,30 +343,27 @@ func (p *Paint) DrawLine(xStart, yStart, xEnd, yEnd int, color Color, lineWidth 
 	if yStart > yEnd {
 		yAdd = -1
 	}
-	// 累积误差
-	esp := dx + dy
+	// Bresenham 直线算法（全八分圆通用）
+	err := dx - dy
 	dottedLen := 0
 	for {
 		dottedLen++
-		// 绘制虚线：虚线样式中每第3个点为背景色
 		if lineStyle == LineStyleDotted && dottedLen%3 == 0 {
-			p.DrawPoint(x, y, ImageBackground, lineWidth, DotFillAround)
 			dottedLen = 0
+			// 虚线间隔：跳过此像素
 		} else {
 			p.DrawPoint(x, y, color, lineWidth, DotFillAround)
 		}
-		if 2*esp >= dy {
-			if x == xEnd {
-				break
-			}
-			esp += dy
+		if x == xEnd && y == yEnd {
+			break
+		}
+		e2 := 2 * err
+		if e2 > -dy {
+			err -= dy
 			x += xAdd
 		}
-		if 2*esp <= dx {
-			if y == yEnd {
-				break
-			}
-			esp += dx
+		if e2 < dx {
+			err += dx
 			y += yAdd
 		}
 	}
@@ -494,7 +490,10 @@ func (p *Paint) DrawTime(x, y int, pt *PaintTime, face font.Face, bgColor, fgCol
 	}
 	digits := []rune{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'}
 	// 获取字符宽度估计值（使用'0'字符的宽度）
-	advance, _ := face.GlyphAdvance('0')
+	advance, ok := face.GlyphAdvance('0')
+	if !ok {
+		return // 字体中缺少'0'字形，无法绘制时间
+	}
 	dx := int((advance + 31) / 64) // 转换为像素，四舍五入
 	p.DrawCharRune(x, y, digits[pt.Hour/10], face, bgColor, fgColor)
 	p.DrawCharRune(x+dx, y, digits[pt.Hour%10], face, bgColor, fgColor)
@@ -524,6 +523,7 @@ func (p *Paint) DrawString(x, y int, str string, face font.Face, bgColor, fgColo
 	xPos := x
 	yPos := y
 	var dx, dy int
+	dy = 0 // 显式初始化，确保换行前有有效值
 	for _, ch := range str {
 		if ch == '\n' {
 			xPos = x
@@ -543,8 +543,8 @@ func (p *Paint) DrawCharRune(x, y int, ch rune, face font.Face, bgColor, fgColor
 	ascent := metrics.Ascent.Ceil()
 	// 计算基线位置
 	baseY := ascent
-	// 获取字形
-	dot := fixed.P(0, baseY)
+	// 获取字形（dot 坐标为 26.6 定点数，64 单位 = 1 像素）
+	dot := fixed.P(0, baseY<<6)
 	dr, mask, maskp, _, ok := face.Glyph(dot, ch)
 	if !ok {
 		return 0, 0

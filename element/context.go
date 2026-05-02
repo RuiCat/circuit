@@ -27,8 +27,12 @@ func (con *Context) ComputeStateDerivative() []float64 {
 	n := con.GetNodeNum() + con.GetVoltageSourcesNum()
 	der := make([]float64, n)
 	for _, elem := range con.Nodelist {
-		if elem.Config().Flags&FlagReactive != 0 {
-			ElementList[elem.Type()].AddDerivative(con, con.Time, elem, der)
+		if elem.Config().IsFlag(FlagReactive) {
+			elemFace, ok := ElementList[elem.Type()]
+			if !ok {
+				continue
+			}
+			elemFace.AddDerivative(con, con.Time, elem, der)
 		}
 	}
 	return der
@@ -78,7 +82,11 @@ func (con *Context) CallMark(mark Mark) {
 	switch mark {
 	case MarkReset:
 		for i := range con.Nodelist {
-			ElementList[con.Nodelist[i].Base().NodeType].Reset(con.Nodelist[i])
+			elemFace, ok := ElementList[con.Nodelist[i].Base().NodeType]
+			if !ok {
+				continue
+			}
+			elemFace.Reset(con.Nodelist[i])
 		}
 		con.MnaUpdateType.MnaType.A.Zero()
 		con.MnaUpdateType.MnaType.Z.Zero()
@@ -95,23 +103,43 @@ func (con *Context) CallMark(mark Mark) {
 		}
 	case MarkStartIteration:
 		for i := range con.Nodelist {
-			ElementList[con.Nodelist[i].Base().NodeType].StartIteration(con, con.Time, con.Nodelist[i])
+			elemFace, ok := ElementList[con.Nodelist[i].Base().NodeType]
+			if !ok {
+				continue
+			}
+			elemFace.StartIteration(con, con.Time, con.Nodelist[i])
 		}
 	case MarkStamp:
 		for i := range con.Nodelist {
-			ElementList[con.Nodelist[i].Base().NodeType].Stamp(con, con.Time, con.Nodelist[i])
+			elemFace, ok := ElementList[con.Nodelist[i].Base().NodeType]
+			if !ok {
+				continue
+			}
+			elemFace.Stamp(con, con.Time, con.Nodelist[i])
 		}
 	case MarkDoStep:
 		for i := range con.Nodelist {
-			ElementList[con.Nodelist[i].Base().NodeType].DoStep(con, con.Time, con.Nodelist[i])
+			elemFace, ok := ElementList[con.Nodelist[i].Base().NodeType]
+			if !ok {
+				continue
+			}
+			elemFace.DoStep(con, con.Time, con.Nodelist[i])
 		}
 	case MarkCalculateCurrent:
 		for i := range con.Nodelist {
-			ElementList[con.Nodelist[i].Base().NodeType].CalculateCurrent(con, con.Time, con.Nodelist[i])
+			elemFace, ok := ElementList[con.Nodelist[i].Base().NodeType]
+			if !ok {
+				continue
+			}
+			elemFace.CalculateCurrent(con, con.Time, con.Nodelist[i])
 		}
 	case MarkStepFinished:
 		for i := range con.Nodelist {
-			ElementList[con.Nodelist[i].Base().NodeType].StepFinished(con, con.Time, con.Nodelist[i])
+			elemFace, ok := ElementList[con.Nodelist[i].Base().NodeType]
+			if !ok {
+				continue
+			}
+			elemFace.StepFinished(con, con.Time, con.Nodelist[i])
 		}
 	default:
 		log.Fatalf("未知 CallMark 操作: %d", mark)

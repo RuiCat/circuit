@@ -66,7 +66,7 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 
 		expanded, err := expandSubCircuitInstance(
 			subckt, elem.Pins, instanceName, subcktMap,
-			&nextNodeID, nodeNameToID, parseTree,
+			&nextNodeID, nodeNameToID, parseTree, make(map[string]bool),
 		)
 		if err != nil {
 			return nil, err
@@ -441,7 +441,15 @@ func expandSubCircuitInstance(
 	nextNodeID *mna.NodeID,
 	nodeNameToID map[string]mna.NodeID,
 	parseTree *ast.ParseTree,
+	visited map[string]bool,
 ) ([]*ast.ElementNode, error) {
+	// 检测循环引用
+	subcktKey := strings.ToLower(subckt.Name)
+	if visited[subcktKey] {
+		return nil, fmt.Errorf("第 %d 行: 子电路 '%s' 存在循环引用", subckt.Line, subckt.Name)
+	}
+	visited[subcktKey] = true
+	defer delete(visited, subcktKey)
 	// 构建端口映射（大小写不敏感）：端口名 → 外部引脚值
 	portMap := make(map[string]string)
 	for i, port := range subckt.Ports {
@@ -483,7 +491,7 @@ func expandSubCircuitInstance(
 
 			nestedElements, err := expandSubCircuitInstance(
 				nestedSubckt, newElem.Pins, nestedInstanceName,
-				allSubckts, nextNodeID, nodeNameToID, parseTree,
+				allSubckts, nextNodeID, nodeNameToID, parseTree, visited,
 			)
 			if err != nil {
 				return nil, err

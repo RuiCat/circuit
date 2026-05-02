@@ -3,6 +3,7 @@ package mna
 import (
 	"circuit/maths"
 	"fmt"
+	"math"
 	"math/cmplx"
 )
 
@@ -168,7 +169,7 @@ func (m *MnaType[T]) StampImpedance(n1, n2 NodeID, z T) {
 	var y T
 	switch v := any(z).(type) {
 	case float64:
-		if v > 1e-9 {
+		if math.Abs(v) > 1e-9 {
 			y = any(1.0 / v).(T)
 		} else {
 			y = any(1e9).(T) // 避免除零
@@ -209,7 +210,7 @@ func (m *MnaType[T]) StampCurrentSource(n1, n2 NodeID, i T) {
 
 // StampVoltageSource 为独立电压源添加MNA加盖。该操作会引入一个新的电流未知量，并修改矩阵A和向量Z以建立电压约束方程。
 func (m *MnaType[T]) StampVoltageSource(n1, n2 NodeID, vs VoltageID, v T) {
-	if vs < 0 {
+	if vs < 0 || int(vs) >= m.VoltageSourcesNum {
 		return
 	}
 	vsRow := NodeID(vs) + NodeID(m.NodesNum)
@@ -235,7 +236,7 @@ func (m *MnaType[T]) StampVCCS(cn1, cn2, vn1, vn2 NodeID, gain T) {
 
 // StampCCCS 为电流控制电流源(CCCS)添加MNA加盖。它通过修改矩阵A的两个元素来反映控制电流对输出节点的影响。
 func (m *MnaType[T]) StampCCCS(cn1, cn2 NodeID, cs VoltageID, gain T) {
-	if cs < 0 {
+	if cs < 0 || int(cs) >= m.VoltageSourcesNum {
 		return
 	}
 	csCol := NodeID(cs) + NodeID(m.NodesNum)
@@ -245,7 +246,7 @@ func (m *MnaType[T]) StampCCCS(cn1, cn2 NodeID, cs VoltageID, gain T) {
 
 // StampVCVS 为电压控制电压源(VCVS)添加MNA加盖。它引入一个新的电流未知量，并通过修改矩阵A中的一行和两列来建立电压增益关系。
 func (m *MnaType[T]) StampVCVS(on1, on2, cn1, cn2 NodeID, vs VoltageID, gain T) {
-	if vs < 0 {
+	if vs < 0 || int(vs) >= m.VoltageSourcesNum {
 		return
 	}
 	vsRow := NodeID(vs) + NodeID(m.NodesNum)
@@ -264,7 +265,10 @@ func (m *MnaType[T]) StampVCVS(on1, on2, cn1, cn2 NodeID, vs VoltageID, gain T) 
 
 // StampCCVS 为电流控制电压源(CCVS)添加MNA加盖。它引入一个新的电流未知量，并通过修改矩阵A中的一行和两列来建立跨阻关系。
 func (m *MnaType[T]) StampCCVS(on1, on2 NodeID, cs, vs VoltageID, gain T) {
-	if vs < 0 {
+	if vs < 0 || int(vs) >= m.VoltageSourcesNum {
+		return
+	}
+	if cs < 0 {
 		return
 	}
 	vsRow := NodeID(vs) + NodeID(m.NodesNum)
@@ -285,7 +289,7 @@ func (m *MnaType[T]) StampCCVS(on1, on2 NodeID, cs, vs VoltageID, gain T) {
 
 // UpdateVoltageSource 更新一个已存在的电压源的电压值。此操作仅修改向量Z中对应的项。
 func (m *MnaType[T]) UpdateVoltageSource(vs VoltageID, v T) {
-	if vs < 0 {
+	if vs < 0 || int(vs) >= m.VoltageSourcesNum {
 		return
 	}
 	vsRow := NodeID(vs) + NodeID(m.NodesNum)
@@ -294,7 +298,7 @@ func (m *MnaType[T]) UpdateVoltageSource(vs VoltageID, v T) {
 
 // IncrementVoltageSource 在一个已存在的电压源的电压值上增加一个增量。此操作仅修改向量Z中对应的项。
 func (m *MnaType[T]) IncrementVoltageSource(vs VoltageID, v T) {
-	if vs < 0 {
+	if vs < 0 || int(vs) >= m.VoltageSourcesNum {
 		return
 	}
 	vsRow := NodeID(vs) + NodeID(m.NodesNum)

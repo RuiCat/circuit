@@ -108,7 +108,7 @@ func (con *Context) parallelDoStep() error {
 					continue
 				}
 
-				if useCache && elemFace.CanOptimizeStamp() {
+				if useCache && elemFace.IsFlag(FlagCacheStamp) {
 					con.cacheMu.Lock()
 					cache := con.stampCaches[node]
 					con.cacheMu.Unlock()
@@ -190,9 +190,4 @@ func applyRecord(con *Context, r *mna.RecordedStamp) {
 	case mna.OpIncrementVoltageSource:
 		con.IncrementVoltageSource(r.ID1, r.Value)
 	}
-}
-
-// CanOptimizeStamp 判断该元件类型是否支持盖章优化（缓存）
-func (cf *Config) CanOptimizeStamp() bool {
-	return cf.CanCacheStamp
 }

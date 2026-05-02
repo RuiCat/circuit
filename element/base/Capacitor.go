@@ -26,6 +26,9 @@ type Capacitor struct{ *element.Config }
 // 计算历史电流源 I_hist = (2C/dt) * v_prev + I_cap_prev，用于伴随模型的电流源贡献
 func (Capacitor) StartIteration(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	dt := time.TimeStep()
+	if dt <= 0 {
+		return
+	}
 	c := value.GetFloat64(0)
 	v_prev := value.GetFloat64(3)
 	I_hist := (2*c/dt)*v_prev + value.GetFloat64(4)

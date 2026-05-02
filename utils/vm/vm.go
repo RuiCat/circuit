@@ -78,7 +78,7 @@ func (vmst *VmState) Load(rom []byte) bool {
 	if len(rom) > int(vmst.VmMemorySize) {
 		return false
 	}
-	vmst.Load(rom)
+	vmst.Memory.Load(rom)
 	vmst.StackCanary = nil
 	return true
 }

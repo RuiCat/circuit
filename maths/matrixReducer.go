@@ -251,13 +251,17 @@ func (p *sparseMatrixPruner[T]) RemoveZeroRows() Matrix[T] {
 	}
 	newRowPtr[newRows] = currentIdx
 
-	// 基于收集到的非零行数据构建新的稀疏矩阵
+	// 基于收集到的非零行数据构建新的稀疏矩阵（深拷贝缓冲区以避免后续操作覆盖）
+	colIndCopy := make([]int, len(p.colIndBuf))
+	copy(colIndCopy, p.colIndBuf)
+	valuesCopy := make([]T, len(p.valuesBuf))
+	copy(valuesCopy, p.valuesBuf)
 	prunedMat := &sparseMatrix[T]{
 		rows:        newRows,
 		cols:        origCols,
 		rowPtr:      newRowPtr,
-		colInd:      p.colIndBuf,
-		DataManager: NewDataManagerWithData(p.valuesBuf),
+		colInd:      colIndCopy,
+		DataManager: NewDataManagerWithData(valuesCopy),
 	}
 
 	p.prunedMatrix = prunedMat
@@ -347,12 +351,17 @@ func (p *sparseMatrixPruner[T]) RemoveZeroCols() Matrix[T] {
 		}
 	}
 
+	// 深拷贝缓冲区以避免后续操作覆盖返回的矩阵数据
+	colIndCopy := make([]int, newIdx)
+	copy(colIndCopy, newColInd[:newIdx])
+	valuesCopy := make([]T, newIdx)
+	copy(valuesCopy, newValues[:newIdx])
 	prunedMat := &sparseMatrix[T]{
 		rows:        origRows,
 		cols:        newCols,
 		rowPtr:      newRowPtr,
-		colInd:      newColInd[:newIdx],
-		DataManager: NewDataManagerWithData(newValues[:newIdx]),
+		colInd:      colIndCopy,
+		DataManager: NewDataManagerWithData(valuesCopy),
 	}
 
 	p.prunedMatrix = prunedMat

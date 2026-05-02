@@ -203,4 +203,6 @@ func (sc *StampCollector) FlushToMNA(mna *MnaUpdateType[float64]) {
 // Reset 清空已记录的所有盖章操作
 func (sc *StampCollector) Reset() {
 	sc.Records = sc.Records[:0]
+	sc.ReadNodes = make(map[NodeID]struct{})
+	sc.ReadVsrcs = make(map[VoltageID]struct{})
 }
