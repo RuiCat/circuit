@@ -220,7 +220,8 @@ func (um *updateMatrix[T]) Copy(a Matrix[T]) {
 	}
 }
 
-// GetRow 获取指定行的非零元素（合并缓存+底层数据），利用缓冲区避免重复内存分配
+// GetRow 获取指定行的非零元素列索引副本和值副本，合并缓存与底层数据。
+// 返回的切片和向量均为独立分配，与内部缓冲区无共享，修改不会影响矩阵状态。
 func (um *updateMatrix[T]) GetRow(row int) ([]int, Vector[T]) {
 	if row < 0 || row >= um.Rows() {
 		panic(fmt.Sprintf("row index out of range: %d (rows: %d)", row, um.Rows()))
@@ -249,10 +250,17 @@ func (um *updateMatrix[T]) GetRow(row int) ([]int, Vector[T]) {
 		}
 	}
 
-	// 3. 直接返回内部缓冲区的切片和向量，以最大化性能
-	// 调用方不应修改返回的切片或向量
-	um.rowResultVec.dataManager.data = um.rowResultVals
-	return um.rowResultCols, um.rowResultVec
+	valsCopy := make([]T, len(um.rowResultVals))
+	copy(valsCopy, um.rowResultVals)
+	colsCopy := make([]int, len(um.rowResultCols))
+	copy(colsCopy, um.rowResultCols)
+
+	resultVec := &denseVector[T]{
+		dataManager: &dataManager[T]{
+			data: valsCopy,
+		},
+	}
+	return colsCopy, resultVec
 }
 
 // MatrixVectorMultiply 矩阵向量乘法（使用当前可见数据：缓存+底层）

@@ -2,7 +2,7 @@ package element
 
 import (
 	"circuit/mna"
-	"log"
+	"fmt"
 	"sync"
 )
 
@@ -27,8 +27,9 @@ func (con *Context) ComputeStateDerivative() []float64 {
 	n := con.GetNodeNum() + con.GetVoltageSourcesNum()
 	der := make([]float64, n)
 	for _, elem := range con.Nodelist {
-		if elem.Config().IsFlag(FlagReactive) {
-			elemFace, ok := ElementList[elem.Type()]
+		cfg := elem.Config()
+		if cfg != nil && cfg.IsFlag(FlagReactive) {
+			elemFace, ok := getElementFace(elem.Type())
 			if !ok {
 				continue
 			}
@@ -78,11 +79,11 @@ func (con *Context) GetHierarchicalNodeVoltage(path string) float64 {
 }
 
 // CallMark 统一调用。
-func (con *Context) CallMark(mark Mark) {
+func (con *Context) CallMark(mark Mark) error {
 	switch mark {
 	case MarkReset:
 		for i := range con.Nodelist {
-			elemFace, ok := ElementList[con.Nodelist[i].Base().NodeType]
+			elemFace, ok := getElementFace(con.Nodelist[i].Base().NodeType)
 			if !ok {
 				continue
 			}
@@ -103,7 +104,7 @@ func (con *Context) CallMark(mark Mark) {
 		}
 	case MarkStartIteration:
 		for i := range con.Nodelist {
-			elemFace, ok := ElementList[con.Nodelist[i].Base().NodeType]
+			elemFace, ok := getElementFace(con.Nodelist[i].Base().NodeType)
 			if !ok {
 				continue
 			}
@@ -111,7 +112,7 @@ func (con *Context) CallMark(mark Mark) {
 		}
 	case MarkStamp:
 		for i := range con.Nodelist {
-			elemFace, ok := ElementList[con.Nodelist[i].Base().NodeType]
+			elemFace, ok := getElementFace(con.Nodelist[i].Base().NodeType)
 			if !ok {
 				continue
 			}
@@ -119,7 +120,7 @@ func (con *Context) CallMark(mark Mark) {
 		}
 	case MarkDoStep:
 		for i := range con.Nodelist {
-			elemFace, ok := ElementList[con.Nodelist[i].Base().NodeType]
+			elemFace, ok := getElementFace(con.Nodelist[i].Base().NodeType)
 			if !ok {
 				continue
 			}
@@ -127,7 +128,7 @@ func (con *Context) CallMark(mark Mark) {
 		}
 	case MarkCalculateCurrent:
 		for i := range con.Nodelist {
-			elemFace, ok := ElementList[con.Nodelist[i].Base().NodeType]
+			elemFace, ok := getElementFace(con.Nodelist[i].Base().NodeType)
 			if !ok {
 				continue
 			}
@@ -135,13 +136,14 @@ func (con *Context) CallMark(mark Mark) {
 		}
 	case MarkStepFinished:
 		for i := range con.Nodelist {
-			elemFace, ok := ElementList[con.Nodelist[i].Base().NodeType]
+			elemFace, ok := getElementFace(con.Nodelist[i].Base().NodeType)
 			if !ok {
 				continue
 			}
 			elemFace.StepFinished(con, con.Time, con.Nodelist[i])
 		}
 	default:
-		log.Fatalf("未知 CallMark 操作: %d", mark)
+		return fmt.Errorf("未知 CallMark 操作: %d", mark)
 	}
+	return nil
 }

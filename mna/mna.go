@@ -23,6 +23,7 @@ type MnaUpdateType[T maths.Number] struct {
 	Z           maths.UpdateVector[T] // 可更新的已知向量Z
 	X           maths.Vector[T]       // 可更新的未知向量X
 	LastX       maths.Vector[T]       // 上一个未知向量X
+	xUpdated    bool                  // 标记X是否已被更新（防止重复UpdateX/RollbackX）
 }
 
 // NewMnaUpdate 创建一个带更新功能的MNA求解器实例。
@@ -62,15 +63,31 @@ func (mna *MnaUpdateType[T]) Rollback() {
 }
 
 // UpdateX 将对解向量X的暂存修改应用到底层数据结构中。
+// 通过 xUpdated 标记防止重复提交：若 xUpdated 已为 true，则直接返回。
+// 提交时交换 X 与 LastX，使底层 X 指向更新后的向量。
 func (mna *MnaUpdateType[T]) UpdateX() {
+	if mna.xUpdated {
+		return // 防止重复提交
+	}
 	mna.X, mna.LastX = mna.LastX, mna.X
 	mna.MnaType.X = mna.X
+	mna.xUpdated = true
 }
 
-// RollbackX 丢弃对解向量X的暂存修改。
+// RollbackX 丢弃对解向量X的暂存修改，恢复到上次提交前的状态。
+// 通过 xUpdated 标记防止重复回滚：若 xUpdated 为 false，则直接返回。
 func (mna *MnaUpdateType[T]) RollbackX() {
+	if !mna.xUpdated {
+		return // 未提交无需回滚
+	}
 	mna.X, mna.LastX = mna.LastX, mna.X
 	mna.MnaType.X = mna.LastX
+	mna.xUpdated = false
+}
+
+// ResetXUpdate 重置X更新状态，允许下次UpdateX/RollbackX。
+func (mna *MnaUpdateType[T]) ResetXUpdate() {
+	mna.xUpdated = false
 }
 
 // MnaType 结构体是 MNA 接口的基础实现，包含了求解电路所需的核心矩阵和向量。
@@ -134,37 +151,72 @@ func (m *MnaType[T]) GetVoltageSourceCurrent(i VoltageID) (zero T) {
 
 // ------------------------------ MNA矩阵操作 ------------------------------
 
-// StampMatrix 将一个值加到矩阵A的(i,j)元素上。地节点索引将被忽略。
+// isValidNodeID 检查节点ID是否有效：必须大于 Gnd（表示非地节点），
+// 且小于 NodesNum+VoltageSourcesNum（即不超出 MNA 增广矩阵的总维度）。
+// 该方法用于 StampMatrix 和 StampRightSide 内部进行索引安全性检查。
+func (m *MnaType[T]) isValidNodeID(id NodeID) bool {
+	return id > Gnd && int(id) < m.NodesNum+m.VoltageSourcesNum
+}
+
+// StampMatrix 将一个值加到矩阵A的(i,j)元素上。
+// 内部通过 isValidNodeID 过滤地节点和越界索引，
+// 并通过 maths.IsValidFloat64/IsValidComplex128 过滤 NaN/Inf 值。
 func (m *MnaType[T]) StampMatrix(i, j NodeID, value T) {
-	if i > Gnd && j > Gnd {
-		m.A.Increment(int(i), int(j), value)
+	if !m.isValidNodeID(i) || !m.isValidNodeID(j) {
+		return
 	}
+	switch v := any(value).(type) {
+	case float64:
+		if !maths.IsValidFloat64(v) {
+			return
+		}
+	case complex128:
+		if !maths.IsValidComplex128(v) {
+			return
+		}
+	}
+	m.A.Increment(int(i), int(j), value)
 }
 
 // StampMatrixSet 直接设置矩阵A的(i,j)元素的值。地节点索引将被忽略。
 func (m *MnaType[T]) StampMatrixSet(i, j NodeID, v T) {
-	if i > Gnd && j > Gnd {
+	if m.isValidNodeID(i) && m.isValidNodeID(j) {
 		m.A.Set(int(i), int(j), v)
 	}
 }
 
-// StampRightSide 将一个值加到向量Z的第i个元素上。地节点索引将被忽略。
+// StampRightSide 将一个值加到向量Z的第i个元素上。
+// 内部通过 isValidNodeID 过滤地节点和越界索引，
+// 并通过 maths.IsValidFloat64/IsValidComplex128 过滤 NaN/Inf 值。
 func (m *MnaType[T]) StampRightSide(i NodeID, value T) {
-	if i > Gnd {
-		m.Z.Increment(int(i), value)
+	if !m.isValidNodeID(i) {
+		return
 	}
+	switch v := any(value).(type) {
+	case float64:
+		if !maths.IsValidFloat64(v) {
+			return
+		}
+	case complex128:
+		if !maths.IsValidComplex128(v) {
+			return
+		}
+	}
+	m.Z.Increment(int(i), value)
 }
 
 // StampRightSideSet 直接设置向量Z的第i个元素的值。地节点索引将被忽略。
 func (m *MnaType[T]) StampRightSideSet(i NodeID, v T) {
-	if i > Gnd {
+	if m.isValidNodeID(i) {
 		m.Z.Set(int(i), v)
 	}
 }
 
 // ------------------------------ 无源元件加盖 ------------------------------
 
-// StampImpedance 为阻抗元件添加MNA加盖。内部通过计算电导 y=1/z 并调用 StampAdmittance 来实现。
+// StampImpedance 为阻抗元件添加MNA加盖，内部通过计算电导 y=1/z 并调用 StampAdmittance 来实现。
+// 该函数通过类型分支 (float64 / complex128 / default) 安全处理除法与除零保护，
+// 确保对不同数值类型（包括 float32、complex64 等泛型变体）均有正确的电导计算路径。
 func (m *MnaType[T]) StampImpedance(n1, n2 NodeID, z T) {
 	var y T
 	switch v := any(z).(type) {
@@ -181,12 +233,27 @@ func (m *MnaType[T]) StampImpedance(n1, n2 NodeID, z T) {
 			y = any(complex(0, 1e9)).(T) // 避免除零
 		}
 	default:
-		var one T = any(float64(1.0)).(T)
+		var one T
 		var zero T
+		switch any(one).(type) {
+		case float32:
+			one = any(float32(1.0)).(T)
+		case complex64:
+			one = any(complex64(1+0i)).(T)
+		default:
+			one = any(float64(1.0)).(T)
+		}
 		if z != zero {
 			y = one / z
 		} else {
-			y = any(float64(1e9)).(T) // 避免除零
+			switch any(zero).(type) {
+			case float32:
+				y = any(float32(1e9)).(T)
+			case complex64:
+				y = any(complex64(0+1e9i)).(T)
+			default:
+				y = any(float64(1e9)).(T)
+			}
 		}
 	}
 	m.StampAdmittance(n1, n2, y)
@@ -263,12 +330,14 @@ func (m *MnaType[T]) StampVCVS(on1, on2, cn1, cn2 NodeID, vs VoltageID, gain T) 
 	m.StampRightSideSet(vsRow, zero)
 }
 
-// StampCCVS 为电流控制电压源(CCVS)添加MNA加盖。它引入一个新的电流未知量，并通过修改矩阵A中的一行和两列来建立跨阻关系。
+// StampCCVS 为电流控制电压源(CCVS)添加MNA加盖。
+// 函数首先检查 vs 和 cs 的合法性（上界由 VoltageSourcesNum 限定），
+// 然后引入一个新的电流未知量，并通过修改矩阵A中的一行和两列来建立跨阻关系。
 func (m *MnaType[T]) StampCCVS(on1, on2 NodeID, cs, vs VoltageID, gain T) {
 	if vs < 0 || int(vs) >= m.VoltageSourcesNum {
 		return
 	}
-	if cs < 0 {
+	if cs < 0 || int(cs) >= m.VoltageSourcesNum {
 		return
 	}
 	vsRow := NodeID(vs) + NodeID(m.NodesNum)

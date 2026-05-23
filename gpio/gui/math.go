@@ -157,6 +157,10 @@ func NewRotationZMat4(angle float64) Mat4 {
 // near: 近平面距离
 // far: 远平面距离
 func NewPerspectiveMat4(fov, aspect, near, far float64) Mat4 {
+	// 检测无效的视锥体参数（零或负值、近平面 >= 远平面），避免除零导致 NaN 和无穷大传播。
+	if fov <= 0 || aspect <= 0 || near <= 0 || far <= near {
+		return NewIdentityMat4()
+	}
 	f := 1.0 / math.Tan(fov/2.0)
 	return Mat4{
 		f / aspect, 0, 0, 0,
@@ -169,6 +173,10 @@ func NewPerspectiveMat4(fov, aspect, near, far float64) Mat4 {
 // NewOrthographicMat4 创建正交投影矩阵
 // left, right, bottom, top, near, far: 投影体积的边界
 func NewOrthographicMat4(left, right, bottom, top, near, far float64) Mat4 {
+	// 检测退化的投影体积（任意两边界相等），避免除零导致 NaN 传播。
+	if right == left || top == bottom || far == near {
+		return NewIdentityMat4()
+	}
 	return Mat4{
 		2 / (right - left), 0, 0, -(right + left) / (right - left),
 		0, 2 / (top - bottom), 0, -(top + bottom) / (top - bottom),

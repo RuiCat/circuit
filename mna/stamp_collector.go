@@ -159,8 +159,12 @@ func (sc *StampCollector) IncrementVoltageSource(id VoltageID, increment float64
 	sc.Records = append(sc.Records, RecordedStamp{Op: OpIncrementVoltageSource, ID1: id, Value: increment})
 }
 
-// Flush 将收集的所有盖章操作应用到目标对象
+// Flush 将收集的所有盖章操作应用到目标对象。
+// 若 target 为 nil，则直接返回，避免空指针访问。
 func (sc *StampCollector) Flush(target Stamp[float64]) {
+	if target == nil {
+		return
+	}
 	for _, r := range sc.Records {
 		switch r.Op {
 		case OpAdmittance:

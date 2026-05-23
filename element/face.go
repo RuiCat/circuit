@@ -3,7 +3,7 @@ package element
 import (
 	"circuit/load/ast"
 	"circuit/mna"
-	"log"
+	"sync"
 )
 
 // PinType 引脚类型。
@@ -24,17 +24,20 @@ type ElementFaceList interface {
 	ElementFace // 元件实现接口，提供元件的动态行为实现。
 }
 
-// ElementList 元件类型注册表，全局映射表。
-// 键：NodeType（元件类型标识）。
-// 值：elementFace（元件接口实现）。
-// 用于存储所有已注册的元件类型及其实现。
-var ElementList = map[NodeType]ElementFaceList{}
+var (
+	elementMu       sync.RWMutex // 元件注册表读写锁，保护 ElementList 和 ElementListName 的并发访问。
+	// ElementList 元件类型注册表，全局映射表。
+	// 键：NodeType（元件类型标识）。
+	// 值：elementFace（元件接口实现）。
+	// 用于存储所有已注册的元件类型及其实现。
+	ElementList = map[NodeType]ElementFaceList{}
 
-// ElementListName 元件名称注册表，全局映射表。
-// 键：string 元件标识名称。
-// 值：NodeType 元件类型。
-// 用于存储所有已注册的元件类型及其实现。
-var ElementListName = map[string]NodeType{}
+	// ElementListName 元件名称注册表，全局映射表。
+	// 键：string 元件标识名称。
+	// 值：NodeType 元件类型。
+	// 用于存储所有已注册的元件类型及其实现。
+	ElementListName = map[string]NodeType{}
+)
 
 // AddElement 注册元件类型到全局元件列表。
 // 参数eleType: 元件类型标识，必须是唯一的。
@@ -42,12 +45,26 @@ var ElementListName = map[string]NodeType{}
 // 返回：注册成功的元件类型标识。
 // 注意：如果元件类型已注册，会触发致命错误并终止程序。
 func AddElement(eleType NodeType, face ElementFaceList) NodeType {
-	if _, ok := ElementList[eleType]; ok {
-		log.Fatalf("元件重复注册: %d", eleType)
+	if face == nil {
+		return eleType
+	}
+	elementMu.Lock()
+	defer elementMu.Unlock()
+
+	if _, exists := ElementList[eleType]; exists {
+		return eleType
 	}
 	ElementList[eleType] = face
 	ElementListName[face.GetName()] = eleType
 	return eleType
+}
+
+// getElementFace 安全获取元件接口实现（带读锁保护）。
+func getElementFace(nodeType NodeType) (ElementFaceList, bool) {
+	elementMu.RLock()
+	defer elementMu.RUnlock()
+	face, ok := ElementList[nodeType]
+	return face, ok
 }
 
 // NodeType 元件类型标识，使用无符号整数表示。

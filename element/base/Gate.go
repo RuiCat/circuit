@@ -54,6 +54,9 @@ func (g *Gate) Stamp(m mna.Mna, t mna.Time, value element.NodeFace) {
 func (g *Gate) DoStep(m mna.Mna, t mna.Time, value element.NodeFace) {
 	gateType := value.GetInt(0)
 	highVoltage := value.GetFloat64(1)
+	if highVoltage <= 0 {
+		highVoltage = 5.0
+	}
 	inputCount := g.PinNum() - 1
 	outputNode := value.GetNodes(inputCount)
 
@@ -116,6 +119,8 @@ func (g *Gate) DoStep(m mna.Mna, t mna.Time, value element.NodeFace) {
 			}
 		}
 		logicResult = (count%2 == 0)
+	default:
+		return
 	}
 
 	desiredV := 0.0

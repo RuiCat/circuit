@@ -65,7 +65,7 @@ func (f *DFlipFlop) DoStep(m mna.Mna, t mna.Time, value element.NodeFace) {
 	// 和重新加盖期间的瞬态毛刺。只接受干净的满幅时钟边沿。
 	edgeThreshold := highVoltage * 0.9
 	isHigh := clkNow > edgeThreshold
-	wasHigh := prevClk > highVoltage*0.5
+	wasHigh := prevClk > highVoltage*0.9
 
 	if initialized && isHigh && !wasHigh {
 		prevD := value.GetFloat64(4)
@@ -98,7 +98,7 @@ func (f *DFlipFlop) StepFinished(m mna.Mna, t mna.Time, value element.NodeFace) 
 	if !value.GetBool(3) {
 		clkNow := m.GetNodeVoltage(value.GetNodes(0))
 		highVoltage := value.GetFloat64(0)
-		if clkNow < highVoltage*0.3 {
+		if clkNow < highVoltage*0.3 || t.Time() > 1e-9 {
 			value.SetBool(3, true)
 		}
 	}

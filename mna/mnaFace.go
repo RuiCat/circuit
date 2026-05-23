@@ -12,6 +12,12 @@ type VoltageID int
 // Gnd 表示电路的接地节点，其电位为零。
 const Gnd NodeID = -1
 
+// InvalidNodeID 表示无效的节点ID，用于元件方法在引脚索引无效时返回。
+// 其值为 -2，与 Gnd (-1) 严格区分：
+//   - Gnd (-1) 表示接地的有效节点（电位为零）
+//   - InvalidNodeID (-2) 表示不存在的节点，调用方可用此值判断引脚是否有效
+const InvalidNodeID NodeID = -2
+
 // Stamp 加盖接口
 type Stamp[T maths.Number] interface {
 	// GetNodeVoltage 从解向量X中获取并返回指定节点的电压。如果节点为地(Gnd)，则返回0。

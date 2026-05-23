@@ -40,9 +40,21 @@ func (Transformer) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	k := value.GetFloat64(2)
 	dt := time.TimeStep()
 
+	if l1 < 0 {
+		l1 = -l1
+	}
+	if k > 1.0 {
+		k = 1.0
+	} else if k < 0 {
+		k = 0
+	}
+
 	l2 := l1 * ratio * ratio
 	m := k * math.Sqrt(l1*l2)
 	det := l1*l2 - m*m
+	if det < 1e-30 {
+		det = 1e-30
+	}
 
 	// 梯形积分法系数: G = dt / (2 * L_eq)
 	// 后向欧拉法则去掉分母的 2

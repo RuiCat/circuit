@@ -87,6 +87,7 @@ const (
 // 中断原因码（最高位为1表示中断）
 const (
 	CAUSE_MACHINE_TIMER_INTERRUPT VmMcauseCode = 0x80000007 // 机器定时器中断
+	CAUSE_SUPERVISOR_TIMER_INTERRUPT VmMcauseCode = 0x80000005 // 超级用户模式定时器中断，用于将定时器中断委托到 S-mode 处理。
 )
 
 // --- CSR (Control and Status Register) 地址 ---
@@ -149,6 +150,7 @@ const (
 
 	// MSTATUS 字段
 	MSTATUS_MIE = 1 << 3  // 机器模式中断使能
+	MSTATUS_SIE = 1 << 1  // MSTATUS 中的 S-mode 中断使能位，定时器中断委托判断中使用。
 	MSTATUS_MPP = 3 << 11 // 机器模式先前特权级 (2 bits)
 )
 

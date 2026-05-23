@@ -3,6 +3,7 @@ package base
 import (
 	"circuit/element"
 	"circuit/mna"
+	"log"
 )
 
 // CapacitorType 定义元件
@@ -27,6 +28,7 @@ type Capacitor struct{ *element.Config }
 func (Capacitor) StartIteration(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	dt := time.TimeStep()
 	if dt <= 0 {
+		log.Printf("警告: 电容 StartIteration 中 dt=%.6e <= 0，跳过历史电流计算", dt)
 		return
 	}
 	c := value.GetFloat64(0)
@@ -40,7 +42,12 @@ func (Capacitor) StartIteration(mna mna.Mna, time mna.Time, value element.NodeFa
 func (Capacitor) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	dt := time.TimeStep()
 	c := value.GetFloat64(0)
-	if dt <= 0 || c <= 0 {
+	if dt <= 0 {
+		log.Printf("警告: 电容 Stamp 中 dt=%.6e <= 0，跳过等效电导计算", dt)
+		return
+	}
+	if c <= 0 {
+		log.Printf("警告: 电容 %s 值为 %.6e <= 0，将被忽略", value.Config().ValueName[0], c)
 		return
 	}
 	G_eq := 2 * c / dt

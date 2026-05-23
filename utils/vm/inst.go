@@ -18,10 +18,12 @@ package vm
 type InstructionFunc func(vmst *VmState, ir uint32, pc uint32) (rdid uint32, rval uint32, newPC uint32, trap VmMcauseCode)
 
 // OpiviFunc 是处理 OPIVI（向量-立即数）整数指令的函数类型。
-type OpiviFunc func(vmst *VmState, vd, vs2, i, sew_bytes, imm, imm5 uint32)
+// 接受向量寄存器索引 vd/vs2、元素索引 i、元素字节宽度 sew_bytes、符号扩展立即数 imm 及原始 imm5，返回陷阱码。
+type OpiviFunc func(vmst *VmState, vd, vs2, i, sew_bytes, imm, imm5 uint32) VmMcauseCode
 
 // OpivxFunc 是处理 OPIVX（向量-标量）整数指令的函数类型。
-type OpivxFunc func(vmst *VmState, vd, vs2, i, sew_bytes, op2 uint32)
+// 接受向量寄存器索引 vd/vs2、元素索引 i、元素字节宽度 sew_bytes 和标量操作数 op2（来自 rs1 寄存器），返回陷阱码。
+type OpivxFunc func(vmst *VmState, vd, vs2, i, sew_bytes, op2 uint32) VmMcauseCode
 
 // OpfvvFunc 定义了 OPFVV（向量-向量）浮点指令处理程序的签名。
 type OpfvvFunc func(f1, f2 float32) float32

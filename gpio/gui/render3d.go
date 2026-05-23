@@ -95,6 +95,12 @@ func (r *Renderer3D) SetProjectionMatrix(m Mat4) {
 
 // SetCamera 设置相机位置和方向
 func (r *Renderer3D) SetCamera(pos, target Vec3) {
+	// 如果相机位置和目标位置相同，方向未定义，保持当前状态
+	// 检测 pos 和 target 重合（方向向量为零）：Length() 接近零时 Normalize 返回零向量，
+	// 后续 forward.Cross(up) 将崩溃。直接返回保持当前相机状态不变。
+	if pos.Sub(target).Length() < 1e-6 {
+		return
+	}
 	r.cameraPos = pos
 	// 计算相机方向（看向目标）
 	forward := target.Sub(pos).Normalize()

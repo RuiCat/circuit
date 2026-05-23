@@ -236,12 +236,13 @@ var (
 // init 初始化 Windows API 函数地址。
 // 在包加载时动态加载 kernel32.dll 并获取所需函数的地址。
 // 如果加载失败，程序将 panic，因为串口功能无法正常工作。
+// 注意: kernel32.dll 随进程生命周期保持加载，不调用 FreeLibrary 是 Windows 平台的常见做法，
+// 提前卸载会导致其他组件调用失败。
 func init() {
 	k32, err := syscall.LoadLibrary("kernel32.dll")
 	if err != nil {
 		panic("LoadLibrary " + err.Error())
 	}
-	defer syscall.FreeLibrary(k32)
 	nSetCommState = getProcAddr(k32, "SetCommState")
 	nSetCommTimeouts = getProcAddr(k32, "SetCommTimeouts")
 	nSetCommMask = getProcAddr(k32, "SetCommMask")

@@ -131,12 +131,21 @@ func (vmst *VmState) Run(instr_meter uint32) (uint32, VmEvt) {
 	}
 	vmst.SetStatus(VmStatusRunnIng)
 	for vmst.Status == VmStatusRunnIng && instr_meter > 0 {
-		// 只有当全局中断开启 (MIE) 时才处理
-		if (vmst.Core.Mstatus & MSTATUS_MIE) != 0 {
-			// 检查哪些中断被使能 (mie) 且 正在挂起 (mip)
-			enabled_interrupts := vmst.Core.Mie & vmst.Core.Mip
-			if (enabled_interrupts & (1 << 7)) != 0 {
-				vmst.handleTrap(CAUSE_MACHINE_TIMER_INTERRUPT, vmst.Core.PC)
+		// 检查定时器中断(bit7)
+		if (vmst.Core.Mip & (1 << 7)) != 0 {
+		// 定时器中断委托：若 mideleg[7] 置位且 MSTATUS_SIE 使能，中断委托至 S-mode 处理，
+		// 否则在 M-mode 下检查 MSTATUS_MIE 后直接处理。
+			// 检查是否委托到S-mode
+			if (vmst.Core.Mideleg & (1 << 7)) != 0 {
+				// 委托到S-mode：检查SSTATUS_SIE
+				if (vmst.Core.Mstatus & MSTATUS_SIE) != 0 {
+					vmst.handleTrap(CAUSE_SUPERVISOR_TIMER_INTERRUPT, vmst.Core.PC)
+				}
+			} else {
+				// M-mode处理：检查MSTATUS_MIE
+				if (vmst.Core.Mstatus & MSTATUS_MIE) != 0 {
+					vmst.handleTrap(CAUSE_MACHINE_TIMER_INTERRUPT, vmst.Core.PC)
+				}
 			}
 		}
 		// 执行单条指令，并获取执行结果（陷阱码）。

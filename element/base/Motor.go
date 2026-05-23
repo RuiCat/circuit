@@ -94,85 +94,67 @@ func (Motor) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 }
 
 func (Motor) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
-	// 获取电枢电压
-	va := mna.GetNodeVoltage(value.GetNodes(0)) - mna.GetNodeVoltage(value.GetNodes(1))
-
-	// 计算反电动势 (使用时间步开始时的速度)
-	kt := value.GetFloat64(4)
-	speed := value.GetFloat64(7)
-	backEMF := kt * speed
-
-	// 计算电枢电流
-	ra := value.GetFloat64(2)
-	var ia float64
-	if ra > 0 {
-		ia = (va - backEMF) / ra
-	} else {
-		ia = 0
-	}
-
-	// 更新电流源
-	mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), ia)
-
-	// 电感电流源
+	// 电感电流源（伴随模型）
 	curSourceValue := value.GetFloat64(11)
 	mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), curSourceValue)
 }
 
 func (Motor) CalculateCurrent(mna mna.Mna, time mna.Time, value element.NodeFace) {
-	// 电流已经在DoStep中计算
-	ia := value.GetFloat64(8)
-	mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), -ia)
-
-	// 电感电流计算
-	compResistance := value.GetFloat64(10)
-	if compResistance > 0 {
-		v1 := mna.GetNodeVoltage(value.GetNodes(0))
-		v2 := mna.GetNodeVoltage(value.GetNodes(1))
-		voltdiff := v1 - v2
-		curSourceValue := value.GetFloat64(11)
-		current := voltdiff/compResistance + curSourceValue
-		// 存储电流值
-		mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), -current)
-	}
-}
-
-func (Motor) StepFinished(mna mna.Mna, time mna.Time, value element.NodeFace) {
-	// --- 状态更新 ---
-	// 时间步收敛后，根据最终电压和电流更新内部状态（速度、转矩等）
-
-	// 1. 根据最终的收敛电压计算最终电流
+	// 获取电枢电压
 	va := mna.GetNodeVoltage(value.GetNodes(0)) - mna.GetNodeVoltage(value.GetNodes(1))
+
+	// 反电动势
 	kt := value.GetFloat64(4)
-	speed := value.GetFloat64(7) // 当前时间步开始时的速度
+	speed := value.GetFloat64(7)
 	backEMF := kt * speed
+
+	// 电枢电流
 	ra := value.GetFloat64(2)
 	var ia float64
 	if ra > 0 {
 		ia = (va - backEMF) / ra
-	} else {
-		ia = 0
 	}
-	value.SetFloat64(8, ia) // 更新电流状态
+	value.SetFloat64(8, ia) // 存储电流
 
-	// 2. 计算并更新电磁转矩
-	torque := kt * ia
-	value.SetFloat64(9, torque) // 更新转矩状态
+	// 电感电流
+	compResistance := value.GetFloat64(10)
+	curSourceValue := value.GetFloat64(11)
+	var iInductor float64
+	if compResistance > 0 {
+		voltdiff := va
+		iInductor = voltdiff/compResistance + curSourceValue
+	}
 
-	// 3. 使用最终的转矩计算并更新下一个时间步的速度
-	j := value.GetFloat64(5) // 转动惯量
-	b := value.GetFloat64(6) // 阻尼系数
+	// 加盖总电流（仅一次）
+	totalCurrent := ia + iInductor
+	mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), -totalCurrent)
+}
+
+func (Motor) StepFinished(mna mna.Mna, time mna.Time, value element.NodeFace) {
+	kt := value.GetFloat64(4)
+	j := value.GetFloat64(5)
+	b := value.GetFloat64(6)
 	dt := time.TimeStep()
+
+	// 使用 CalculateCurrent 中已计算的电枢电流
+	ia := value.GetFloat64(8)
+
+	// 计算转矩
+	torque := kt * ia
+	value.SetFloat64(9, torque)
+
+	// 更新速度（显式欧拉法）
+	speed := value.GetFloat64(7)
 	if dt > 0 && j > 0 {
 		acceleration := (torque - b*speed) / j
 		newSpeed := speed + acceleration*dt
-		value.SetFloat64(7, newSpeed) // 更新速度状态
+		value.SetFloat64(7, newSpeed)
 	}
 
-	// 4. 检查并限制转速
+	// 限制转速
 	finalSpeed := value.GetFloat64(7)
-	ratedSpeed := value.GetFloat64(1)              // RPM
-	ratedSpeedRad := ratedSpeed * 2 * math.Pi / 60 // 转换为rad/s
+	ratedSpeed := value.GetFloat64(1)
+	ratedSpeedRad := ratedSpeed * 2 * math.Pi / 60
 	if finalSpeed > 1.5*ratedSpeedRad {
 		value.SetFloat64(7, 1.5*ratedSpeedRad)
 	}

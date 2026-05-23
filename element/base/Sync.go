@@ -5,6 +5,7 @@ import (
 	"circuit/load/ast"
 	"circuit/mna"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -187,42 +188,20 @@ func (s *Sync) Reset(value element.NodeFace) {
 
 // parseSyncInt 从 ast.Value 解析 int。
 func parseSyncInt(v ast.Value) int {
-	switch strings.ToLower(v.Value) {
-	case "0":
-		return 0
-	case "1":
-		return 1
-	case "2":
+	i, err := strconv.Atoi(v.Value)
+	if err != nil {
 		return 2
-	case "3":
-		return 3
-	case "4":
-		return 4
-	case "5":
-		return 5
-	case "6":
-		return 6
-	case "7":
-		return 7
-	case "8":
-		return 8
-	default:
-		return 0
 	}
+	return i
 }
 
 // parseSyncFloat 从 ast.Value 解析 float64。
 func parseSyncFloat(v ast.Value) float64 {
-	switch strings.ToLower(v.Value) {
-	case "5":
-		return 5.0
-	case "3.3":
-		return 3.3
-	case "1.8":
-		return 1.8
-	default:
+	f, err := strconv.ParseFloat(v.Value, 64)
+	if err != nil {
 		return 5.0
 	}
+	return f
 }
 
 // parseSyncBool 从 ast.Value 解析 bool。

@@ -308,6 +308,11 @@ func (t *TimeMNA) CorrState() *[]float64 {
 	return &t.corrState
 }
 
+// CorrDer 返回校正导数缓冲区，用于外界写入当前状态的导数。
+func (t *TimeMNA) CorrDer() *[]float64 {
+	return &t.corrDer
+}
+
 // SetCorrStateFromX 从MNA解向量X复制当前收敛状态到校正缓冲区。
 // 用于在 Newton 收敛后将解写入校正状态，供 UpdateHistory 使用。
 func (t *TimeMNA) SetCorrStateFromX(x maths.Vector[float64]) {
@@ -584,6 +589,14 @@ func (t *TimeMNA) CheckResidualConvergence() {
 
 // EstimateLTE 基于预测/校正状态估计局部截断误差（多变量取最大误差）
 func (t *TimeMNA) EstimateLTE() {
+	// 防御性检查：状态中含有 NaN/Inf 时强制减小步长
+	for i := range t.predState {
+		if math.IsNaN(t.corrState[i]) || math.IsNaN(t.predState[i]) ||
+			math.IsInf(t.corrState[i], 0) || math.IsInf(t.predState[i], 0) {
+			t.localTruncError = math.Inf(1)
+			return
+		}
+	}
 	// 多变量场景：取所有元素的最大LTE（保证最严格的误差控制）
 	maxLTE := 0.0
 	for i := range t.predState {
@@ -616,6 +629,10 @@ func (t *TimeMNA) AdjustStepSize() error {
 	}
 	// 计算误差商（实际误差 / 允许误差）
 	errorQuotient := t.localTruncError / allowableError
+	if math.IsNaN(errorQuotient) || math.IsInf(errorQuotient, 0) {
+		t.currentStep = math.Max(t.minStep, t.currentStep/2)
+		return nil
+	}
 	// 步长调整公式：h_new = h_old * (safety / errorQuotient)^(1/(order+1))
 	stepScale := math.Pow(t.safety/errorQuotient, stepAdjustExponent)
 	// 限制步长变化幅度（避免突变）

@@ -26,6 +26,14 @@ func handleAMO(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmM
 		return 0, 0, 0, CAUSE_STORE_ADDRESS_MISALIGNED
 	}
 
+	// 通过 Sv32 MMU 翻译虚拟地址：确保 AMO 原子操作遵循页表权限（使用 Store 类型检查 W 位）。
+	// 地址翻译（MMU Sv32）
+	paddr, trap := vmst.TranslateAddress(addr, VmMemAccessStore)
+	if trap != CAUSE_TRAP_CODE_OK {
+		vmst.Core.Mtval = addr
+		return 0, 0, 0, trap
+	}
+
 	// 任何原子操作都会使 Load Reservation 失效
 	// LR 和 SC 有特殊处理
 	is_lr_sc := funct5 == FUNCT5_LR || funct5 == FUNCT5_SC
@@ -38,20 +46,24 @@ func handleAMO(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmM
 	case FUNCT5_LR:
 		// LR.W (Load-Reserved Word)
 		// 从内存加载值，设置保留地址，并将值写入 rd
-		rval, ok := vmst.LoadUint32(addr)
+		rval, ok := vmst.LoadUint32(paddr)
 		if !ok {
 			return 0, 0, 0, CAUSE_STORE_ACCESS_FAULT
 		}
-		vmst.Core.LoadReservation = addr
+		vmst.Core.LoadReservation = paddr
 		return rdid, rval, pc + 4, CAUSE_TRAP_CODE_OK
 
 	case FUNCT5_SC:
 		// SC.W (Store-Conditional Word)
 		// 检查地址是否与保留地址匹配
-		if addr == vmst.Core.LoadReservation {
+		if paddr == vmst.Core.LoadReservation {
 			// 成功：将 rs2 的值写入内存，rd 置为0
 			val_to_store := vmst.Core.Regs[rs2id]
-			vmst.PutUint32(addr, val_to_store)
+			if !vmst.PutUint32(paddr, val_to_store) {
+				// SC.W 写入失败（例如页错误），触发 STORE_ACCESS_FAULT 而非静默忽略，确保内存保护一致性。
+				vmst.Core.Mtval = paddr
+				return 0, 0, 0, CAUSE_STORE_ACCESS_FAULT
+			}
 			vmst.Core.LoadReservation = 0 // 清除保留
 			return rdid, 0, pc + 4, CAUSE_TRAP_CODE_OK
 		} else {
@@ -62,7 +74,7 @@ func handleAMO(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmM
 	default:
 		// --- 其他原子操作 (Read-Modify-Write) ---
 		// 1. 读取原始值
-		original_val, ok := vmst.LoadUint32(addr)
+		original_val, ok := vmst.LoadUint32(paddr)
 		if !ok {
 			return 0, 0, 0, CAUSE_STORE_ACCESS_FAULT
 		}
@@ -111,7 +123,7 @@ func handleAMO(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmM
 		}
 
 		// 3. 将计算结果写回内存
-		if !vmst.PutUint32(addr, result) {
+		if !vmst.PutUint32(paddr, result) {
 			return 0, 0, 0, CAUSE_STORE_ACCESS_FAULT
 		}
 		// 4. 将原始值写入目标寄存器 rd

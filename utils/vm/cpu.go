@@ -1,5 +1,7 @@
 package vm
 
+import "math"
+
 // VmInaState 定义了 RISC-V 虚拟机核心的状态。
 // 这个结构体是 CPU 状态的快照，包含了所有处理器寄存器。
 type VmInaState struct {
@@ -275,6 +277,12 @@ func (vmst *VmState) CsrWrite(csr uint32, value uint32) bool {
 	case CSR_VSTART:
 		vmst.Core.Vstart = value
 	case CSR_VL:
+		// 限制 Vl 不超过 VLMAX
+		const VLMAX uint32 = 128 // VLEN=128bits, SEW=8bits
+		// 防止 Vl 超过 VLMAX（128），避免向量指令循环时基于 Vl 访问 Vregs 越界。
+		if value > VLMAX {
+			value = VLMAX
+		}
 		vmst.Core.Vl = value
 	case CSR_VTYPE:
 		vmst.Core.Vtype = value
@@ -301,7 +309,7 @@ func (vmst *VmState) TranslateAddress(vaddr uint32, accessType int) (uint32, VmM
 	vpn0 := (vaddr >> 12) & 0x3FF
 	offset := vaddr & 0xFFF
 
-	ptbr := (vmst.Core.Satp & 0x3FFFFF) * 4096
+	ptbr := uint32(uint64(vmst.Core.Satp & 0x3FFFFF) * 4096)
 	pte1_addr := ptbr + vpn1*4
 	pte1, ok := vmst.LoadUint32(pte1_addr)
 	if !ok {
@@ -326,7 +334,8 @@ func (vmst *VmState) TranslateAddress(vaddr uint32, accessType int) (uint32, VmM
 	ppn0 := (pte1 >> 10) & 0x3FFFFF
 	pte0_addr := (ppn0 * 4096) + vpn0*4
 
-	// 【修改】：删除 pte0_addr >= vmst.VmMemorySize 检查
+	// 不再对 pte0_addr 进行 VmMemorySize 边界检查：LoadUint32 内部已包含完整的地址验证，
+	// 额外的硬编码检查会错误拒绝合法的页表物理地址。
 	pte0, ok := vmst.LoadUint32(pte0_addr)
 	if !ok {
 		return 0, pageFault(accessType)
@@ -547,13 +556,14 @@ func (vmst *VmState) VmImaStep(count int) VmMcauseCode {
 //
 // 返回:
 //
-//	uint32: 该元素在 `vmst.Core.Vregs` 字节数组中的绝对字节偏移量。
-func (vmst *VmState) GetVelementAddr(reg_start_idx uint32, element_idx uint32, sew_bytes uint32) uint32 {
+	// (uint32, bool): 该元素在 vmst.Core.Vregs 字节数组中的绝对偏移量，以及地址是否有效。
+	// 返回 false 时调用者应终止当前向量指令并触发 CAUSE_ILLEGAL_INSTRUCTION 异常。
+func (vmst *VmState) GetVelementAddr(reg_start_idx uint32, element_idx uint32, sew_bytes uint32) (uint32, bool) {
 	const VLEN_BYTES = 16 // VLEN (向量寄存器的物理大小) 在此实现中固定为128位（16字节）。
 
 	// 验证 sew_bytes 为合法的SEW值 (1,2,4,8,16)
 	if sew_bytes == 0 || sew_bytes > VLEN_BYTES || sew_bytes&(sew_bytes-1) != 0 {
-		return 0
+		return 0, false
 	}
 
 	// 计算一个128位的物理向量寄存器可以容纳多少个当前SEW的元素。
@@ -568,13 +578,22 @@ func (vmst *VmState) GetVelementAddr(reg_start_idx uint32, element_idx uint32, s
 
 	// `actual_reg_idx` 是该元素所在的物理向量寄存器的绝对索引。
 	actual_reg_idx := reg_start_idx + reg_offset
+	if actual_reg_idx > 31 {
+		return 0, false
+	}
 	// `addr` 是最终的字节地址，即在整个 `Vregs` 数组中的偏移量。
 	addr := actual_reg_idx*VLEN_BYTES + element_offset_in_reg
-
-	// 边界检查：确保地址在 Vregs 数组范围内
-	if int(addr+sew_bytes) > len(vmst.Core.Vregs) {
-		return 0
+	if actual_reg_idx > math.MaxUint32/VLEN_BYTES {
+		return 0, false
+	}
+	if addr < element_offset_in_reg {
+		return 0, false
 	}
 
-	return addr
+	// 边界检查：确保地址在 Vregs 数组范围内
+	if addr > math.MaxUint32-sew_bytes || int(addr+sew_bytes) > len(vmst.Core.Vregs) {
+		return 0, false
+	}
+
+	return addr, true
 }

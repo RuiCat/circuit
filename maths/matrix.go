@@ -159,8 +159,8 @@ func (m *denseMatrix[T]) Get(row int, col int) T {
 	return m.MatrixDataManager.GetMatrix(row, col)
 }
 
-// GetRow 返回指定行的非零元素的列索引和值。
-// 为了提高性能，它重用内部缓冲区来存储结果。
+// GetRow 返回指定行的非零元素的列索引副本和值副本。
+// 返回的列索引切片和值向量均为独立副本，修改不会影响矩阵内部状态。
 func (m *denseMatrix[T]) GetRow(row int) ([]int, Vector[T]) {
 	if row < 0 || row >= m.Rows() {
 		panic(fmt.Sprintf("row index out of range: %d (rows: %d)", row, m.Rows()))
@@ -182,11 +182,17 @@ func (m *denseMatrix[T]) GetRow(row int) ([]int, Vector[T]) {
 		}
 	}
 
-	// 使用缓冲区的数据更新结果向量
-	m.rowResultVec.dataManager = &dataManager[T]{
-		data: m.rowValsBuf,
+	valsCopy := make([]T, len(m.rowValsBuf))
+	copy(valsCopy, m.rowValsBuf)
+	colsCopy := make([]int, len(m.rowColsBuf))
+	copy(colsCopy, m.rowColsBuf)
+
+	resultVec := &denseVector[T]{
+		dataManager: &dataManager[T]{
+			data: valsCopy,
+		},
 	}
-	return m.rowColsBuf, m.rowResultVec
+	return colsCopy, resultVec
 }
 
 // Increment 增加指定行列位置的元素值。

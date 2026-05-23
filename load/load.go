@@ -66,7 +66,7 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 
 		expanded, err := expandSubCircuitInstance(
 			subckt, elem.Pins, instanceName, subcktMap,
-			&nextNodeID, nodeNameToID, parseTree, make(map[string]bool),
+			&nextNodeID, nodeNameToID, parseTree, make(map[string]bool), 0,
 		)
 		if err != nil {
 			return nil, err
@@ -331,7 +331,10 @@ func createWrapperInstance(elemNode *ast.ElementNode) (element.NodeFace, error) 
 	return node, nil
 }
 
-// setElementValues 设置元件参数值
+// setElementValues 设置元件参数值。
+// 使用 ast.StringToAny 根据参数初始值类型解析网表值，
+// 然后将 uint8/uint16/uint32/uint64 等无符号类型统一映射为 int 存入元件；
+// 明确拒绝 complex64/complex128 类型的参数值（电路元件参数不支持复数）。
 func setElementValues(element element.NodeFace, values []ast.Value, parseTree *ast.ParseTree) error {
 	config := element.Config()
 	valueNum := config.ValueNum()
@@ -364,6 +367,8 @@ func setElementValues(element element.NodeFace, values []ast.Value, parseTree *a
 			element.SetInt(i, int(v))
 		case uint:
 			element.SetInt(i, int(v))
+		case uint8:
+			element.SetInt(i, int(v))
 		case uint16:
 			element.SetInt(i, int(v))
 		case uint32:
@@ -375,8 +380,7 @@ func setElementValues(element element.NodeFace, values []ast.Value, parseTree *a
 		case float64:
 			element.SetFloat64(i, v)
 		case complex64, complex128:
-			// 复数处理：暂时设置为0
-			element.SetFloat64(i, 0)
+			return fmt.Errorf("不支持复数类型的元件参数值")
 		default:
 			// 其他类型，尝试解析为字符串
 			element.SetString(i, fmt.Sprint(v))
@@ -388,17 +392,24 @@ func setElementValues(element element.NodeFace, values []ast.Value, parseTree *a
 	return nil
 }
 
+// maxSubCircuitDepth 是子电路嵌套展开的最大允许深度，
+// 用于防止无限递归或过深的嵌套导致栈溢出。
+const maxSubCircuitDepth = 100
+
 // buildSubcircuitMap 递归收集所有 SubCircuitDefs 到 flat lookup map（大小写不敏感）
 func buildSubcircuitMap(defs []*ast.SubCircuitDef) map[string]*ast.SubCircuitDef {
 	result := make(map[string]*ast.SubCircuitDef)
-	var add func([]*ast.SubCircuitDef)
-	add = func(list []*ast.SubCircuitDef) {
+	var add func([]*ast.SubCircuitDef, int)
+	add = func(list []*ast.SubCircuitDef, depth int) {
+		if depth > maxSubCircuitDepth {
+			return
+		}
 		for _, def := range list {
 			result[strings.ToLower(def.Name)] = def
-			add(def.Defs)
+			add(def.Defs, depth+1)
 		}
 	}
-	add(defs)
+	add(defs, 0)
 	return result
 }
 
@@ -432,7 +443,9 @@ func isNumber(s string) bool {
 	return s[0] >= '0' && s[0] <= '9'
 }
 
-// expandSubCircuitInstance 递归展开 X 子电路实例为平铺元件列表
+// expandSubCircuitInstance 递归展开 X 子电路实例为平铺元件列表。
+// 通过 depth 参数与 maxSubCircuitDepth 限制最大嵌套深度；
+// 通过 visited 集合检测循环引用，防止无限递归。
 func expandSubCircuitInstance(
 	subckt *ast.SubCircuitDef,
 	instancePins []ast.Value,
@@ -442,7 +455,11 @@ func expandSubCircuitInstance(
 	nodeNameToID map[string]mna.NodeID,
 	parseTree *ast.ParseTree,
 	visited map[string]bool,
+	depth int,
 ) ([]*ast.ElementNode, error) {
+	if depth > maxSubCircuitDepth {
+		return nil, fmt.Errorf("子电路 '%s' 嵌套深度超过限制 %d", subckt.Name, maxSubCircuitDepth)
+	}
 	// 检测循环引用
 	subcktKey := strings.ToLower(subckt.Name)
 	if visited[subcktKey] {
@@ -456,6 +473,9 @@ func expandSubCircuitInstance(
 		if i < len(instancePins) {
 			portMap[strings.ToLower(port.Value)] = instancePins[i].Value
 		}
+	}
+	if len(instancePins) < len(subckt.Ports) {
+		return nil, fmt.Errorf("子电路 '%s' 实例引脚数(%d)少于端口数(%d)", subckt.Name, len(instancePins), len(subckt.Ports))
 	}
 
 	// 记录端口→外部节点的映射，用于层级路径查找
@@ -491,7 +511,7 @@ func expandSubCircuitInstance(
 
 			nestedElements, err := expandSubCircuitInstance(
 				nestedSubckt, newElem.Pins, nestedInstanceName,
-				allSubckts, nextNodeID, nodeNameToID, parseTree, visited,
+				allSubckts, nextNodeID, nodeNameToID, parseTree, visited, depth+1,
 			)
 			if err != nil {
 				return nil, err

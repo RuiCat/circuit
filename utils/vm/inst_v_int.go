@@ -31,9 +31,15 @@ func init() {
 // 每个函数处理一种特定的算术或逻辑运算，并支持不同的元素宽度 (SEW)。
 
 // vadd_vi 处理向量-立即数加法。
-func vadd_vi(vmst *VmState, vd, vs2, i, sew_bytes, imm, _ uint32) {
-	addr2 := vmst.GetVelementAddr(vs2, i, sew_bytes)
-	addr_dest := vmst.GetVelementAddr(vd, i, sew_bytes)
+func vadd_vi(vmst *VmState, vd, vs2, i, sew_bytes, imm, _ uint32) VmMcauseCode {
+	addr2, ok := vmst.GetVelementAddr(vs2, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
+	addr_dest, ok := vmst.GetVelementAddr(vd, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
 	op1 := imm
 	var op2, result uint32
 	switch sew_bytes {
@@ -50,12 +56,19 @@ func vadd_vi(vmst *VmState, vd, vs2, i, sew_bytes, imm, _ uint32) {
 		result = op1 + op2
 		binary.LittleEndian.PutUint32(vmst.Core.Vregs[addr_dest:], result)
 	}
+	return CAUSE_TRAP_CODE_OK
 }
 
 // vrsub_vi 处理向量-立即数逆向减法 (imm - vector)。
-func vrsub_vi(vmst *VmState, vd, vs2, i, sew_bytes, imm, _ uint32) {
-	addr2 := vmst.GetVelementAddr(vs2, i, sew_bytes)
-	addr_dest := vmst.GetVelementAddr(vd, i, sew_bytes)
+func vrsub_vi(vmst *VmState, vd, vs2, i, sew_bytes, imm, _ uint32) VmMcauseCode {
+	addr2, ok := vmst.GetVelementAddr(vs2, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
+	addr_dest, ok := vmst.GetVelementAddr(vd, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
 	op1 := imm
 	var op2, result uint32
 	switch sew_bytes {
@@ -72,12 +85,19 @@ func vrsub_vi(vmst *VmState, vd, vs2, i, sew_bytes, imm, _ uint32) {
 		result = op1 - op2
 		binary.LittleEndian.PutUint32(vmst.Core.Vregs[addr_dest:], result)
 	}
+	return CAUSE_TRAP_CODE_OK
 }
 
 // vand_vi 处理向量-立即数按位与。
-func vand_vi(vmst *VmState, vd, vs2, i, sew_bytes, imm, _ uint32) {
-	addr2 := vmst.GetVelementAddr(vs2, i, sew_bytes)
-	addr_dest := vmst.GetVelementAddr(vd, i, sew_bytes)
+func vand_vi(vmst *VmState, vd, vs2, i, sew_bytes, imm, _ uint32) VmMcauseCode {
+	addr2, ok := vmst.GetVelementAddr(vs2, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
+	addr_dest, ok := vmst.GetVelementAddr(vd, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
 	op1 := imm
 	var op2, result uint32
 	switch sew_bytes {
@@ -94,12 +114,19 @@ func vand_vi(vmst *VmState, vd, vs2, i, sew_bytes, imm, _ uint32) {
 		result = op1 & op2
 		binary.LittleEndian.PutUint32(vmst.Core.Vregs[addr_dest:], result)
 	}
+	return CAUSE_TRAP_CODE_OK
 }
 
 // vor_vi 处理向量-立即数按位或。
-func vor_vi(vmst *VmState, vd, vs2, i, sew_bytes, imm, _ uint32) {
-	addr2 := vmst.GetVelementAddr(vs2, i, sew_bytes)
-	addr_dest := vmst.GetVelementAddr(vd, i, sew_bytes)
+func vor_vi(vmst *VmState, vd, vs2, i, sew_bytes, imm, _ uint32) VmMcauseCode {
+	addr2, ok := vmst.GetVelementAddr(vs2, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
+	addr_dest, ok := vmst.GetVelementAddr(vd, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
 	op1 := imm
 	var op2, result uint32
 	switch sew_bytes {
@@ -116,12 +143,19 @@ func vor_vi(vmst *VmState, vd, vs2, i, sew_bytes, imm, _ uint32) {
 		result = op1 | op2
 		binary.LittleEndian.PutUint32(vmst.Core.Vregs[addr_dest:], result)
 	}
+	return CAUSE_TRAP_CODE_OK
 }
 
 // vxor_vi 处理向量-立即数按位异或。
-func vxor_vi(vmst *VmState, vd, vs2, i, sew_bytes, imm, _ uint32) {
-	addr2 := vmst.GetVelementAddr(vs2, i, sew_bytes)
-	addr_dest := vmst.GetVelementAddr(vd, i, sew_bytes)
+func vxor_vi(vmst *VmState, vd, vs2, i, sew_bytes, imm, _ uint32) VmMcauseCode {
+	addr2, ok := vmst.GetVelementAddr(vs2, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
+	addr_dest, ok := vmst.GetVelementAddr(vd, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
 	op1 := imm
 	var op2, result uint32
 	switch sew_bytes {
@@ -138,15 +172,22 @@ func vxor_vi(vmst *VmState, vd, vs2, i, sew_bytes, imm, _ uint32) {
 		result = op1 ^ op2
 		binary.LittleEndian.PutUint32(vmst.Core.Vregs[addr_dest:], result)
 	}
+	return CAUSE_TRAP_CODE_OK
 }
 
 // vshift_vi 处理所有向量-立即数移位操作（左移、逻辑右移、算术右移）。
-func vshift_vi(vmst *VmState, vd, vs2, i, sew_bytes, _, imm5 uint32) {
+func vshift_vi(vmst *VmState, vd, vs2, i, sew_bytes, _, imm5 uint32) VmMcauseCode {
 	ir := vmst.lastIR // 从 vm state 获取当前指令
 	funct6 := ir >> 26
 	shamt := imm5 // 移位量
-	addr2 := vmst.GetVelementAddr(vs2, i, sew_bytes)
-	addr_dest := vmst.GetVelementAddr(vd, i, sew_bytes)
+	addr2, ok := vmst.GetVelementAddr(vs2, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
+	addr_dest, ok := vmst.GetVelementAddr(vd, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
 	var op2, result uint32
 	switch sew_bytes {
 	case 1: // 8-bit
@@ -186,15 +227,22 @@ func vshift_vi(vmst *VmState, vd, vs2, i, sew_bytes, _, imm5 uint32) {
 		}
 		binary.LittleEndian.PutUint32(vmst.Core.Vregs[addr_dest:], result)
 	}
+	return CAUSE_TRAP_CODE_OK
 }
 
 // --- OPIVX (向量-标量) 处理器实现 ---
 // op2 是从标量整数寄存器 rs1 读取的值。
 
 // vadd_vx 处理向量-标量加法。
-func vadd_vx(vmst *VmState, vd, vs2, i, sew_bytes, op2 uint32) {
-	addr1 := vmst.GetVelementAddr(vs2, i, sew_bytes)
-	addr_dest := vmst.GetVelementAddr(vd, i, sew_bytes)
+func vadd_vx(vmst *VmState, vd, vs2, i, sew_bytes, op2 uint32) VmMcauseCode {
+	addr1, ok := vmst.GetVelementAddr(vs2, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
+	addr_dest, ok := vmst.GetVelementAddr(vd, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
 	var op1, result uint32
 	switch sew_bytes {
 	case 1:
@@ -210,12 +258,19 @@ func vadd_vx(vmst *VmState, vd, vs2, i, sew_bytes, op2 uint32) {
 		result = op1 + op2
 		binary.LittleEndian.PutUint32(vmst.Core.Vregs[addr_dest:], result)
 	}
+	return CAUSE_TRAP_CODE_OK
 }
 
 // vsub_vx 处理向量-标量减法 (vector - scalar)。
-func vsub_vx(vmst *VmState, vd, vs2, i, sew_bytes, op2 uint32) {
-	addr1 := vmst.GetVelementAddr(vs2, i, sew_bytes)
-	addr_dest := vmst.GetVelementAddr(vd, i, sew_bytes)
+func vsub_vx(vmst *VmState, vd, vs2, i, sew_bytes, op2 uint32) VmMcauseCode {
+	addr1, ok := vmst.GetVelementAddr(vs2, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
+	addr_dest, ok := vmst.GetVelementAddr(vd, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
 	var op1, result uint32
 	switch sew_bytes {
 	case 1:
@@ -231,12 +286,19 @@ func vsub_vx(vmst *VmState, vd, vs2, i, sew_bytes, op2 uint32) {
 		result = op1 - op2
 		binary.LittleEndian.PutUint32(vmst.Core.Vregs[addr_dest:], result)
 	}
+	return CAUSE_TRAP_CODE_OK
 }
 
 // vand_vx 处理向量-标量按位与。
-func vand_vx(vmst *VmState, vd, vs2, i, sew_bytes, op2 uint32) {
-	addr1 := vmst.GetVelementAddr(vs2, i, sew_bytes)
-	addr_dest := vmst.GetVelementAddr(vd, i, sew_bytes)
+func vand_vx(vmst *VmState, vd, vs2, i, sew_bytes, op2 uint32) VmMcauseCode {
+	addr1, ok := vmst.GetVelementAddr(vs2, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
+	addr_dest, ok := vmst.GetVelementAddr(vd, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
 	var op1, result uint32
 	switch sew_bytes {
 	case 1:
@@ -252,12 +314,19 @@ func vand_vx(vmst *VmState, vd, vs2, i, sew_bytes, op2 uint32) {
 		result = op1 & op2
 		binary.LittleEndian.PutUint32(vmst.Core.Vregs[addr_dest:], result)
 	}
+	return CAUSE_TRAP_CODE_OK
 }
 
 // vor_vx 处理向量-标量按位或。
-func vor_vx(vmst *VmState, vd, vs2, i, sew_bytes, op2 uint32) {
-	addr1 := vmst.GetVelementAddr(vs2, i, sew_bytes)
-	addr_dest := vmst.GetVelementAddr(vd, i, sew_bytes)
+func vor_vx(vmst *VmState, vd, vs2, i, sew_bytes, op2 uint32) VmMcauseCode {
+	addr1, ok := vmst.GetVelementAddr(vs2, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
+	addr_dest, ok := vmst.GetVelementAddr(vd, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
 	var op1, result uint32
 	switch sew_bytes {
 	case 1:
@@ -273,12 +342,19 @@ func vor_vx(vmst *VmState, vd, vs2, i, sew_bytes, op2 uint32) {
 		result = op1 | op2
 		binary.LittleEndian.PutUint32(vmst.Core.Vregs[addr_dest:], result)
 	}
+	return CAUSE_TRAP_CODE_OK
 }
 
 // vxor_vx 处理向量-标量按位异或。
-func vxor_vx(vmst *VmState, vd, vs2, i, sew_bytes, op2 uint32) {
-	addr1 := vmst.GetVelementAddr(vs2, i, sew_bytes)
-	addr_dest := vmst.GetVelementAddr(vd, i, sew_bytes)
+func vxor_vx(vmst *VmState, vd, vs2, i, sew_bytes, op2 uint32) VmMcauseCode {
+	addr1, ok := vmst.GetVelementAddr(vs2, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
+	addr_dest, ok := vmst.GetVelementAddr(vd, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
 	var op1, result uint32
 	switch sew_bytes {
 	case 1:
@@ -294,14 +370,21 @@ func vxor_vx(vmst *VmState, vd, vs2, i, sew_bytes, op2 uint32) {
 		result = op1 ^ op2
 		binary.LittleEndian.PutUint32(vmst.Core.Vregs[addr_dest:], result)
 	}
+	return CAUSE_TRAP_CODE_OK
 }
 
 // vshift_vx 处理所有向量-标量移位操作。
-func vshift_vx(vmst *VmState, vd, vs2, i, sew_bytes, op2 uint32) {
+func vshift_vx(vmst *VmState, vd, vs2, i, sew_bytes, op2 uint32) VmMcauseCode {
 	ir := vmst.lastIR
 	funct6 := ir >> 26
-	addr1 := vmst.GetVelementAddr(vs2, i, sew_bytes)
-	addr_dest := vmst.GetVelementAddr(vd, i, sew_bytes)
+	addr1, ok := vmst.GetVelementAddr(vs2, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
+	addr_dest, ok := vmst.GetVelementAddr(vd, i, sew_bytes)
+	if !ok {
+		return CAUSE_ILLEGAL_INSTRUCTION
+	}
 	var op1, result, shamt uint32
 	switch sew_bytes {
 	case 1: // 8-bit
@@ -341,6 +424,7 @@ func vshift_vx(vmst *VmState, vd, vs2, i, sew_bytes, op2 uint32) {
 		}
 		binary.LittleEndian.PutUint32(vmst.Core.Vregs[addr_dest:], result)
 	}
+	return CAUSE_TRAP_CODE_OK
 }
 
 // --- 主向量处理器 ---
@@ -373,13 +457,19 @@ func (vmst *VmState) handleOPIVI(ir uint32) VmMcauseCode {
 		// 掩码处理
 		if vm == 0 {
 			mask_byte_index := i / 8
+			// Vregs 总共 16 字节（128 位 VLEN），mask_byte_index 超出此范围说明 Vl 配置错误，触发异常。
+			if mask_byte_index >= 16 {
+				return CAUSE_ILLEGAL_INSTRUCTION
+			}
 			mask_bit_index := i % 8
 			if (vmst.Core.Vregs[mask_byte_index] & (1 << mask_bit_index)) == 0 {
 				continue
 			}
 		}
 		// 调用具体的操作函数
-		handler(vmst, vd, vs2, i, sew_bytes, imm, imm5)
+		if trap := handler(vmst, vd, vs2, i, sew_bytes, imm, imm5); trap != CAUSE_TRAP_CODE_OK {
+			return trap
+		}
 	}
 
 	vmst.Core.Vstart = 0
@@ -414,12 +504,18 @@ func (vmst *VmState) handleOPIVX(ir uint32) VmMcauseCode {
 		// 掩码处理
 		if vm == 0 {
 			mask_byte_index := i / 8
+			// 掩码字节索引越界检查：Vregs 仅 16 字节，防止因错误的 Vl 配置访问越界内存。
+			if mask_byte_index >= 16 {
+				return CAUSE_ILLEGAL_INSTRUCTION
+			}
 			mask_bit_index := i % 8
 			if (vmst.Core.Vregs[mask_byte_index] & (1 << mask_bit_index)) == 0 {
 				continue
 			}
 		}
-		handler(vmst, vd, vs2, i, sew_bytes, op2)
+		if trap := handler(vmst, vd, vs2, i, sew_bytes, op2); trap != CAUSE_TRAP_CODE_OK {
+			return trap
+		}
 	}
 
 	vmst.Core.Vstart = 0

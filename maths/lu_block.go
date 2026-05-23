@@ -1,14 +1,19 @@
 package maths
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 const BlockThreshold = 32 // 当矩阵大小小于此值时，切换到基础的 LU 分解算法
 
 // luBlock 使用递归的分块算法实现 LU 分解。
-// 注意：此实现不使用主元选择，因此对于某些矩阵可能存在数值不稳定性。
+// 对于小于 BlockThreshold 的子块，采用带列选主元 (partial pivoting) 的高斯消去法；
+// 主元选择信息通过 perm 置换向量供 SolveReuse 进行行交换。
 type luBlock[T Number] struct {
-	n int
-	A Matrix[T] // 存储 L 和 U 组合的矩阵
+	n    int
+	A    Matrix[T] // 存储 L 和 U 组合的矩阵
+	perm []int     // 行置换向量，perm[i] 表示置换后第 i 行在原始矩阵中的行号
 }
 
 // NewLUBlock 创建一个新的分块 LU 分解器。
@@ -16,9 +21,14 @@ func NewLUBlock[T Number](n int) (LU[T], error) {
 	if n < 1 {
 		return nil, errors.New("lu dimension must be positive")
 	}
+	perm := make([]int, n)
+	for i := range perm {
+		perm[i] = i
+	}
 	return &luBlock[T]{
-		n: n,
-		A: NewDenseMatrix[T](n, n),
+		n:    n,
+		A:    NewDenseMatrix[T](n, n),
+		perm: perm,
 	}, nil
 }
 
@@ -56,7 +66,9 @@ func (lu *luBlock[T]) decomposeRecursive(A Matrix[T]) error {
 	// U12 = L11^-1 * A12  (就地更新 A12)
 	solveLowerTriangular(A11, A12)
 	// L21 = A21 * U11^-1  (就地更新 A21)
-	solveUpperTriangular(A21, A11)
+	if err := solveUpperTriangular(A21, A11); err != nil {
+		return err
+	}
 
 	// 3. 计算舒尔补更新 A22
 	// A22 = A22 - L21 * U12
@@ -66,14 +78,49 @@ func (lu *luBlock[T]) decomposeRecursive(A Matrix[T]) error {
 	return lu.decomposeRecursive(A22)
 }
 
-// baseCaseLU 对小于阈值的矩阵执行一个标准的非主元选择 LU 分解。
+// getGlobalRowOffset 计算子矩阵 A 在完整矩阵 lu.A 中的全局行偏移量。
+// 通过递归遍历 subMatrix 的 baseMatrix 链来计算累计偏移。
+func (lu *luBlock[T]) getGlobalRowOffset(A Matrix[T]) int {
+	offset := 0
+	current := A
+	for {
+		sm, ok := current.(*subMatrix[T])
+		if !ok {
+			break
+		}
+		offset += sm.rowOffset
+		current = sm.baseMatrix
+	}
+	return offset
+}
+
+// baseCaseLU 对小于阈值的矩阵执行一个带部分主元选择的 LU 分解。
+// 行置换信息会同步更新到 lu.perm 中，以支持 SolveReuse 的置换求解。
 func (lu *luBlock[T]) baseCaseLU(A Matrix[T]) error {
 	n := A.Rows()
+	// 计算 A 在完整矩阵 lu.A 中的全局行偏移
+	globalRowOffset := lu.getGlobalRowOffset(A)
 	for k := 0; k < n; k++ {
-		pivot := A.Get(k, k)
-		if Abs(pivot) < Epsilon {
+		// 部分主元选择：在第 k 列搜索绝对值最大的元素
+		maxRow := k
+		maxAbs := Abs(A.Get(k, k))
+		for i := k + 1; i < n; i++ {
+			absVal := Abs(A.Get(i, k))
+			if absVal > maxAbs {
+				maxAbs = absVal
+				maxRow = i
+			}
+		}
+		if maxAbs < Epsilon {
 			return errors.New("matrix is singular or nearly singular")
 		}
+		if maxRow != k {
+			A.SwapRows(maxRow, k)
+			lu.perm[globalRowOffset+maxRow], lu.perm[globalRowOffset+k] =
+				lu.perm[globalRowOffset+k], lu.perm[globalRowOffset+maxRow]
+		}
+
+		pivot := A.Get(k, k)
 		for i := k + 1; i < n; i++ {
 			factor := A.Get(i, k) / pivot
 			A.Set(i, k, factor) // 在下三角部分存储 L 的因子
@@ -107,9 +154,10 @@ func solveLowerTriangular[T Number](L Matrix[T], B Matrix[T]) {
 }
 
 // solveUpperTriangular 求解矩阵方程 X * U = B，其中 U 是上三角矩阵。
-// U 存储在矩阵 A 的上三角部分。
+// U 存储在矩阵 A 的上三角部分（包含对角线）。
+// 若对角线元素绝对值小于 Epsilon，返回奇异错误。
 // 结果 X 会就地覆盖 B。
-func solveUpperTriangular[T Number](B Matrix[T], U Matrix[T]) {
+func solveUpperTriangular[T Number](B Matrix[T], U Matrix[T]) error {
 	m, n := B.Rows(), U.Cols()
 	if B.Cols() != U.Rows() {
 		panic("dimension mismatch for solveUpperTriangular")
@@ -123,11 +171,12 @@ func solveUpperTriangular[T Number](B Matrix[T], U Matrix[T]) {
 			}
 			diag := U.Get(j, j)
 			if Abs(diag) < Epsilon {
-				panic("solveUpperTriangular: matrix is singular")
+				return fmt.Errorf("solveUpperTriangular: matrix is singular")
 			}
 			B.Set(i, j, sum/diag)
 		}
 	}
+	return nil
 }
 
 // matrixMultiplySubtract 执行矩阵运算 C = C - A * B。
@@ -152,7 +201,7 @@ func matrixMultiplySubtract[T Number](C, A, B Matrix[T]) {
 }
 
 // SolveReuse 使用分解后的 L/U 矩阵求解线性方程组 Ax=b。
-// 由于没有主元选择，过程相对简单：前向替换解 Ly=b，然后后向回代解 Ux=y。
+// 首先根据分解过程中记录的行置换交换 b 的行，然后执行前向替换和后向回代。
 func (lu *luBlock[T]) SolveReuse(b, x Vector[T]) error {
 	if b.Length() != lu.n || x.Length() != lu.n {
 		return errors.New("lu block solve: vector dimension mismatch")
@@ -160,9 +209,15 @@ func (lu *luBlock[T]) SolveReuse(b, x Vector[T]) error {
 
 	y := NewDenseVector[T](lu.n)
 
-	// 前向替换: Ly = b (L 的对角线为 1)
+	// 根据置换向量构建置换后的 Pb
+	pb := NewDenseVector[T](lu.n)
 	for i := 0; i < lu.n; i++ {
-		sum := b.Get(i)
+		pb.Set(i, b.Get(lu.perm[i]))
+	}
+
+	// 前向替换: Ly = Pb (L 的对角线为 1)
+	for i := 0; i < lu.n; i++ {
+		sum := pb.Get(i)
 		for j := 0; j < i; j++ {
 			sum -= lu.A.Get(i, j) * y.Get(j)
 		}

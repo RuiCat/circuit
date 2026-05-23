@@ -84,7 +84,7 @@ func (Diode) Reset(base element.NodeFace) {
 
 	// 计算齐纳偏移量和临界电压
 	var zoffset, vzcrit float64
-	if Vz == 0 || Vt <= 0 {
+	if Vz == 0 || Vt <= 0 || Is <= 0 {
 		zoffset = 0
 		vzcrit = 0
 	} else {
@@ -218,19 +218,8 @@ func limitDiodeStep(vnew, vold float64, time mna.Time, value element.NodeFace) f
 				vnew = vcrit
 			}
 		} else {
-			// 调整vnew使得电流与上一次迭代的线性化模型相同
-			// 防止vnew/vscale <= 0导致对数计算错误
-			if vnew > 0 && vscale > 0 {
-				ratio := vnew / vscale
-				if ratio > 1e-10 { // 防止数值下溢
-					vnew = vscale * math.Log(ratio)
-				} else {
-					vnew = vscale * math.Log(1e-10)
-				}
-			} else {
-				// 如果vnew <= 0，使用一个小的正数
-				vnew = vscale * math.Log(1e-10)
-			}
+			// 从反向偏置跳变到正向偏置时，钳位在临界电压以开始导通
+			vnew = vcrit
 		}
 		time.NoConverged()
 	} else if vnew < 0 && zoffset != 0 {
@@ -267,6 +256,18 @@ func limitDiodeStep(vnew, vold float64, time mna.Time, value element.NodeFace) f
 	return vnew
 }
 
+// safeExp 计算 math.Exp(x)，将参数钳位在 [-700, 700] 防止溢出
+// exp(700) ≈ 1e304, exp(710) → +Inf
+func safeExp(x float64) float64 {
+	const maxExpArg = 700.0
+	if x > maxExpArg {
+		x = maxExpArg
+	} else if x < -maxExpArg {
+		x = -maxExpArg
+	}
+	return math.Exp(x)
+}
+
 // doDiodeStep 执行二极管MNA建模（基于CircuitJS1算法）
 func doDiodeStep(mna mna.Mna, time mna.Time, value element.NodeFace, voltdiff float64) {
 	leakage := value.GetFloat64(13) // 漏电流（饱和电流）
@@ -288,7 +289,9 @@ func doDiodeStep(mna mna.Mna, time mna.Time, value element.NodeFace, voltdiff fl
 	subIterations := time.GoodIterations()
 	if subIterations > 100 {
 		// 缓慢增加gmin，但最大值限制在1e-6
-		extraGmin := math.Exp(-12 * math.Log(10) * (1 - float64(subIterations)/1000.0))
+		// 防止 subIterations > 1000 导致指数参数为正（溢出）
+		ratio := 1.0 - math.Min(float64(subIterations)/1000.0, 1.0)
+		extraGmin := math.Exp(-12 * math.Log(10) * ratio)
 		if extraGmin > 1e-6 {
 			extraGmin = 1e-6
 		}
@@ -297,7 +300,7 @@ func doDiodeStep(mna mna.Mna, time mna.Time, value element.NodeFace, voltdiff fl
 
 	if voltdiff >= 0 || Vz == 0 {
 		// 常规二极管或正向偏置齐纳二极管
-		eval := math.Exp(voltdiff * vdcoef)
+		eval := safeExp(voltdiff * vdcoef)
 		geq := vdcoef*leakage*eval + gmin
 		nc := (eval-1)*leakage - geq*voltdiff
 		mna.StampAdmittance(value.GetNodesInternal(0), value.GetNodes(1), geq)
@@ -315,10 +318,10 @@ func doDiodeStep(mna mna.Mna, time mna.Time, value element.NodeFace, voltdiff fl
 		 * nc 是 I(Vd) + I'(Vd)*(-Vd)
 		 */
 
-		geq := leakage*(vdcoef*math.Exp(voltdiff*vdcoef)+vzcoef*math.Exp((-voltdiff-zoffset)*vzcoef)) + gmin
+		geq := leakage*(vdcoef*safeExp(voltdiff*vdcoef)+vzcoef*safeExp((-voltdiff-zoffset)*vzcoef)) + gmin
 
-		nc := leakage*(math.Exp(voltdiff*vdcoef)-
-			math.Exp((-voltdiff-zoffset)*vzcoef)-
+		nc := leakage*(safeExp(voltdiff*vdcoef)-
+			safeExp((-voltdiff-zoffset)*vzcoef)-
 			1) + geq*(-voltdiff)
 
 		mna.StampAdmittance(value.GetNodesInternal(0), value.GetNodes(1), geq)
@@ -342,7 +345,7 @@ func doDiodeStepWeighted(mna mna.Mna, value element.NodeFace, voltdiff, weight f
 
 	if voltdiff >= 0 || Vz == 0 {
 		// 常规二极管或正向偏置齐纳二极管
-		eval := math.Exp(voltdiff * vdcoef)
+		eval := safeExp(voltdiff * vdcoef)
 		geq := vdcoef*leakage*eval + gmin
 		nc := (eval-1)*leakage - geq*voltdiff
 		// 按权重缩放贡献
@@ -350,9 +353,9 @@ func doDiodeStepWeighted(mna mna.Mna, value element.NodeFace, voltdiff, weight f
 		mna.StampCurrentSource(value.GetNodesInternal(0), value.GetNodes(1), nc*weight)
 	} else {
 		// 齐纳二极管
-		geq := leakage*(vdcoef*math.Exp(voltdiff*vdcoef)+vzcoef*math.Exp((-voltdiff-zoffset)*vzcoef)) + gmin
-		nc := leakage*(math.Exp(voltdiff*vdcoef)-
-			math.Exp((-voltdiff-zoffset)*vzcoef)-
+		geq := leakage*(vdcoef*safeExp(voltdiff*vdcoef)+vzcoef*safeExp((-voltdiff-zoffset)*vzcoef)) + gmin
+		nc := leakage*(safeExp(voltdiff*vdcoef)-
+			safeExp((-voltdiff-zoffset)*vzcoef)-
 			1) + geq*(-voltdiff)
 		// 按权重缩放贡献
 		mna.StampAdmittance(value.GetNodesInternal(0), value.GetNodes(1), geq*weight)
@@ -369,9 +372,9 @@ func calculateDiodeCurrent(voltdiff float64, value element.NodeFace) float64 {
 	Vz := value.GetFloat64(1)
 
 	if voltdiff >= 0 || Vz == 0 {
-		return leakage * (math.Exp(voltdiff*vdcoef) - 1)
+		return leakage * (safeExp(voltdiff*vdcoef) - 1)
 	}
-	return leakage * (math.Exp(voltdiff*vdcoef) -
-		math.Exp((-voltdiff-zoffset)*vzcoef) -
+	return leakage * (safeExp(voltdiff*vdcoef) -
+		safeExp((-voltdiff-zoffset)*vzcoef) -
 		1)
 }

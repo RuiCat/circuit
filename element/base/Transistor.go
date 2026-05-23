@@ -12,21 +12,24 @@ var TransistorType element.NodeType = element.AddElement(9, &Transistor{
 		Name: "q",
 		Pin:  element.SetPin(element.PinLowVoltage, "b", "c", "e"), // 基极、集电极、发射极
 		ValueInit: []any{
-			bool(false),       // 0: PNP标志 (false=NPN, true=PNP)
-			float64(100),      // 1: 电流增益(hFE)
-			string("default"), // 2: 模型名称
-			float64(0),        // 3: 上次基极-集电极电压
-			float64(0),        // 4: 上次基极-发射极电压
-			float64(0),        // 5: 临界电压
-			float64(0),        // 6: 集电极电流
-			float64(0),        // 7: 发射极电流
-			float64(0),        // 8: 基极电流
-			float64(0),        // 9: 最小电导
-			float64(0),        // 电流记录
-			float64(0),        // 电流记录
-		float64(0),        // 电流记录
+			bool(false),          // 0: PNP标志 (false=NPN, true=PNP)
+			float64(100),         // 1: 电流增益(hFE)
+			string("default"),    // 2: 模型名称
+			float64(0),           // 3: 上次基极-集电极电压
+			float64(0),           // 4: 上次基极-发射极电压
+			float64(0),           // 5: 临界电压
+			float64(0),           // 6: 集电极电流
+			float64(0),           // 7: 发射极电流
+			float64(0),           // 8: 基极电流
+			float64(0),           // 9: 最小电导
+			float64(0),           // 电流记录
+			float64(0),           // 电流记录
+			float64(0),           // 电流记录
+			float64(0.025865),    // 13: 热电压 thermalVoltage
+			float64(1e-13),       // 14: 饱和电流 csat
+			float64(100.0),       // 15: 反向beta
 		},
-		ValueName: []string{"PNP", "hFE", "model", "vbc_last", "vbe_last", "Vcrit", "Ic", "Ie", "Ib", "gmin"},
+		ValueName: []string{"PNP", "hFE", "model", "vbc_last", "vbe_last", "Vcrit", "Ic", "Ie", "Ib", "gmin", "", "", "", "thermalVoltage", "csat", "reverseBeta"},
 		Current:   []int{7, 8, 6},
 		OrigValue: []int{3, 4},
 		Flags:         element.FlagNonlinear | element.FlagCacheStamp,
@@ -64,8 +67,9 @@ func (Transistor) Reset(base element.NodeFace) {
 	base.SetFloat64(7, 0) // ie
 	base.SetFloat64(8, 0) // ib
 	// 计算临界电压
-	thermalVoltage := 0.025865 // 电子热电压 (27°C = 300.15K)
-	vcrit := thermalVoltage * math.Log(thermalVoltage/(math.Sqrt(2)*1e-13))
+	thermalVoltage := base.GetFloat64(13) // 电子热电压 (27°C = 300.15K)
+	csat := base.GetFloat64(14)
+	vcrit := thermalVoltage * math.Log(thermalVoltage/(math.Sqrt(2)*csat))
 	base.SetFloat64(5, vcrit)
 	// 设置最小电导
 	base.SetFloat64(9, 1e-12)
@@ -102,13 +106,13 @@ func (Transistor) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	value.SetFloat64(4, vbe)
 
 	// SPICE BJT模型参数
-	csat := 1e-13   // 默认饱和电流
-	vtn := 0.025865 // 热电压
+	csat := value.GetFloat64(14) // 默认饱和电流
+	vtn := value.GetFloat64(13)  // 热电压
 
 	// 计算发射结电流
 	var cbe, gbe float64
 	if vbe > -5*vtn {
-		evbe := math.Exp(vbe / vtn)
+		evbe := safeExp(vbe / vtn)
 		cbe = csat*(evbe-1) + value.GetFloat64(9)*vbe
 		gbe = csat*evbe/vtn + value.GetFloat64(9)
 	} else {
@@ -119,7 +123,7 @@ func (Transistor) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 计算集电结电流
 	var cbc, gbc float64
 	if vbc > -5*vtn {
-		evbc := math.Exp(vbc / vtn)
+		evbc := safeExp(vbc / vtn)
 		cbc = csat*(evbc-1) + value.GetFloat64(9)*vbc
 		gbc = csat*evbc/vtn + value.GetFloat64(9)
 	} else {
@@ -129,12 +133,13 @@ func (Transistor) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 
 	// 计算电流
 	beta := value.GetFloat64(1)
-	cc := (cbe - cbc) / 1.0    // 简化模型，忽略基区电荷
-	cb := cbe/beta + cbc/100.0 // 默认反向beta=100
+	reverseBeta := value.GetFloat64(15)
+	cc := cbe - cbc // 简化模型：忽略基区电荷调制（Early效应），传输电流=Ibe-Ibc
+	cb := cbe/beta + cbc/reverseBeta
 
 	// 计算最终电流
 	// 集电极电流是传输电流减去基极-集电极二极管电流。
-	ic := pnpFactor * (cc - (cbc / 100.0))
+	ic := pnpFactor * (cc - (cbc / reverseBeta))
 	ib := pnpFactor * cb
 	ie := -(ic + ib) // 为保证数值稳定性，强制执行KCL
 
@@ -144,8 +149,11 @@ func (Transistor) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 
 	// 计算电导
 	gpi := gbe / beta
-	gmu := gbc / 100.0
+	gmu := gbc / reverseBeta
 	go_ := gbc
+	if go_ < 1e-15 {
+		go_ = 1e-15 // 最小输出电导，防止数值不稳定
+	}
 	gm := gbe - go_
 
 	// 计算线性化模型的诺顿等效电流源
@@ -155,8 +163,8 @@ func (Transistor) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 
 	// 合并结电流以获得终端等效电流
 	// 等效电流计算必须与最终终端电流计算一致
-	ic_eq_final := ieq_be - ieq_bc - (ieq_bc / 100.0)
-	ib_eq_base := ieq_be/beta + ieq_bc/100.0
+	ic_eq_final := ieq_be - ieq_bc - (ieq_bc / reverseBeta)
+	ib_eq_base := ieq_be/beta + ieq_bc/reverseBeta
 
 	// 应用PNP因子
 	ic_eq := pnpFactor * ic_eq_final
@@ -188,7 +196,7 @@ func (Transistor) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 
 // 辅助函数
 func limitStepTransistor(vnew, vold float64, value element.NodeFace) float64 {
-	vt := 0.025865 // 热电压
+	vt := value.GetFloat64(13) // 热电压
 	vcrit := value.GetFloat64(5)
 
 	// 应用步长限制以获得数值稳定性

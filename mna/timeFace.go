@@ -103,6 +103,14 @@ type Time interface {
 	UpdateHistory()
 	// SetCorrStateFromX 从MNA解向量X复制当前收敛状态到校正缓冲区，供UpdateHistory使用
 	SetCorrStateFromX(x maths.Vector[float64])
+	// CorrState 返回校正状态缓冲区的指针，供外部读取预测-校正积分器中
+	// 当前收敛后的状态向量（即解向量 X 的副本）。
+	// 该缓冲区在 Correct 完成后由 SetCorrStateFromX 更新。
+	CorrState() *[]float64
+	// CorrDer 返回校正导数缓冲区的指针，供外部读取预测-校正积分器中
+	// 当前收敛后的导数向量（dx/dt）的副本。
+	// 该缓冲区在 Correct 完成后由 UpdateHistory 更新。
+	CorrDer() *[]float64
 
 	// ------------------------------
 	// MNA残差计算

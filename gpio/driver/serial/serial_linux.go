@@ -172,11 +172,8 @@ func openPort(name string, config *driver.UARTConfig) (p *Port, err error) {
 		// 非阻塞读取，字符间超时
 		vmin = 0
 		// 将毫秒超时转换为十分之一秒（VTIME单位）
-		vtime = config.ByteTimeout / 100
-		if vtime == 0 {
-			// 小于100毫秒的超时设为最小单位（0.1秒）
-			vtime = 1
-		}
+		// ByteTimeout 以毫秒为单位，通过 +99 再 /100 向上取整为 VTIME 的十分之一秒单位。
+		vtime = (config.ByteTimeout + 99) / 100  // 向上取整到100ms单位
 	}
 	t := unix.Termios{
 		Iflag:  unix.IGNPAR,

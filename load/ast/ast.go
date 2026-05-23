@@ -235,16 +235,20 @@ func NewParseTreeDirect(r io.Reader) (parseTree *ParseTree, err error) {
 		}
 		// 处理元件定义
 		if len(token) > 0 && isLetter(token[0]) {
-			hasMore, elem, err := parseElementDefinitionFromScanner(scanner, token, lineNum)
+			hasMore, elem, pendingTok, err := parseElementDefinitionFromScanner(scanner, token, lineNum)
 			if err != nil {
 				return nil, err
 			}
 			target := currentTarget(subcktStack, parseTree)
 			*target = append(*target, elem)
 			// 如果还有未处理的 token，保存它供下一次循环处理
-			if hasMore && scanner.Scan() {
-				nextToken := scanner.Text()
-				pendingToken = &nextToken
+			if hasMore {
+				if pendingTok != nil {
+					pendingToken = pendingTok
+				} else if scanner.Scan() {
+					nextToken := scanner.Text()
+					pendingToken = &nextToken
+				}
 			}
 			continue
 		}
@@ -288,8 +292,13 @@ func parseValueListFromScanner(scanner *bufio.Scanner, lineNum int) ([]Value, er
 	return values, nil
 }
 
-// parseComment 解析注释 token
+// parseComment 解析注释 token (#、//、/* */) 并将其加入解析树。
+// 若 token 为空字符串，直接返回 false 避免空字符串索引访问。
+// 对长度不足2的 token，判定为非法注释前缀并返回 false。
 func parseComment(token string, lineNum int, parseTree *ParseTree) bool {
+	if len(token) == 0 {
+		return false
+	}
 	switch {
 	case token[0] == tokenCommentHash[0]:
 		comment := token[1:]
@@ -397,13 +406,13 @@ func parseSubCircuitDef(scanner *bufio.Scanner, lineNum *int) (*SubCircuitDef, e
 }
 
 // parseSubCircuitInstance 解析 X 子电路实例（读取子电路名称）
-func parseSubCircuitInstance(scanner *bufio.Scanner, elementType string, elementID string, pins []Value, lineNum int) (bool, *ElementNode, error) {
+func parseSubCircuitInstance(scanner *bufio.Scanner, elementType string, elementID string, pins []Value, lineNum int) (bool, *ElementNode, *string, error) {
 	var values []Value
 	for {
 		if !scanner.Scan() {
 			return false, &ElementNode{
 				Type: elementType, ID: elementID, Pins: pins, Values: values, Line: lineNum,
-			}, errorAtLine(lineNum, "X 实例缺少子电路名称")
+			}, nil, errorAtLine(lineNum, "X 实例缺少子电路名称")
 		}
 		token := scanner.Text()
 		if token == tokenSpace || token == tokenTab {
@@ -412,18 +421,18 @@ func parseSubCircuitInstance(scanner *bufio.Scanner, elementType string, element
 		if token == tokenNewline {
 			return false, &ElementNode{
 				Type: elementType, ID: elementID, Pins: pins, Values: values, Line: lineNum,
-			}, errorAtLine(lineNum, "X 实例缺少子电路名称")
+			}, nil, errorAtLine(lineNum, "X 实例缺少子电路名称")
 		}
 		values = append(values, Value{Value: token, Line: lineNum})
 		break
 	}
 	return false, &ElementNode{
 		Type: elementType, ID: elementID, Pins: pins, Values: values, Line: lineNum,
-	}, nil
+	}, nil, nil
 }
 
 // parseElementDefinitionFromScanner 从 scanner 解析元件定义
-func parseElementDefinitionFromScanner(scanner *bufio.Scanner, elementType string, lineNum int) (bool, *ElementNode, error) {
+func parseElementDefinitionFromScanner(scanner *bufio.Scanner, elementType string, lineNum int) (bool, *ElementNode, *string, error) {
 	// 检查 elementType 是否包含数字后缀（如 U1, R12），如果包含了直接拆分
 	var elementID string
 	if len(elementType) > 1 && isNumber(elementType[1:]) {
@@ -444,14 +453,14 @@ func parseElementDefinitionFromScanner(scanner *bufio.Scanner, elementType strin
 		// 读取元件ID，跳过空格和制表符
 		for {
 			if !scanner.Scan() {
-				return false, nil, errorAtLine(lineNum, "缺少元件 ID")
+				return false, nil, nil, errorAtLine(lineNum, "缺少元件 ID")
 			}
 			token := scanner.Text()
 			if token == tokenSpace || token == tokenTab {
 				continue
 			}
 			if !isNumber(token) {
-				return false, nil, errorAtLine(lineNum, "元件 ID 必须是数字")
+				return false, nil, nil, errorAtLine(lineNum, "元件 ID 必须是数字")
 			}
 			elementID = token
 			break
@@ -460,14 +469,14 @@ func parseElementDefinitionFromScanner(scanner *bufio.Scanner, elementType strin
 	// 读取引脚列表开始标记，跳过空格和制表符
 	for {
 		if !scanner.Scan() {
-			return false, nil, errorAtLine(lineNum, "缺少引脚列表")
+			return false, nil, nil, errorAtLine(lineNum, "缺少引脚列表")
 		}
 		token := scanner.Text()
 		if token == tokenSpace || token == tokenTab {
 			continue
 		}
 		if token != tokenLBracket {
-			return false, nil, errorAtLine(lineNum, "缺少引脚列表开始标记 [")
+			return false, nil, nil, errorAtLine(lineNum, "缺少引脚列表开始标记 [")
 		}
 		break
 	}
@@ -475,7 +484,7 @@ func parseElementDefinitionFromScanner(scanner *bufio.Scanner, elementType strin
 	// 解析引脚列表
 	pins, err := parseValueListFromScanner(scanner, lineNum)
 	if err != nil {
-		return false, nil, err
+		return false, nil, nil, err
 	}
 
 	// X 类型：子电路实例，引脚后直接跟子电路名称
@@ -501,16 +510,16 @@ func parseElementDefinitionFromScanner(scanner *bufio.Scanner, elementType strin
 			// 找到值列表开始标记
 			values, err = parseValueListFromScanner(scanner, lineNum)
 			if err != nil {
-				return false, nil, err
+				return false, nil, nil, err
 			}
 			// parseValueListFromScanner 已经消耗了 ]，所以这里不需要再检查
-			hasMore = scanner.Scan()
+			hasMore = true
 			break
 		} else {
-			// 不是值列表，保存这个 token 供后续处理
-			hasMore = true
-			// 注意：这里我们有一个 token 没有被消耗，需要在调用者中处理
-			break
+			// 不是值列表，将已消费的 token 作为 pending token 返回给调用者
+			return true, &ElementNode{
+				Type: elementType, ID: elementID, Pins: pins, Values: values, Line: lineNum,
+			}, &token, nil
 		}
 	}
 	return hasMore, &ElementNode{
@@ -519,7 +528,7 @@ func parseElementDefinitionFromScanner(scanner *bufio.Scanner, elementType strin
 		Pins:   pins,
 		Values: values,
 		Line:   lineNum,
-	}, nil
+	}, nil, nil
 }
 
 // isLetter 检查是否是字母

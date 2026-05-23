@@ -74,7 +74,9 @@ func (Voltage) StepFinished(mna mna.Mna, time mna.Time, value element.NodeFace) 
 	}
 }
 
-// 辅助函数
+// getVoltage 根据电源波形类型和当前时间计算输出电压。
+// 支持直流、交流、方波、三角波、锯齿波、脉冲波和噪声七种波形，
+// 其中方波和脉冲波的占空比参数 (dutyCycle) 被钳位在 [0, 1] 范围内。
 func getVoltage(value element.NodeFace, time mna.Time) float64 {
 	waveform := value.GetInt(0)
 	bias := value.GetFloat64(1)
@@ -82,6 +84,11 @@ func getVoltage(value element.NodeFace, time mna.Time) float64 {
 	phaseShift := value.GetFloat64(3)
 	maxVoltage := value.GetFloat64(4)
 	dutyCycle := value.GetFloat64(5)
+	if dutyCycle < 0 {
+		dutyCycle = 0
+	} else if dutyCycle > 1 {
+		dutyCycle = 1
+	}
 	freqTimeZero := value.GetFloat64(6)
 	noiseValue := value.GetFloat64(7)
 
@@ -121,6 +128,7 @@ func getVoltage(value element.NodeFace, time mna.Time) float64 {
 	}
 }
 
+// triangleFunc 计算三角波函数值，输入为相位角度（0 到 2π），输出范围为 [-1, 1]。
 func triangleFunc(x float64) float64 {
 	if x < math.Pi {
 		return x*(2/math.Pi) - 1

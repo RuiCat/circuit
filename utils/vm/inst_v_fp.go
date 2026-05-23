@@ -57,6 +57,10 @@ func (vmst *VmState) handleVFPOPIVV(ir uint32) VmMcauseCode {
 		// 检查掩码 (vm=0 表示被掩码)
 		if vm == 0 {
 			mask_byte_index := i / 8
+			// 掩码字节索引越界保护：Vregs 大小为 16 字节（128 位），超出范围意味着 Vl 配置不合法。
+			if mask_byte_index >= 16 {
+				return CAUSE_ILLEGAL_INSTRUCTION
+			}
 			mask_bit_index := i % 8
 			// 如果掩码位为0，则跳过当前元素
 			if (vmst.Core.Vregs[mask_byte_index] & (1 << mask_bit_index)) == 0 {
@@ -65,9 +69,18 @@ func (vmst *VmState) handleVFPOPIVV(ir uint32) VmMcauseCode {
 		}
 
 		// 计算源和目标元素的地址
-		addr1 := vmst.GetVelementAddr(vs1, i, sew_bytes)
-		addr2 := vmst.GetVelementAddr(vs2, i, sew_bytes)
-		addr_dest := vmst.GetVelementAddr(vd, i, sew_bytes)
+		addr1, ok := vmst.GetVelementAddr(vs1, i, sew_bytes)
+		if !ok {
+			return CAUSE_ILLEGAL_INSTRUCTION
+		}
+		addr2, ok := vmst.GetVelementAddr(vs2, i, sew_bytes)
+		if !ok {
+			return CAUSE_ILLEGAL_INSTRUCTION
+		}
+		addr_dest, ok := vmst.GetVelementAddr(vd, i, sew_bytes)
+		if !ok {
+			return CAUSE_ILLEGAL_INSTRUCTION
+		}
 
 		// 读取操作数，执行操作，写回结果
 		op1_bits := binary.LittleEndian.Uint32(vmst.Core.Vregs[addr1:])
@@ -113,13 +126,23 @@ func (vmst *VmState) handleVFPOPIVF(ir uint32) VmMcauseCode {
 		// 检查掩码
 		if vm == 0 {
 			mask_byte_index := i / 8
+			// 掩码字节索引越界保护：同上，防止因错误的 Vl 导致内存访问越界。
+			if mask_byte_index >= 16 {
+				return CAUSE_ILLEGAL_INSTRUCTION
+			}
 			mask_bit_index := i % 8
 			if (vmst.Core.Vregs[mask_byte_index] & (1 << mask_bit_index)) == 0 {
 				continue
 			}
 		}
-		addr2 := vmst.GetVelementAddr(vs2, i, sew_bytes)
-		addr_dest := vmst.GetVelementAddr(vd, i, sew_bytes)
+		addr2, ok := vmst.GetVelementAddr(vs2, i, sew_bytes)
+		if !ok {
+			return CAUSE_ILLEGAL_INSTRUCTION
+		}
+		addr_dest, ok := vmst.GetVelementAddr(vd, i, sew_bytes)
+		if !ok {
+			return CAUSE_ILLEGAL_INSTRUCTION
+		}
 		op2_bits := binary.LittleEndian.Uint32(vmst.Core.Vregs[addr2:])
 		f2 := math.Float32frombits(op2_bits)
 

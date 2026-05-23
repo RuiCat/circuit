@@ -39,6 +39,7 @@ package modbus
 import (
 	"circuit/gpio/driver"
 	"errors"
+	"sync/atomic"
 	"fmt"
 	"time"
 )
@@ -58,7 +59,7 @@ func (e *Exception) Error() string {
 // 用于向 Modbus 从站发送请求并接收响应
 type Master struct {
 	uart    driver.UART   // 底层的 UART 接口，用于串口通信
-	slaveID uint8         // 目标从站地址，范围 1-247
+	slaveID uint32         // 目标从站地址（1-247），使用 uint32 + atomic 操作确保 SetSlaveID 和 sendRequest 的并发安全
 	timeout time.Duration // 读写操作超时时间
 }
 
@@ -90,7 +91,7 @@ func (c *Master) SetSlaveID(id uint8) error {
 	if id == 0 || id > 247 {
 		return errors.New("modbus: slave ID must be between 1 and 247")
 	}
-	c.slaveID = id
+	atomic.StoreUint32(&c.slaveID, uint32(id))
 	return nil
 }
 
@@ -147,7 +148,8 @@ func calculateCRC(data []byte) uint16 {
 func (c *Master) sendRequest(pdu []byte) ([]byte, error) {
 	// 构建 RTU 帧: 从站地址 + PDU + CRC
 	frame := make([]byte, 1+len(pdu)+2)
-	frame[0] = c.slaveID
+	slaveID := uint8(atomic.LoadUint32(&c.slaveID))
+	frame[0] = slaveID
 	copy(frame[1:], pdu)
 	crc := calculateCRC(frame[:len(frame)-2])
 	frame[len(frame)-2] = byte(crc & 0xFF)
@@ -159,8 +161,9 @@ func (c *Master) sendRequest(pdu []byte) ([]byte, error) {
 	}
 
 	// 接收响应
+	// 注意: 超时功能尚未实现，底层UART不支持设置读取超时
 	// 简单实现: 读取足够大的缓冲区，解析响应
-	// 实际实现应考虑超时和帧间隔检测
+	// 注意: 底层 UART 暂不支持设置读取超时，timeout 字段目前仅作为预留接口，实际读取行为取决于具体 UART 实现。
 	readBuf, err := c.uart.Read(256)
 	if err != nil {
 		return nil, err
@@ -172,7 +175,7 @@ func (c *Master) sendRequest(pdu []byte) ([]byte, error) {
 	}
 
 	// 检查从站地址
-	if readBuf[0] != c.slaveID {
+	if readBuf[0] != slaveID {
 		return nil, errors.New("modbus: slave ID mismatch")
 	}
 

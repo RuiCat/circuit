@@ -84,7 +84,9 @@ func (memory *Memory) LoadUint8(addr uint32) (uint8, bool) {
 	}
 	// 主内存访问，需要检查边界
 	// 首先检查地址是否在内存范围内
-	if addr >= memory.RamImageOffSet && addr < memory.RamImageOffSet+memory.VmMemorySize {
+	// addr+1 >= addr 防止 uint32 溢出回绕（addr 接近 0xFFFFFFFF 时 addr+1 回绕为 0），
+	// 确保地址检查不被绕过，防止越界访问。
+	if addr >= memory.RamImageOffSet && addr+1 >= addr && addr < memory.RamImageOffSet+memory.VmMemorySize {
 		// 计算内存数组中的偏移量
 		offset := addr - memory.RamImageOffSet
 		return memory.Data[offset], true
@@ -107,7 +109,8 @@ func (memory *Memory) LoadUint16(addr uint32) (uint16, bool) {
 	}
 	// 主内存访问，需要检查边界
 	// 首先检查地址是否在内存范围内
-	if addr >= memory.RamImageOffSet && addr+1 < memory.RamImageOffSet+memory.VmMemorySize {
+	// addr+2 >= addr 防止 uint32 溢出回绕，确保地址检查不被绕过。
+	if addr >= memory.RamImageOffSet && addr+2 >= addr && addr+1 < memory.RamImageOffSet+memory.VmMemorySize {
 		// 计算内存数组中的偏移量
 		offset := addr - memory.RamImageOffSet
 		return binary.LittleEndian.Uint16(memory.Data[offset:]), true
@@ -129,7 +132,8 @@ func (memory *Memory) LoadUint32(addr uint32) (uint32, bool) {
 	}
 	// 主内存访问，需要检查边界
 	// 首先检查地址是否在内存范围内
-	if addr >= memory.RamImageOffSet && addr+3 < memory.RamImageOffSet+memory.VmMemorySize {
+	// addr+4 >= addr 防止 uint32 溢出回绕，确保 32 位读取的完整边界检查。
+	if addr >= memory.RamImageOffSet && addr+4 >= addr && addr+3 < memory.RamImageOffSet+memory.VmMemorySize {
 		// 计算内存数组中的偏移量
 		offset := addr - memory.RamImageOffSet
 		return binary.LittleEndian.Uint32(memory.Data[offset:]), true
@@ -158,7 +162,8 @@ func (memory *Memory) LoadUint64(addr uint32) (uint64, bool) {
 	}
 	// 主内存访问，需要检查边界
 	// 首先检查地址是否在内存范围内
-	if addr >= memory.RamImageOffSet && addr+7 < memory.RamImageOffSet+memory.VmMemorySize {
+	// addr+8 >= addr 防止 uint32 溢出回绕，确保 64 位读取不绕过边界。
+	if addr >= memory.RamImageOffSet && addr+8 >= addr && addr+7 < memory.RamImageOffSet+memory.VmMemorySize {
 		// 计算内存数组中的偏移量
 		offset := addr - memory.RamImageOffSet
 		return binary.LittleEndian.Uint64(memory.Data[offset:]), true
@@ -176,7 +181,8 @@ func (memory *Memory) PutUint8(addr uint32, value uint8) bool {
 	}
 	// 主内存访问，需要检查边界
 	// 首先检查地址是否在内存范围内
-	if addr >= memory.RamImageOffSet && addr < memory.RamImageOffSet+memory.VmMemorySize {
+	// addr+1 >= addr 防止 uint32 溢出回绕，确保写入操作的边界安全。
+	if addr >= memory.RamImageOffSet && addr+1 >= addr && addr < memory.RamImageOffSet+memory.VmMemorySize {
 		// 计算内存数组中的偏移量
 		offset := addr - memory.RamImageOffSet
 		memory.Data[offset] = value
@@ -195,7 +201,8 @@ func (memory *Memory) PutUint16(addr uint32, value uint16) bool {
 	}
 	// 主内存访问，需要检查边界
 	// 首先检查地址是否在内存范围内
-	if addr >= memory.RamImageOffSet && addr+1 < memory.RamImageOffSet+memory.VmMemorySize {
+	// addr+2 >= addr 防止 uint32 溢出回绕。
+	if addr >= memory.RamImageOffSet && addr+2 >= addr && addr+1 < memory.RamImageOffSet+memory.VmMemorySize {
 		// 计算内存数组中的偏移量
 		offset := addr - memory.RamImageOffSet
 		binary.LittleEndian.PutUint16(memory.Data[offset:], value)
@@ -214,7 +221,8 @@ func (memory *Memory) PutUint32(addr uint32, value uint32) bool {
 	}
 	// 主内存访问，需要检查边界
 	// 首先检查地址是否在内存范围内
-	if addr >= memory.RamImageOffSet && addr+3 < memory.RamImageOffSet+memory.VmMemorySize {
+	// addr+4 >= addr 防止 uint32 溢出回绕。
+	if addr >= memory.RamImageOffSet && addr+4 >= addr && addr+3 < memory.RamImageOffSet+memory.VmMemorySize {
 		// 计算内存数组中的偏移量
 		offset := addr - memory.RamImageOffSet
 		binary.LittleEndian.PutUint32(memory.Data[offset:], value)
@@ -241,7 +249,8 @@ func (memory *Memory) PutUint64(addr uint32, value uint64) bool {
 	}
 	// 主内存访问，需要检查边界
 	// 首先检查地址是否在内存范围内
-	if addr >= memory.RamImageOffSet && addr+7 < memory.RamImageOffSet+memory.VmMemorySize {
+	// addr+8 >= addr 防止 uint32 溢出回绕。
+	if addr >= memory.RamImageOffSet && addr+8 >= addr && addr+7 < memory.RamImageOffSet+memory.VmMemorySize {
 		// 计算内存数组中的偏移量
 		offset := addr - memory.RamImageOffSet
 		binary.LittleEndian.PutUint64(memory.Data[offset:], value)

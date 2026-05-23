@@ -6,7 +6,9 @@ import (
 	"time"
 )
 
-// AnyToString 将任意基础类型转换为字符串
+// AnyToString 将任意基础类型转换为字符串表示。
+// 支持 Go 基础数值类型（包含 uint8-uint64、int8-int64、float32/64、complex128）、
+// bool、string、time.Duration 以及实现了 fmt.Stringer 接口的类型。
 func AnyToString(v any) string {
 	if v == nil {
 		return ""
@@ -27,6 +29,8 @@ func AnyToString(v any) string {
 	case int64:
 		return strconv.FormatInt(val, 10)
 	case uint:
+		return strconv.FormatUint(uint64(val), 10)
+	case uint8:
 		return strconv.FormatUint(uint64(val), 10)
 	case uint16:
 		return strconv.FormatUint(uint64(val), 10)
@@ -49,7 +53,9 @@ func AnyToString(v any) string {
 	}
 }
 
-// StringToAny 字符串还原类型
+// StringToAny 将 Value 对象中的字符串还原为与 v 相同类型的值。
+// 支持类型包括 Go 基础数值类型（含 uint8-uint64、int8-int64、float32/64、
+// complex64/128）、bool、string、time.Duration 和 fmt.Stringer。
 func StringToAny(valueStrs Value, v any) any {
 	switch v := (v).(type) {
 	case string:
@@ -68,6 +74,8 @@ func StringToAny(valueStrs Value, v any) any {
 		return valueStrs.ParseInt64(v)
 	case uint:
 		return valueStrs.ParseUint(v)
+	case uint8:
+		return valueStrs.ParseUint8(v)
 	case uint16:
 		return valueStrs.ParseUint16(v)
 	case uint32:

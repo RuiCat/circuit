@@ -2,7 +2,7 @@ package base
 
 import (
 	"circuit/element"
-	"circuit/mna"
+	MNA "circuit/mna"
 )
 
 // OpAmpType 定义元件
@@ -29,7 +29,7 @@ var OpAmpType element.NodeType = element.AddElement(5, &OpAmp{
 // OpAmp 运算放大器（基于文章反正切非线性模型的实现）
 type OpAmp struct{ *element.Config }
 
-func (OpAmp) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
+func (OpAmp) Stamp(mna MNA.Mna, time MNA.Time, value element.NodeFace) {
 	// 输入引脚连接到高阻抗（大电阻到地）
 	mna.StampImpedance(-1, value.GetNodes(0), 1e16)
 	mna.StampImpedance(-1, value.GetNodes(1), 1e16)
@@ -44,21 +44,42 @@ func (OpAmp) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	)
 }
 
-func (OpAmp) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
+func (OpAmp) DoStep(mna MNA.Mna, time MNA.Time, value element.NodeFace) {
 	// 获取节点电压
 	vp := mna.GetNodeVoltage(value.GetNodes(0)) // 同相输入电压 (Vp)
 	vn := mna.GetNodeVoltage(value.GetNodes(1)) // 反相输入电压 (Vn)
 
 	// 计算输入电压差
 	vd := vp - vn
-
-	// 更新内部状态值
-	vout := mna.GetNodeVoltage(value.GetNodes(2))
 	value.SetFloat64(3, vd)
-	value.SetFloat64(6, vout)
+
+	// 计算理想输出电压并进行饱和钳位
+	gain := value.GetFloat64(2)
+	vMax := value.GetFloat64(0)
+	vMin := value.GetFloat64(1)
+
+	vOutIdeal := gain * vd
+	vOut := vOutIdeal
+	if vOut > vMax {
+		vOut = vMax
+	} else if vOut < vMin {
+		vOut = vMin
+	}
+	value.SetFloat64(6, vOut)
+
+	// 如果在饱和区，将 VCVS 方程（Vout = gain*Vd）修改为零增益电压源（Vout = Vclamped）
+	if vOut != vOutIdeal {
+		// 计算电压源在 MNA 扩展矩阵中的行号
+		vsRow := MNA.NodeID(int(value.GetVoltSource(0)) + mna.GetNodeNum())
+		// 清零 VCVS 方程中控制电压节点的系数
+		mna.StampMatrixSet(vsRow, value.GetNodes(0), 0) // 清零 Vp 的 -gain 项
+		mna.StampMatrixSet(vsRow, value.GetNodes(1), 0) // 清零 Vn 的 +gain 项
+		// 将方程右侧设置为钳位电压
+		mna.UpdateVoltageSource(value.GetVoltSource(0), vOut)
+	}
 }
 
-func (OpAmp) CalculateCurrent(mna mna.Mna, time mna.Time, value element.NodeFace) {
+func (OpAmp) CalculateCurrent(mna MNA.Mna, time MNA.Time, value element.NodeFace) {
 	// 电压源的支路电流即为运放输出电流
 	iout := mna.GetVoltageSourceCurrent(value.GetVoltSource(0))
 	value.SetFloat64(4, iout)

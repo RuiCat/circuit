@@ -35,8 +35,7 @@ func (con *Context) ParallelCallMark(mark Mark) error {
 
 	switch mark {
 	case MarkReset:
-		con.CallMark(MarkReset)
-		return nil
+		return con.CallMark(MarkReset)
 	case MarkUpdateElements:
 		con.UpdateX()
 		for i := range con.Nodelist {
@@ -50,22 +49,17 @@ func (con *Context) ParallelCallMark(mark Mark) error {
 		}
 		return nil
 	case MarkStartIteration:
-		con.CallMark(MarkStartIteration)
-		return nil
+		return con.CallMark(MarkStartIteration)
 	case MarkStamp:
-		con.CallMark(MarkStamp)
-		return nil
+		return con.CallMark(MarkStamp)
 	case MarkDoStep:
 		return con.parallelDoStep()
 	case MarkCalculateCurrent:
-		con.CallMark(MarkCalculateCurrent)
-		return nil
+		return con.CallMark(MarkCalculateCurrent)
 	case MarkStepFinished:
-		con.CallMark(MarkStepFinished)
-		return nil
+		return con.CallMark(MarkStepFinished)
 	default:
-		con.CallMark(mark)
-		return nil
+		return con.CallMark(mark)
 	}
 }
 
@@ -103,7 +97,7 @@ func (con *Context) parallelDoStep() error {
 			for idx := s; idx < e; idx++ {
 				node := con.Nodelist[idx]
 
-				elemFace, ok := ElementList[node.Base().NodeType]
+				elemFace, ok := getElementFace(node.Base().NodeType)
 				if !ok {
 					continue
 				}
@@ -158,36 +152,3 @@ func (con *Context) parallelDoStep() error {
 	return nil
 }
 
-// applyRecord 根据记录的操作类型，将盖章记录应用到上下文
-func applyRecord(con *Context, r *mna.RecordedStamp) {
-	switch r.Op {
-	case mna.OpAdmittance:
-		con.StampAdmittance(r.N1, r.N2, r.Value)
-	case mna.OpImpedance:
-		con.StampImpedance(r.N1, r.N2, r.Value)
-	case mna.OpCurrentSource:
-		con.StampCurrentSource(r.N1, r.N2, r.Value)
-	case mna.OpVoltageSource:
-		con.StampVoltageSource(r.N1, r.N2, r.ID1, r.Value)
-	case mna.OpVCVS:
-		con.StampVCVS(r.N1, r.N2, r.N3, r.N4, r.ID1, r.Value)
-	case mna.OpCCCS:
-		con.StampCCCS(r.N1, r.N2, r.ID1, r.Value)
-	case mna.OpCCVS:
-		con.StampCCVS(r.N1, r.N2, r.ID1, r.ID2, r.Value)
-	case mna.OpVCCS:
-		con.StampVCCS(r.N1, r.N2, r.N3, r.N4, r.Value)
-	case mna.OpMatrix:
-		con.StampMatrix(r.N1, r.N2, r.Value)
-	case mna.OpMatrixSet:
-		con.StampMatrixSet(r.N1, r.N2, r.Value)
-	case mna.OpRightSide:
-		con.StampRightSide(r.N1, r.Value)
-	case mna.OpRightSideSet:
-		con.StampRightSideSet(r.N1, r.Value)
-	case mna.OpUpdateVoltageSource:
-		con.UpdateVoltageSource(r.ID1, r.Value)
-	case mna.OpIncrementVoltageSource:
-		con.IncrementVoltageSource(r.ID1, r.Value)
-	}
-}

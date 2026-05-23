@@ -55,8 +55,9 @@ func handleC0(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, VmMc
 	case FUNCT3_C_FLD, FUNCT3_C_FSD: // C.FLD, C.FSD (RV64/128 专有，RV32 非法)
 		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 
+		// C.FLW / C.FSW：需要 F 扩展支持浮点加载/存储，当前 RV32 实现暂不支持，返回非法指令。
 	case FUNCT3_C_FLW, FUNCT3_C_FSW: // C.FLW, C.FSW (RV32 浮点暂占位实现)
-		return 0, 0, pc + 2, CAUSE_TRAP_CODE_OK
+		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 
 	default:
 		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
@@ -243,8 +244,9 @@ func handleC2(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, VmMc
 
 	case FUNCT3_C_FLDSP, FUNCT3_C_FSDSP: // C.FLDSP, C.FSDSP (RV64 非法)
 		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
+		// C.FLWSP / C.FSWSP：需要 F 扩展支持浮点栈指针相对加载/存储，当前 RV32 实现返回非法指令。
 	case FUNCT3_C_FLWSP, FUNCT3_C_FSWSP: // C.FLWSP, C.FSWSP (RV32 浮点占位)
-		return 0, 0, pc + 2, CAUSE_TRAP_CODE_OK
+		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 
 	default:
 		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION

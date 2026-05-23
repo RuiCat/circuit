@@ -61,7 +61,7 @@ func (node *Node) GetNodes(i int) mna.NodeID {
 	if i >= 0 && i < len(node.Nodes) {
 		return node.Nodes[i]
 	}
-	return -1
+	return mna.InvalidNodeID
 }
 
 // GetVoltSource 获取指定电压源对应的MNA节点索引。
@@ -71,7 +71,7 @@ func (node *Node) GetVoltSource(i int) mna.VoltageID {
 	if i >= 0 && i < len(node.VoltSource) {
 		return node.VoltSource[i]
 	}
-	return -1
+	return mna.VoltageID(mna.InvalidNodeID)
 }
 
 // GetVoltSourceNodeID 获取指定电压源对应的MNA节点索引。
@@ -81,7 +81,7 @@ func (node *Node) GetVoltSourceNodeID(m mna.Mna, i int) mna.NodeID {
 	if i >= 0 && i < len(node.VoltSource) {
 		return mna.NodeID(m.GetNodeNum()) + mna.NodeID(node.VoltSource[i])
 	}
-	return -1
+	return mna.InvalidNodeID
 }
 
 // GetNodesInternal 获取指定内部节点对应的MNA节点索引。
@@ -91,7 +91,7 @@ func (node *Node) GetNodesInternal(i int) mna.NodeID {
 	if i >= 0 && i < len(node.NodeInternal) {
 		return node.NodeInternal[i]
 	}
-	return -1
+	return mna.InvalidNodeID
 }
 
 // SetNodePin 设置指定引脚对应的MNA节点索引。
@@ -106,9 +106,11 @@ func (node *Node) SetNodePin(i int, n mna.NodeID) {
 // SetNodePins 设置引脚对应的MNA节点索引。
 // 参数n: 引脚连接节点列表。
 func (node *Node) SetNodePins(n ...mna.NodeID) {
-	if len(n) <= len(node.Nodes) {
-		copy(node.Nodes, n)
+	copyLen := len(n)
+	if copyLen > len(node.Nodes) {
+		copyLen = len(node.Nodes)
 	}
+	copy(node.Nodes, n[:copyLen])
 }
 
 // SetVoltSource 设置指定电压源对应的MNA节点索引。
@@ -133,7 +135,9 @@ func (node *Node) SetNodesInternal(i int, n mna.NodeID) {
 // 用于在仿真迭代中保存当前状态，以便在需要时进行回滚。
 func (node *Node) Update() {
 	for i := range node.OrigValue {
-		node.OrigValue[i] = node.NodeValue[i]
+		if i >= 0 && i < len(node.NodeValue) {
+			node.OrigValue[i] = node.NodeValue[i]
+		}
 	}
 }
 
@@ -141,7 +145,9 @@ func (node *Node) Update() {
 // 用于在仿真迭代失败时回滚到之前保存的状态。
 func (node *Node) Rollback() {
 	for i := range node.OrigValue {
-		node.NodeValue[i] = node.OrigValue[i]
+		if i >= 0 && i < len(node.NodeValue) {
+			node.NodeValue[i] = node.OrigValue[i]
+		}
 	}
 }
 
@@ -150,7 +156,9 @@ func (node *Node) Rollback() {
 // 返回：对应位置的整数值，如果索引无效则返回0。
 func (node *Node) GetInt(i int) int {
 	if i >= 0 && i < len(node.NodeValue) {
-		return node.NodeValue[i].(int)
+		if v, ok := node.NodeValue[i].(int); ok {
+			return v
+		}
 	}
 	return 0
 }
@@ -160,7 +168,9 @@ func (node *Node) GetInt(i int) int {
 // 返回：对应位置的逻辑值，如果索引无效则返回false。
 func (node *Node) GetBool(i int) bool {
 	if i >= 0 && i < len(node.NodeValue) {
-		return node.NodeValue[i].(bool)
+		if v, ok := node.NodeValue[i].(bool); ok {
+			return v
+		}
 	}
 	return false
 }
@@ -170,7 +180,9 @@ func (node *Node) GetBool(i int) bool {
 // 返回：对应位置的字符串，如果索引无效则返回空字符串。
 func (node *Node) GetString(i int) string {
 	if i >= 0 && i < len(node.NodeValue) {
-		return node.NodeValue[i].(string)
+		if v, ok := node.NodeValue[i].(string); ok {
+			return v
+		}
 	}
 	return ""
 }
@@ -180,7 +192,9 @@ func (node *Node) GetString(i int) string {
 // 返回：对应位置的浮点数值，如果索引无效则返回0。
 func (node *Node) GetFloat64(i int) float64 {
 	if i >= 0 && i < len(node.NodeValue) {
-		return node.NodeValue[i].(float64)
+		if v, ok := node.NodeValue[i].(float64); ok {
+			return v
+		}
 	}
 	return 0
 }

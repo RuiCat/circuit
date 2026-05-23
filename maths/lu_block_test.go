@@ -95,15 +95,26 @@ func TestLUBlockDecomposition(t *testing.T) {
 	}
 
 	// 从分解结果中提取 L 和 U
-	luA := lu.(*luBlock[float64]).A
+	luBlockImpl := lu.(*luBlock[float64])
+	luA := luBlockImpl.A
 	L, U := getLUMatrices(luA)
 
-	// 计算 L * U
-	reconstructedA := multiplyMatrices(L, U)
+	// 计算 L * U (这等于 PA，而非 A)
+	reconstructedPA := multiplyMatrices(L, U)
 
-	// 比较原始矩阵 A 和重构的矩阵 L*U
-	if !matrixEquals(A, reconstructedA, 1e-9) {
-		t.Errorf("Matrix A and reconstructed L*U are not equal.Original A:\n%vReconstructed A:\n%vL:\n%vU:\n%v", A, reconstructedA, L, U)
+	// 根据置换向量构造 PA（将 A 的行按 perm 重排）
+	n := A.Rows()
+	PA := NewDenseMatrix[float64](n, n)
+	for i := 0; i < n; i++ {
+		srcRow := luBlockImpl.perm[i]
+		for j := 0; j < n; j++ {
+			PA.Set(i, j, A.Get(srcRow, j))
+		}
+	}
+
+	// 比较置换后的矩阵 PA 和重构的矩阵 L*U
+	if !matrixEquals(PA, reconstructedPA, 1e-9) {
+		t.Errorf("Permuted A (PA) and reconstructed L*U are not equal.\nPA:\n%vReconstructed L*U:\n%vL:\n%vU:\n%vPermutation: %v", PA, reconstructedPA, L, U, luBlockImpl.perm)
 	}
 }
 
@@ -168,11 +179,21 @@ func TestLUBlockDecompositionLarge(t *testing.T) {
 		t.Fatalf("Decomposition failed for large matrix: %v", err)
 	}
 
-	luA := lu.(*luBlock[float64]).A
+	luBlockImpl := lu.(*luBlock[float64])
+	luA := luBlockImpl.A
 	L, U := getLUMatrices(luA)
-	reconstructedA := multiplyMatrices(L, U)
+	reconstructedPA := multiplyMatrices(L, U)
 
-	if !matrixEquals(A, reconstructedA, 1e-9) {
-		t.Errorf("Large matrix decomposition failed to reconstruct original matrix.")
+	// 构造 PA 用于比较
+	PA := NewDenseMatrix[float64](n, n)
+	for i := 0; i < n; i++ {
+		srcRow := luBlockImpl.perm[i]
+		for j := 0; j < n; j++ {
+			PA.Set(i, j, A.Get(srcRow, j))
+		}
+	}
+
+	if !matrixEquals(PA, reconstructedPA, 1e-9) {
+		t.Errorf("Large matrix decomposition failed to reconstruct permuted original matrix.")
 	}
 }

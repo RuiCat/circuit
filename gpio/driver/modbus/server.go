@@ -249,6 +249,13 @@ func (s *Server) Start() error {
 		s.mu.Unlock()
 		return errors.New("server already running")
 	}
+	// 检测 stopChan 是否已被 Stop() 关闭，若是则重建通道以支持 Start()->Stop()->Start() 的重新启动场景。
+	// 重新创建 stopChan（如果之前被 Stop() 关闭了）
+	select {
+	case <-s.stopChan:
+		s.stopChan = make(chan struct{})
+	default:
+	}
 	s.running = true
 	s.mu.Unlock()
 
@@ -269,23 +276,37 @@ func (s *Server) Stop() {
 
 // listenLoop 监听循环，处理接收到的请求
 func (s *Server) listenLoop() {
+	// 使用缓冲 channel 在单独的 goroutine 中进行 UART 读取
+	readChan := make(chan struct {
+		data []byte
+		err  error
+	}, 1)
 	for {
+		// 在独立 goroutine 中异步执行 UART 读取，通过非阻塞 select 等待结果或 stopChan 信号，避免阻塞事件循环。
+		go func() {
+			data, err := s.uart.Read(256)
+			select {
+			case readChan <- struct {
+				data []byte
+				err  error
+			}{data, err}:
+			default:
+			}
+		}()
 		select {
 		case <-s.stopChan:
 			return
-		default:
-			// 读取数据
-			data, err := s.uart.Read(256)
-			if err != nil {
-				continue
-			}
-			if len(data) == 0 {
+		case result := <-readChan:
+			if result.err != nil {
 				time.Sleep(s.timeout / 10)
 				continue
 			}
-
+			if len(result.data) == 0 {
+				time.Sleep(s.timeout / 10)
+				continue
+			}
 			// 处理接收到的数据
-			s.processFrame(data)
+			s.processFrame(result.data)
 		}
 	}
 }
@@ -311,6 +332,14 @@ func (s *Server) processFrame(frame []byte) {
 	// 解析 PDU
 	pdu := frame[1 : len(frame)-2]
 	if len(pdu) == 0 {
+		return
+	}
+
+	// 符合 Modbus RTU 规范：广播帧（地址 0）需要处理请求但不得发送响应，以避免总线上多个从站同时应答造成冲突。
+	// Modbus RTU规范：广播帧（地址0）不应返回响应
+	if frame[0] == 0 {
+		// 仅处理请求，不发送响应
+		s.handleRequest(pdu)
 		return
 	}
 
@@ -593,6 +622,11 @@ func (s *Server) handleWriteMultipleCoils(pdu []byte) []byte {
 	address := uint16(pdu[1])<<8 | uint16(pdu[2])
 	quantity := uint16(pdu[3])<<8 | uint16(pdu[4])
 	byteCount := int(pdu[5])
+	expectedBytes := (int(quantity) + 7) / 8
+	// 校验 byteCount 与 quantity 推导的期望字节数一致，防止 PDU 帧损坏导致缓冲区读取越界。
+	if byteCount != expectedBytes {
+		return []byte{pdu[0] | 0x80, ExceptionIllegalDataValue}
+	}
 
 	if quantity < 1 || quantity > 1968 {
 		return []byte{pdu[0] | 0x80, ExceptionIllegalDataValue}
@@ -641,6 +675,7 @@ func (s *Server) handleWriteMultipleRegisters(pdu []byte) []byte {
 		return []byte{pdu[0] | 0x80, ExceptionIllegalDataValue}
 	}
 
+	// 校验 byteCount == quantity * 2，防止因 PDU 帧损坏导致越界读取。
 	if byteCount != int(quantity)*2 {
 		return []byte{pdu[0] | 0x80, ExceptionIllegalDataValue}
 	}
