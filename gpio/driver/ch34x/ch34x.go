@@ -1,116 +1,343 @@
 package ch34x
 
 /*
-#cgo linux,amd64 LDFLAGS: -L${SRCDIR}/lib/x64 -lch347
-#cgo linux,386 LDFLAGS: -L${SRCDIR}/lib/x86 -lch347
-#cgo linux,arm64 LDFLAGS: -L${SRCDIR}/lib/aarch64 -lch347
-#cgo linux,arm LDFLAGS: -L${SRCDIR}/lib/arm-gnueabihf -lch347
-#cgo windows,amd64 LDFLAGS: -L${SRCDIR}/lib/win -lCH347DLL
-#cgo windows,386 LDFLAGS: -L${SRCDIR}/lib/win -lCH347DLL
-#cgo !linux,!windows LDFLAGS: -lch347
-
+#include <dlfcn.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdlib.h>
 
-// 动态加载的C函数的前向声明
-// 这些函数在CH347动态库中定义
+// ===== 函数指针类型定义 =====
+// 每个类型对应一个 C 函数签名
 
-const char* CH347GetLibInfo(void);
-int CH347OpenDevice(const char *pathname);
-bool CH347CloseDevice(int fd);
-bool CH34xSetTimeout(int fd, uint32_t iWriteTimeout, uint32_t iReadTimeout);
-bool CH34x_GetDriverVersion(int fd, unsigned char *Drv_Version);
-bool CH34x_GetChipVersion(int fd, unsigned char *Version);
-bool CH34x_GetChipType(int fd, void *ChipType);
-bool CH34X_GetDeviceID(int fd, uint32_t *id);
-bool CH347_OE_Enable(int fd);
-bool CH347SPI_GetHwStreamCfg(int fd, void *StreamCfg);
-bool CH347SPI_SetFrequency(int fd, uint32_t iSpiSpeedHz);
-bool CH347SPI_SetAutoCS(int fd, bool disable);
-bool CH347SPI_SetDataBits(int fd, uint8_t iDataBits);
-bool CH347SPI_Init(int fd, void *SpiCfg);
-bool CH347SPI_GetCfg(int fd, void *SpiCfg);
-bool CH347SPI_ChangeCS(int fd, uint8_t iStatus);
-bool CH347SPI_Write(int fd, bool ignoreCS, uint8_t iChipSelect, int iLength, int iWriteStep, void *ioBuffer);
-bool CH347SPI_Read(int fd, bool ignoreCS, uint8_t iChipSelect, int iLength, uint32_t *oLength, void *ioBuffer);
-bool CH347SPI_WriteRead(int fd, bool ignoreCS, uint8_t iChipSelect, int iLength, void *ioBuffer);
-int CH347Jtag_Reset(int fd);
-bool CH347Jtag_ResetTrst(int fd, bool TRSTLevel);
-bool CH347Jtag_INIT(int fd, uint8_t iClockRate);
-bool CH347Jtag_GetCfg(int fd, uint8_t *ClockRate);
-uint32_t CH347Jtag_ClockTms(uint8_t *BitBangPkt, uint32_t Tms, uint32_t BI);
-uint32_t CH347Jtag_IdleClock(uint8_t *BitBangPkt, uint32_t BI);
-bool CH347Jtag_TmsChange(int fd, uint8_t *tmsValue, uint32_t Step, uint32_t Skip);
-bool CH347Jtag_IoScan(int fd, uint8_t *DataBits, uint32_t DataBitsNb, bool IsRead);
-bool CH347Jtag_IoScanT(int fd, uint8_t *DataBits, uint32_t DataBitsNb, bool IsRead, bool IsLastPkt);
-bool CH347Jtag_WriteRead(int fd, bool IsDR, int iWriteBitLength, void *iWriteBitBuffer, uint32_t *oReadBitLength, void *oReadBitBuffer);
-bool CH347Jtag_WriteRead_Fast(int fd, bool IsDR, int iWriteLength, void *iWriteBuffer, uint32_t *oReadLength, void *oReadBuffer);
-bool CH347Jtag_SwitchTapState(int fd, uint8_t TapState);
-bool CH347Jtag_ByteWriteDR(int fd, int iWriteLength, void *iWriteBuffer);
-bool CH347Jtag_ByteReadDR(int fd, uint32_t *oReadLength, void *oReadBuffer);
-bool CH347Jtag_ByteWriteIR(int fd, int iWriteLength, void *iWriteBuffer);
-bool CH347Jtag_ByteReadIR(int fd, uint32_t *oReadLength, void *oReadBuffer);
-bool CH347Jtag_BitWriteDR(int fd, int iWriteBitLength, void *iWriteBitBuffer);
-bool CH347Jtag_BitWriteIR(int fd, int iWriteBitLength, void *iWriteBitBuffer);
-bool CH347Jtag_BitReadIR(int fd, uint32_t *oReadBitLength, void *oReadBitBuffer);
-bool CH347Jtag_BitReadDR(int fd, uint32_t *oReadBitLength, void *oReadBitBuffer);
-bool CH347GPIO_Get(int fd, uint8_t *iDir, uint8_t *iData);
-bool CH347GPIO_Set(int fd, uint8_t iEnable, uint8_t iSetDirOut, uint8_t iSetDataOut);
-bool CH347GPIO_IRQ_Set(int fd, uint8_t gpioindex, bool enable, uint8_t irqtype, void *isr_handler);
-int CH347Uart_Open(const char *pathname);
-bool CH347Uart_Close(int fd);
-bool CH347Uart_GetCfg(int fd, uint32_t *BaudRate, uint8_t *ByteSize, uint8_t *Parity, uint8_t *StopBits, uint8_t *ByteTimeout);
-bool CH347Uart_Init(int fd, int BaudRate, uint8_t ByteSize, uint8_t Parity, uint8_t StopBits, uint8_t ByteTimeout);
-bool CH347Uart_Read(int fd, void *oBuffer, uint32_t *ioLength);
-bool CH347Uart_Write(int fd, void *iBuffer, uint32_t *ioLength);
-bool CH347I2C_Set(int fd, int iMode);
-bool CH347I2C_SetStretch(int fd, bool enable);
-bool CH347I2C_SetDriveMode(int fd, uint8_t mode);
-bool CH347I2C_SetIgnoreNack(int fd, uint8_t mode);
-bool CH347I2C_SetDelaymS(int fd, int iDelay);
-bool CH347I2C_SetAckClk_DelayuS(int fd, int iDelay);
-bool CH347StreamI2C(int fd, int iWriteLength, void *iWriteBuffer, int iReadLength, void *oReadBuffer);
-bool CH347StreamI2C_RetAck(int fd, int iWriteLength, void *iWriteBuffer, int iReadLength, void *oReadBuffer, int *retAck);
-bool CH347ReadEEPROM(int fd, int iEepromID, int iAddr, int iLength, uint8_t *oBuffer);
-bool CH347WriteEEPROM(int fd, int iEepromID, int iAddr, int iLength, uint8_t *iBuffer);
+// --- 基础设备操作 ---
+typedef int           (*t_CH347OpenDevice)(const char*);
+typedef bool          (*t_CH347CloseDevice)(int);
+typedef bool          (*t_CH34xSetTimeout)(int, uint32_t, uint32_t);
+typedef bool          (*t_CH34x_GetDriverVersion)(int, unsigned char*);
+typedef bool          (*t_CH34x_GetChipVersion)(int, unsigned char*);
+typedef bool          (*t_CH34x_GetChipType)(int, void*);
+typedef bool          (*t_CH34X_GetDeviceID)(int, uint32_t*);
+typedef bool          (*t_CH347_OE_Enable)(int);
+
+// --- SPI ---
+typedef bool          (*t_CH347SPI_GetHwStreamCfg)(int, void*);
+typedef bool          (*t_CH347SPI_SetFrequency)(int, uint32_t);
+typedef bool          (*t_CH347SPI_SetAutoCS)(int, bool);
+typedef bool          (*t_CH347SPI_SetDataBits)(int, uint8_t);
+typedef bool          (*t_CH347SPI_Init)(int, void*);
+typedef bool          (*t_CH347SPI_GetCfg)(int, void*);
+typedef bool          (*t_CH347SPI_ChangeCS)(int, uint8_t);
+typedef bool          (*t_CH347SPI_Write)(int, bool, uint8_t, int, int, void*);
+typedef bool          (*t_CH347SPI_Read)(int, bool, uint8_t, int, uint32_t*, void*);
+typedef bool          (*t_CH347SPI_WriteRead)(int, bool, uint8_t, int, void*);
+
+// --- JTAG ---
+typedef int           (*t_CH347Jtag_Reset)(int);
+typedef bool          (*t_CH347Jtag_ResetTrst)(int, bool);
+typedef bool          (*t_CH347Jtag_INIT)(int, uint8_t);
+typedef bool          (*t_CH347Jtag_GetCfg)(int, uint8_t*);
+typedef uint32_t      (*t_CH347Jtag_ClockTms)(uint8_t*, uint32_t, uint32_t);
+typedef uint32_t      (*t_CH347Jtag_IdleClock)(uint8_t*, uint32_t);
+typedef bool          (*t_CH347Jtag_TmsChange)(int, uint8_t*, uint32_t, uint32_t);
+typedef bool          (*t_CH347Jtag_IoScan)(int, uint8_t*, uint32_t, bool);
+typedef bool          (*t_CH347Jtag_IoScanT)(int, uint8_t*, uint32_t, bool, bool);
+typedef bool          (*t_CH347Jtag_WriteRead)(int, bool, int, void*, uint32_t*, void*);
+typedef bool          (*t_CH347Jtag_WriteRead_Fast)(int, bool, int, void*, uint32_t*, void*);
+typedef bool          (*t_CH347Jtag_SwitchTapState)(int, uint8_t);
+typedef bool          (*t_CH347Jtag_ByteWriteDR)(int, int, void*);
+typedef bool          (*t_CH347Jtag_ByteReadDR)(int, uint32_t*, void*);
+typedef bool          (*t_CH347Jtag_ByteWriteIR)(int, int, void*);
+typedef bool          (*t_CH347Jtag_ByteReadIR)(int, uint32_t*, void*);
+typedef bool          (*t_CH347Jtag_BitWriteDR)(int, int, void*);
+typedef bool          (*t_CH347Jtag_BitWriteIR)(int, int, void*);
+typedef bool          (*t_CH347Jtag_BitReadIR)(int, uint32_t*, void*);
+typedef bool          (*t_CH347Jtag_BitReadDR)(int, uint32_t*, void*);
+
+// --- GPIO ---
+typedef bool          (*t_CH347GPIO_Get)(int, uint8_t*, uint8_t*);
+typedef bool          (*t_CH347GPIO_Set)(int, uint8_t, uint8_t, uint8_t);
+typedef bool          (*t_CH347GPIO_IRQ_Set)(int, uint8_t, bool, uint8_t, void*);
+
+// --- UART ---
+typedef int           (*t_CH347Uart_Open)(const char*);
+typedef bool          (*t_CH347Uart_Close)(int);
+typedef bool          (*t_CH347Uart_GetCfg)(int, uint32_t*, uint8_t*, uint8_t*, uint8_t*, uint8_t*);
+typedef bool          (*t_CH347Uart_Init)(int, int, uint8_t, uint8_t, uint8_t, uint8_t);
+typedef bool          (*t_CH347Uart_Read)(int, void*, uint32_t*);
+typedef bool          (*t_CH347Uart_Write)(int, void*, uint32_t*);
+
+// --- I2C ---
+typedef bool          (*t_CH347I2C_Set)(int, int);
+typedef bool          (*t_CH347I2C_SetStretch)(int, bool);
+typedef bool          (*t_CH347I2C_SetDriveMode)(int, uint8_t);
+typedef bool          (*t_CH347I2C_SetIgnoreNack)(int, uint8_t);
+typedef bool          (*t_CH347I2C_SetDelaymS)(int, int);
+typedef bool          (*t_CH347I2C_SetAckClk_DelayuS)(int, int);
+typedef bool          (*t_CH347StreamI2C)(int, int, void*, int, void*);
+typedef bool          (*t_CH347StreamI2C_RetAck)(int, int, void*, int, void*, int*);
+
+// --- EEPROM ---
+typedef bool          (*t_CH347ReadEEPROM)(int, int, int, int, uint8_t*);
+typedef bool          (*t_CH347WriteEEPROM)(int, int, int, int, uint8_t*);
+
+// --- Lib Info ---
+typedef const char*   (*t_CH347GetLibInfo)(void);
+
+// ===== 静态函数指针变量 =====
+// 内部使用 _fp_ 前缀命名，Go 通过同名包装函数 pXXX 访问
+
+// 基础设备操作
+static t_CH347OpenDevice          _fp_OpenDevice;
+static t_CH347CloseDevice         _fp_CloseDevice;
+static t_CH34xSetTimeout          _fp_SetTimeout;
+static t_CH34x_GetDriverVersion   _fp_GetDriverVersion;
+static t_CH34x_GetChipVersion     _fp_GetChipVersion;
+static t_CH34x_GetChipType        _fp_GetChipType;
+static t_CH34X_GetDeviceID        _fp_GetDeviceID;
+static t_CH347_OE_Enable          _fp_OEEnable;
+// SPI
+static t_CH347SPI_GetHwStreamCfg  _fp_SPIGetHwStreamCfg;
+static t_CH347SPI_SetFrequency    _fp_SPISetFrequency;
+static t_CH347SPI_SetAutoCS       _fp_SPISetAutoCS;
+static t_CH347SPI_SetDataBits     _fp_SPISetDataBits;
+static t_CH347SPI_Init            _fp_SPIInit;
+static t_CH347SPI_GetCfg          _fp_SPIGetCfg;
+static t_CH347SPI_ChangeCS        _fp_SPIChangeCS;
+static t_CH347SPI_Write           _fp_SPIWrite;
+static t_CH347SPI_Read            _fp_SPIRead;
+static t_CH347SPI_WriteRead       _fp_SPIWriteRead;
+// JTAG
+static t_CH347Jtag_Reset          _fp_JtagReset;
+static t_CH347Jtag_ResetTrst      _fp_JtagResetTrst;
+static t_CH347Jtag_INIT           _fp_JtagInit;
+static t_CH347Jtag_GetCfg         _fp_JtagGetCfg;
+static t_CH347Jtag_ClockTms       _fp_JtagClockTms;
+static t_CH347Jtag_IdleClock      _fp_JtagIdleClock;
+static t_CH347Jtag_TmsChange      _fp_JtagTmsChange;
+static t_CH347Jtag_IoScan         _fp_JtagIoScan;
+static t_CH347Jtag_IoScanT        _fp_JtagIoScanT;
+static t_CH347Jtag_WriteRead      _fp_JtagWriteRead;
+static t_CH347Jtag_WriteRead_Fast _fp_JtagWriteReadFast;
+static t_CH347Jtag_SwitchTapState _fp_JtagSwitchTapState;
+static t_CH347Jtag_ByteWriteDR    _fp_JtagByteWriteDR;
+static t_CH347Jtag_ByteReadDR     _fp_JtagByteReadDR;
+static t_CH347Jtag_ByteWriteIR    _fp_JtagByteWriteIR;
+static t_CH347Jtag_ByteReadIR     _fp_JtagByteReadIR;
+static t_CH347Jtag_BitWriteDR     _fp_JtagBitWriteDR;
+static t_CH347Jtag_BitWriteIR     _fp_JtagBitWriteIR;
+static t_CH347Jtag_BitReadIR      _fp_JtagBitReadIR;
+static t_CH347Jtag_BitReadDR      _fp_JtagBitReadDR;
+// GPIO
+static t_CH347GPIO_Get            _fp_GPIOGet;
+static t_CH347GPIO_Set            _fp_GPIOSet;
+static t_CH347GPIO_IRQ_Set        _fp_GPIOIRQSet;
+// UART
+static t_CH347Uart_Open           _fp_UartOpen;
+static t_CH347Uart_Close          _fp_UartClose;
+static t_CH347Uart_GetCfg         _fp_UartGetCfg;
+static t_CH347Uart_Init           _fp_UartInit;
+static t_CH347Uart_Read           _fp_UartRead;
+static t_CH347Uart_Write          _fp_UartWrite;
+// I2C
+static t_CH347I2C_Set             _fp_I2CSet;
+static t_CH347I2C_SetStretch      _fp_I2CSetStretch;
+static t_CH347I2C_SetDriveMode    _fp_I2CSetDriveMode;
+static t_CH347I2C_SetIgnoreNack   _fp_I2CSetIgnoreNack;
+static t_CH347I2C_SetDelaymS      _fp_I2CSetDelaymS;
+static t_CH347I2C_SetAckClk_DelayuS _fp_I2CSetAckClkDelayuS;
+static t_CH347StreamI2C           _fp_StreamI2C;
+static t_CH347StreamI2C_RetAck    _fp_StreamI2CRetAck;
+// EEPROM
+static t_CH347ReadEEPROM          _fp_ReadEEPROM;
+static t_CH347WriteEEPROM         _fp_WriteEEPROM;
+// Lib Info
+static t_CH347GetLibInfo          _fp_GetLibInfo;
+
+
+// ===== 包装函数：Go 通过 C.pXXX 调用这些函数 =====
+
+// 基础设备操作
+static int           pOpenDevice(const char* a)          { return _fp_OpenDevice(a); }
+static bool          pCloseDevice(int a)                  { return _fp_CloseDevice(a); }
+static bool          pSetTimeout(int a, uint32_t b, uint32_t c)  { return _fp_SetTimeout(a,b,c); }
+static bool          pGetDriverVersion(int a, unsigned char* b)  { return _fp_GetDriverVersion(a,b); }
+static bool          pGetChipVersion(int a, unsigned char* b)    { return _fp_GetChipVersion(a,b); }
+static bool          pGetChipType(int a, void* b)         { return _fp_GetChipType(a,b); }
+static bool          pGetDeviceID(int a, uint32_t* b)     { return _fp_GetDeviceID(a,b); }
+static bool          pOEEnable(int a)                     { return _fp_OEEnable(a); }
+
+// SPI
+static bool          pSPIGetHwStreamCfg(int a, void* b)   { return _fp_SPIGetHwStreamCfg(a,b); }
+static bool          pSPISetFrequency(int a, uint32_t b)   { return _fp_SPISetFrequency(a,b); }
+static bool          pSPISetAutoCS(int a, bool b)          { return _fp_SPISetAutoCS(a,b); }
+static bool          pSPISetDataBits(int a, uint8_t b)     { return _fp_SPISetDataBits(a,b); }
+static bool          pSPIInit(int a, void* b)              { return _fp_SPIInit(a,b); }
+static bool          pSPIGetCfg(int a, void* b)            { return _fp_SPIGetCfg(a,b); }
+static bool          pSPIChangeCS(int a, uint8_t b)        { return _fp_SPIChangeCS(a,b); }
+static bool          pSPIWrite(int a, bool b, uint8_t c, int d, int e, void* f) { return _fp_SPIWrite(a,b,c,d,e,f); }
+static bool          pSPIRead(int a, bool b, uint8_t c, int d, uint32_t* e, void* f) { return _fp_SPIRead(a,b,c,d,e,f); }
+static bool          pSPIWriteRead(int a, bool b, uint8_t c, int d, void* e) { return _fp_SPIWriteRead(a,b,c,d,e); }
+
+// JTAG
+static int           pJtagReset(int a)                    { return _fp_JtagReset(a); }
+static bool          pJtagResetTrst(int a, bool b)        { return _fp_JtagResetTrst(a,b); }
+static bool          pJtagInit(int a, uint8_t b)          { return _fp_JtagInit(a,b); }
+static bool          pJtagGetCfg(int a, uint8_t* b)       { return _fp_JtagGetCfg(a,b); }
+static uint32_t      pJtagClockTms(uint8_t* a, uint32_t b, uint32_t c) { return _fp_JtagClockTms(a,b,c); }
+static uint32_t      pJtagIdleClock(uint8_t* a, uint32_t b) { return _fp_JtagIdleClock(a,b); }
+static bool          pJtagTmsChange(int a, uint8_t* b, uint32_t c, uint32_t d) { return _fp_JtagTmsChange(a,b,c,d); }
+static bool          pJtagIoScan(int a, uint8_t* b, uint32_t c, bool d) { return _fp_JtagIoScan(a,b,c,d); }
+static bool          pJtagIoScanT(int a, uint8_t* b, uint32_t c, bool d, bool e) { return _fp_JtagIoScanT(a,b,c,d,e); }
+static bool          pJtagWriteRead(int a, bool b, int c, void* d, uint32_t* e, void* f) { return _fp_JtagWriteRead(a,b,c,d,e,f); }
+static bool          pJtagWriteReadFast(int a, bool b, int c, void* d, uint32_t* e, void* f) { return _fp_JtagWriteReadFast(a,b,c,d,e,f); }
+static bool          pJtagSwitchTapState(int a, uint8_t b) { return _fp_JtagSwitchTapState(a,b); }
+static bool          pJtagByteWriteDR(int a, int b, void* c) { return _fp_JtagByteWriteDR(a,b,c); }
+static bool          pJtagByteReadDR(int a, uint32_t* b, void* c) { return _fp_JtagByteReadDR(a,b,c); }
+static bool          pJtagByteWriteIR(int a, int b, void* c) { return _fp_JtagByteWriteIR(a,b,c); }
+static bool          pJtagByteReadIR(int a, uint32_t* b, void* c) { return _fp_JtagByteReadIR(a,b,c); }
+static bool          pJtagBitWriteDR(int a, int b, void* c) { return _fp_JtagBitWriteDR(a,b,c); }
+static bool          pJtagBitWriteIR(int a, int b, void* c) { return _fp_JtagBitWriteIR(a,b,c); }
+static bool          pJtagBitReadIR(int a, uint32_t* b, void* c) { return _fp_JtagBitReadIR(a,b,c); }
+static bool          pJtagBitReadDR(int a, uint32_t* b, void* c) { return _fp_JtagBitReadDR(a,b,c); }
+
+// GPIO
+static bool          pGPIOGet(int a, uint8_t* b, uint8_t* c) { return _fp_GPIOGet(a,b,c); }
+static bool          pGPIOSet(int a, uint8_t b, uint8_t c, uint8_t d) { return _fp_GPIOSet(a,b,c,d); }
+static bool          pGPIOIRQSet(int a, uint8_t b, bool c, uint8_t d, void* e) { return _fp_GPIOIRQSet(a,b,c,d,e); }
+
+// UART
+static int           pUartOpen(const char* a)             { return _fp_UartOpen(a); }
+static bool          pUartClose(int a)                     { return _fp_UartClose(a); }
+static bool          pUartGetCfg(int a, uint32_t* b, uint8_t* c, uint8_t* d, uint8_t* e, uint8_t* f) { return _fp_UartGetCfg(a,b,c,d,e,f); }
+static bool          pUartInit(int a, int b, uint8_t c, uint8_t d, uint8_t e, uint8_t f) { return _fp_UartInit(a,b,c,d,e,f); }
+static bool          pUartRead(int a, void* b, uint32_t* c) { return _fp_UartRead(a,b,c); }
+static bool          pUartWrite(int a, void* b, uint32_t* c) { return _fp_UartWrite(a,b,c); }
+
+// I2C
+static bool          pI2CSet(int a, int b)                { return _fp_I2CSet(a,b); }
+static bool          pI2CSetStretch(int a, bool b)         { return _fp_I2CSetStretch(a,b); }
+static bool          pI2CSetDriveMode(int a, uint8_t b)    { return _fp_I2CSetDriveMode(a,b); }
+static bool          pI2CSetIgnoreNack(int a, uint8_t b)   { return _fp_I2CSetIgnoreNack(a,b); }
+static bool          pI2CSetDelaymS(int a, int b)          { return _fp_I2CSetDelaymS(a,b); }
+static bool          pI2CSetAckClkDelayuS(int a, int b)    { return _fp_I2CSetAckClkDelayuS(a,b); }
+static bool          pStreamI2C(int a, int b, void* c, int d, void* e) { return _fp_StreamI2C(a,b,c,d,e); }
+static bool          pStreamI2CRetAck(int a, int b, void* c, int d, void* e, int* f) { return _fp_StreamI2CRetAck(a,b,c,d,e,f); }
+
+// EEPROM
+static bool          pReadEEPROM(int a, int b, int c, int d, uint8_t* e) { return _fp_ReadEEPROM(a,b,c,d,e); }
+static bool          pWriteEEPROM(int a, int b, int c, int d, uint8_t* e) { return _fp_WriteEEPROM(a,b,c,d,e); }
+
+// Lib Info
+static const char*   pGetLibInfo(void)                    { return _fp_GetLibInfo(); }
+
+// ===== 符号加载器 =====
+// 使用宏简化重复的 dlsym 调用
+// 返回加载失败的符号数量（0 = 全部成功）
+static int load_ch34x_symbols(void* handle) {
+    int errors = 0;
+    #define L(var, type, name) do { \
+        var = (type)dlsym(handle, name); \
+        if (!var) errors++; \
+    } while(0)
+
+    L(_fp_OpenDevice,       t_CH347OpenDevice,       "CH347OpenDevice");
+    L(_fp_CloseDevice,      t_CH347CloseDevice,      "CH347CloseDevice");
+    L(_fp_SetTimeout,       t_CH34xSetTimeout,       "CH34xSetTimeout");
+    L(_fp_GetDriverVersion, t_CH34x_GetDriverVersion,"CH34x_GetDriverVersion");
+    L(_fp_GetChipVersion,   t_CH34x_GetChipVersion,  "CH34x_GetChipVersion");
+    L(_fp_GetChipType,      t_CH34x_GetChipType,     "CH34x_GetChipType");
+    L(_fp_GetDeviceID,      t_CH34X_GetDeviceID,     "CH34X_GetDeviceID");
+    L(_fp_OEEnable,         t_CH347_OE_Enable,       "CH347_OE_Enable");
+    L(_fp_SPIGetHwStreamCfg,t_CH347SPI_GetHwStreamCfg,"CH347SPI_GetHwStreamCfg");
+    L(_fp_SPISetFrequency,  t_CH347SPI_SetFrequency, "CH347SPI_SetFrequency");
+    L(_fp_SPISetAutoCS,     t_CH347SPI_SetAutoCS,    "CH347SPI_SetAutoCS");
+    L(_fp_SPISetDataBits,   t_CH347SPI_SetDataBits,  "CH347SPI_SetDataBits");
+    L(_fp_SPIInit,          t_CH347SPI_Init,         "CH347SPI_Init");
+    L(_fp_SPIGetCfg,        t_CH347SPI_GetCfg,       "CH347SPI_GetCfg");
+    L(_fp_SPIChangeCS,      t_CH347SPI_ChangeCS,     "CH347SPI_ChangeCS");
+    L(_fp_SPIWrite,         t_CH347SPI_Write,        "CH347SPI_Write");
+    L(_fp_SPIRead,          t_CH347SPI_Read,         "CH347SPI_Read");
+    L(_fp_SPIWriteRead,     t_CH347SPI_WriteRead,    "CH347SPI_WriteRead");
+    L(_fp_JtagReset,        t_CH347Jtag_Reset,       "CH347Jtag_Reset");
+    L(_fp_JtagResetTrst,    t_CH347Jtag_ResetTrst,   "CH347Jtag_ResetTrst");
+    L(_fp_JtagInit,         t_CH347Jtag_INIT,        "CH347Jtag_INIT");
+    L(_fp_JtagGetCfg,       t_CH347Jtag_GetCfg,      "CH347Jtag_GetCfg");
+    L(_fp_JtagClockTms,     t_CH347Jtag_ClockTms,    "CH347Jtag_ClockTms");
+    L(_fp_JtagIdleClock,    t_CH347Jtag_IdleClock,   "CH347Jtag_IdleClock");
+    L(_fp_JtagTmsChange,    t_CH347Jtag_TmsChange,   "CH347Jtag_TmsChange");
+    L(_fp_JtagIoScan,       t_CH347Jtag_IoScan,      "CH347Jtag_IoScan");
+    L(_fp_JtagIoScanT,      t_CH347Jtag_IoScanT,     "CH347Jtag_IoScanT");
+    L(_fp_JtagWriteRead,    t_CH347Jtag_WriteRead,   "CH347Jtag_WriteRead");
+    L(_fp_JtagWriteReadFast,t_CH347Jtag_WriteRead_Fast,"CH347Jtag_WriteRead_Fast");
+    L(_fp_JtagSwitchTapState,t_CH347Jtag_SwitchTapState,"CH347Jtag_SwitchTapState");
+    L(_fp_JtagByteWriteDR,  t_CH347Jtag_ByteWriteDR, "CH347Jtag_ByteWriteDR");
+    L(_fp_JtagByteReadDR,   t_CH347Jtag_ByteReadDR,  "CH347Jtag_ByteReadDR");
+    L(_fp_JtagByteWriteIR,  t_CH347Jtag_ByteWriteIR, "CH347Jtag_ByteWriteIR");
+    L(_fp_JtagByteReadIR,   t_CH347Jtag_ByteReadIR,  "CH347Jtag_ByteReadIR");
+    L(_fp_JtagBitWriteDR,   t_CH347Jtag_BitWriteDR,  "CH347Jtag_BitWriteDR");
+    L(_fp_JtagBitWriteIR,   t_CH347Jtag_BitWriteIR,  "CH347Jtag_BitWriteIR");
+    L(_fp_JtagBitReadIR,    t_CH347Jtag_BitReadIR,   "CH347Jtag_BitReadIR");
+    L(_fp_JtagBitReadDR,    t_CH347Jtag_BitReadDR,   "CH347Jtag_BitReadDR");
+    L(_fp_GPIOGet,          t_CH347GPIO_Get,         "CH347GPIO_Get");
+    L(_fp_GPIOSet,          t_CH347GPIO_Set,         "CH347GPIO_Set");
+    L(_fp_GPIOIRQSet,       t_CH347GPIO_IRQ_Set,     "CH347GPIO_IRQ_Set");
+    L(_fp_UartOpen,         t_CH347Uart_Open,        "CH347Uart_Open");
+    L(_fp_UartClose,        t_CH347Uart_Close,       "CH347Uart_Close");
+    L(_fp_UartGetCfg,       t_CH347Uart_GetCfg,      "CH347Uart_GetCfg");
+    L(_fp_UartInit,         t_CH347Uart_Init,        "CH347Uart_Init");
+    L(_fp_UartRead,         t_CH347Uart_Read,        "CH347Uart_Read");
+    L(_fp_UartWrite,        t_CH347Uart_Write,       "CH347Uart_Write");
+    L(_fp_I2CSet,           t_CH347I2C_Set,          "CH347I2C_Set");
+    L(_fp_I2CSetStretch,    t_CH347I2C_SetStretch,   "CH347I2C_SetStretch");
+    L(_fp_I2CSetDriveMode,  t_CH347I2C_SetDriveMode, "CH347I2C_SetDriveMode");
+    L(_fp_I2CSetIgnoreNack, t_CH347I2C_SetIgnoreNack,"CH347I2C_SetIgnoreNack");
+    L(_fp_I2CSetDelaymS,    t_CH347I2C_SetDelaymS,   "CH347I2C_SetDelaymS");
+    L(_fp_I2CSetAckClkDelayuS,t_CH347I2C_SetAckClk_DelayuS,"CH347I2C_SetAckClk_DelayuS");
+    L(_fp_StreamI2C,        t_CH347StreamI2C,        "CH347StreamI2C");
+    L(_fp_StreamI2CRetAck,  t_CH347StreamI2C_RetAck, "CH347StreamI2C_RetAck");
+    L(_fp_ReadEEPROM,       t_CH347ReadEEPROM,       "CH347ReadEEPROM");
+    L(_fp_WriteEEPROM,      t_CH347WriteEEPROM,      "CH347WriteEEPROM");
+    L(_fp_GetLibInfo,       t_CH347GetLibInfo,       "CH347GetLibInfo");
+
+    #undef L
+    return errors;
+}
 */
 import "C"
 import (
 	"circuit/gpio/driver"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
 	"sync"
 	"unsafe"
 )
 
-// CH347库中的常量
 const (
 	ErrInvalid = -1
 	ErrRange   = -2
 	ErrIoctl   = -3
 
-	CH347SPIMaxFreq = 60000000 // 60 MHz
-	CH347SPIMinFreq = 218750   // 218.75 kHz
+	CH347SPIMaxFreq = 60000000
+	CH347SPIMinFreq = 218750
 
 	IRQTypeNone        = 0
 	IRQTypeEdgeRising  = 1
 	IRQTypeEdgeFalling = 2
 	IRQTypeEdgeBoth    = 3
 
-	// FuncType 枚举
 	TypeTTY = 0
 	TypeHID = 1
 	TypeVCP = 2
 
-	// ChipMode 枚举
-	ChipMode0 = 0 // Mode0(UART0/UART1)
-	ChipMode1 = 1 // Mode1(UART1+SPI+I2C)
-	ChipMode2 = 2 // Mode2(HID UART1+SPI+I2C)
-	ChipMode3 = 3 // Mode3(UART1+JTAG+I2C)
+	ChipMode0 = 0
+	ChipMode1 = 1
+	ChipMode2 = 2
+	ChipMode3 = 3
 )
 
-// EEPROMType 表示CH347支持的EEPROM类型
 type EEPROMType int
 
 const (
@@ -129,7 +356,6 @@ const (
 	ID24C4096
 )
 
-// ChipType 表示CH34x芯片类型
 type ChipType int
 
 const (
@@ -140,7 +366,6 @@ const (
 	ChipCH346C
 )
 
-// FuncType 表示功能类型(TTY, HID, VCP)
 type FuncType int
 
 const (
@@ -149,7 +374,6 @@ const (
 	FuncTypeVCP
 )
 
-// library represents a loaded CH347 dynamic library
 type library struct {
 	handle unsafe.Pointer
 	mu     sync.RWMutex
@@ -160,12 +384,28 @@ var (
 )
 
 func init() {
-	GlobalLib = &library{
-		handle: unsafe.Pointer(uintptr(1)), // Dummy handle
+	libPath := findLibPath()
+	cPath := C.CString(libPath)
+	defer C.free(unsafe.Pointer(cPath))
+
+	handle := C.dlopen(cPath, C.RTLD_NOW)
+	if handle == nil {
+		cErr := C.dlerror()
+		if cErr == nil {
+			panic("ch34x: failed to load CH34x library " + libPath + ": unknown error")
+		}
+		errMsg := C.GoString(cErr)
+		panic("ch34x: failed to load CH34x library " + libPath + ": " + errMsg)
 	}
+
+	missing := C.load_ch34x_symbols(handle)
+	if missing != 0 {
+		panic(fmt.Sprintf("ch34x: failed to resolve %d symbol(s) in CH34x library %s", int(missing), libPath))
+	}
+
+	GlobalLib = &library{handle: handle}
 }
 
-// Error represents a CH34x library error
 type Error struct {
 	Code    int
 	Message string
@@ -175,62 +415,67 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("ch34x error %d: %s", e.Code, e.Message)
 }
 
-// GetLibInfo 获取CH347库信息
+// Close 释放动态库句柄。调用后 GlobalLib 不可再使用。
+func (lib *library) Close() error {
+	lib.mu.Lock()
+	defer lib.mu.Unlock()
+	if lib.handle != nil {
+		C.dlclose(lib.handle)
+		lib.handle = nil
+	}
+	return nil
+}
+
 func (lib *library) GetLibInfo() string {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	cstr := C.CH347GetLibInfo()
+	cstr := C.pGetLibInfo()
 	if cstr == nil {
 		return ""
 	}
 	return C.GoString(cstr)
 }
 
-// OpenDevice 打开CH34x设备
 func (lib *library) OpenDevice(path string) (int, error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
 	cpath := C.CString(path)
 	defer C.free(unsafe.Pointer(cpath))
-	fd := C.CH347OpenDevice(cpath)
+	fd := C.pOpenDevice(cpath)
 	if fd < 0 {
 		return int(fd), &Error{Code: int(fd), Message: "failed to open device"}
 	}
 	return int(fd), nil
 }
 
-// CloseDevice 关闭CH34x设备
 func (lib *library) CloseDevice(fd int) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347CloseDevice(C.int(fd))
+	success := C.pCloseDevice(C.int(fd))
 	if !success {
 		return errors.New("failed to close device")
 	}
 	return nil
 }
 
-// SetTimeout 设置USB数据读写超时
 func (lib *library) SetTimeout(fd int, writeTimeout, readTimeout uint32) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH34xSetTimeout(C.int(fd), C.uint32_t(writeTimeout), C.uint32_t(readTimeout))
+	success := C.pSetTimeout(C.int(fd), C.uint32_t(writeTimeout), C.uint32_t(readTimeout))
 	if !success {
 		return errors.New("failed to set timeout")
 	}
 	return nil
 }
 
-// GetDriverVersion 获取厂商驱动版本
 func (lib *library) GetDriverVersion(fd int) ([]byte, error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
 	var version [256]byte
-	success := C.CH34x_GetDriverVersion(C.int(fd), (*C.uchar)(unsafe.Pointer(&version[0])))
+	success := C.pGetDriverVersion(C.int(fd), (*C.uchar)(unsafe.Pointer(&version[0])))
 	if !success {
 		return nil, errors.New("failed to get driver version")
 	}
-	// Find null terminator
 	for i := 0; i < len(version); i++ {
 		if version[i] == 0 {
 			return version[:i], nil
@@ -239,72 +484,66 @@ func (lib *library) GetDriverVersion(fd int) ([]byte, error) {
 	return version[:], nil
 }
 
-// GetChipVersion 获取芯片版本
 func (lib *library) GetChipVersion(fd int) (byte, error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
 	var version byte
-	success := C.CH34x_GetChipVersion(C.int(fd), (*C.uchar)(unsafe.Pointer(&version)))
+	success := C.pGetChipVersion(C.int(fd), (*C.uchar)(unsafe.Pointer(&version)))
 	if !success {
 		return 0, errors.New("failed to get chip version")
 	}
 	return version, nil
 }
 
-// GetChipType 获取芯片类型
 func (lib *library) GetChipType(fd int) (ChipType, error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
 	var chipType int
-	success := C.CH34x_GetChipType(C.int(fd), unsafe.Pointer(&chipType))
+	success := C.pGetChipType(C.int(fd), unsafe.Pointer(&chipType))
 	if !success {
 		return ChipCH341, errors.New("failed to get chip type")
 	}
 	return ChipType(chipType), nil
 }
 
-// GetDeviceID 获取设备VID和PID
 func (lib *library) GetDeviceID(fd int) (uint32, error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
 	var id uint32
-	success := C.CH34X_GetDeviceID(C.int(fd), (*C.uint32_t)(unsafe.Pointer(&id)))
+	success := C.pGetDeviceID(C.int(fd), (*C.uint32_t)(unsafe.Pointer(&id)))
 	if !success {
 		return 0, errors.New("failed to get device ID")
 	}
 	return id, nil
 }
 
-// SPISetFrequency 设置SPI频率
 func (lib *library) SPISetFrequency(fd int, freqHz uint32) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347SPI_SetFrequency(C.int(fd), C.uint32_t(freqHz))
+	success := C.pSPISetFrequency(C.int(fd), C.uint32_t(freqHz))
 	if !success {
 		return errors.New("failed to set SPI frequency")
 	}
 	return nil
 }
 
-// SPIInit 初始化SPI接口
 func (lib *library) SPIInit(fd int, cfg *driver.SPIConfig) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347SPI_Init(C.int(fd), unsafe.Pointer(cfg))
+	success := C.pSPIInit(C.int(fd), unsafe.Pointer(cfg))
 	if !success {
 		return errors.New("failed to initialize SPI")
 	}
 	return nil
 }
 
-// SPIWrite 写入SPI数据
 func (lib *library) SPIWrite(fd int, ignoreCS bool, chipSelect uint8, data []byte) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
 	if len(data) == 0 {
 		return nil
 	}
-	success := C.CH347SPI_Write(
+	success := C.pSPIWrite(
 		C.int(fd),
 		C.bool(ignoreCS),
 		C.uchar(chipSelect),
@@ -318,7 +557,6 @@ func (lib *library) SPIWrite(fd int, ignoreCS bool, chipSelect uint8, data []byt
 	return nil
 }
 
-// SPIRead 读取SPI数据
 func (lib *library) SPIRead(fd int, ignoreCS bool, chipSelect uint8, length int) ([]byte, error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
@@ -327,7 +565,7 @@ func (lib *library) SPIRead(fd int, ignoreCS bool, chipSelect uint8, length int)
 	}
 	buffer := make([]byte, length)
 	var outLength uint32
-	success := C.CH347SPI_Read(
+	success := C.pSPIRead(
 		C.int(fd),
 		C.bool(ignoreCS),
 		C.uchar(chipSelect),
@@ -344,17 +582,15 @@ func (lib *library) SPIRead(fd int, ignoreCS bool, chipSelect uint8, length int)
 	return buffer, nil
 }
 
-// SPIWriteRead 在全双工模式下写入和读取SPI数据
 func (lib *library) SPIWriteRead(fd int, ignoreCS bool, chipSelect uint8, data []byte) ([]byte, error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
 	if len(data) == 0 {
 		return nil, nil
 	}
-	// Create a copy for in/out buffer
 	buffer := make([]byte, len(data))
 	copy(buffer, data)
-	success := C.CH347SPI_WriteRead(
+	success := C.pSPIWriteRead(
 		C.int(fd),
 		C.bool(ignoreCS),
 		C.uchar(chipSelect),
@@ -367,65 +603,59 @@ func (lib *library) SPIWriteRead(fd int, ignoreCS bool, chipSelect uint8, data [
 	return buffer, nil
 }
 
-// GPIOGet 获取GPIO状态
 func (lib *library) GPIOGet(fd int) (dir, data uint8, err error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
 	var cDir, cData uint8
-	success := C.CH347GPIO_Get(C.int(fd), (*C.uchar)(unsafe.Pointer(&cDir)), (*C.uchar)(unsafe.Pointer(&cData)))
+	success := C.pGPIOGet(C.int(fd), (*C.uchar)(unsafe.Pointer(&cDir)), (*C.uchar)(unsafe.Pointer(&cData)))
 	if !success {
 		return 0, 0, errors.New("failed to get GPIO status")
 	}
 	return cDir, cData, nil
 }
 
-// GPIOSet 设置GPIO配置
 func (lib *library) GPIOSet(fd int, enable, dirOut, dataOut uint8) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347GPIO_Set(C.int(fd), C.uchar(enable), C.uchar(dirOut), C.uchar(dataOut))
+	success := C.pGPIOSet(C.int(fd), C.uchar(enable), C.uchar(dirOut), C.uchar(dataOut))
 	if !success {
 		return errors.New("failed to set GPIO")
 	}
 	return nil
 }
 
-// UartOpen 打开UART设备
 func (lib *library) UartOpen(path string) (int, error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
 	cpath := C.CString(path)
 	defer C.free(unsafe.Pointer(cpath))
-	fd := C.CH347Uart_Open(cpath)
+	fd := C.pUartOpen(cpath)
 	if fd < 0 {
 		return int(fd), &Error{Code: int(fd), Message: "failed to open UART device"}
 	}
 	return int(fd), nil
 }
 
-// UartClose 关闭UART设备
 func (lib *library) UartClose(fd int) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347Uart_Close(C.int(fd))
+	success := C.pUartClose(C.int(fd))
 	if !success {
 		return errors.New("failed to close UART device")
 	}
 	return nil
 }
 
-// UartInit 初始化UART设置
 func (lib *library) UartInit(fd, baudRate int, byteSize, parity, stopBits, byteTimeout uint8) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347Uart_Init(C.int(fd), C.int(baudRate), C.uchar(byteSize), C.uchar(parity), C.uchar(stopBits), C.uchar(byteTimeout))
+	success := C.pUartInit(C.int(fd), C.int(baudRate), C.uchar(byteSize), C.uchar(parity), C.uchar(stopBits), C.uchar(byteTimeout))
 	if !success {
 		return errors.New("failed to initialize UART")
 	}
 	return nil
 }
 
-// UartRead 从UART读取数据
 func (lib *library) UartRead(fd int, length int) ([]byte, error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
@@ -434,7 +664,7 @@ func (lib *library) UartRead(fd int, length int) ([]byte, error) {
 	}
 	buffer := make([]byte, length)
 	var outLength uint32 = uint32(length)
-	success := C.CH347Uart_Read(C.int(fd), unsafe.Pointer(&buffer[0]), (*C.uint32_t)(unsafe.Pointer(&outLength)))
+	success := C.pUartRead(C.int(fd), unsafe.Pointer(&buffer[0]), (*C.uint32_t)(unsafe.Pointer(&outLength)))
 	if !success {
 		return nil, errors.New("failed to read from UART")
 	}
@@ -444,7 +674,6 @@ func (lib *library) UartRead(fd int, length int) ([]byte, error) {
 	return buffer, nil
 }
 
-// UartWrite 向UART写入数据
 func (lib *library) UartWrite(fd int, data []byte) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
@@ -452,80 +681,73 @@ func (lib *library) UartWrite(fd int, data []byte) error {
 		return nil
 	}
 	var outLength uint32 = uint32(len(data))
-	success := C.CH347Uart_Write(C.int(fd), unsafe.Pointer(&data[0]), (*C.uint32_t)(unsafe.Pointer(&outLength)))
+	success := C.pUartWrite(C.int(fd), unsafe.Pointer(&data[0]), (*C.uint32_t)(unsafe.Pointer(&outLength)))
 	if !success || int(outLength) != len(data) {
 		return errors.New("failed to write to UART")
 	}
 	return nil
 }
 
-// I2CSet 配置I2C接口
 func (lib *library) I2CSet(fd int, mode int) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347I2C_Set(C.int(fd), C.int(mode))
+	success := C.pI2CSet(C.int(fd), C.int(mode))
 	if !success {
 		return errors.New("failed to configure I2C")
 	}
 	return nil
 }
 
-// i2cSetStretch 设置I2C时钟拉伸使能
 func (lib *library) i2cSetStretch(fd int, enable bool) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347I2C_SetStretch(C.int(fd), C.bool(enable))
+	success := C.pI2CSetStretch(C.int(fd), C.bool(enable))
 	if !success {
 		return errors.New("failed to set I2C stretch")
 	}
 	return nil
 }
 
-// i2cSetDriveMode 设置I2C驱动模式
 func (lib *library) i2cSetDriveMode(fd int, mode uint8) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347I2C_SetDriveMode(C.int(fd), C.uchar(mode))
+	success := C.pI2CSetDriveMode(C.int(fd), C.uchar(mode))
 	if !success {
 		return errors.New("failed to set I2C drive mode")
 	}
 	return nil
 }
 
-// i2cSetIgnoreNack 设置I2C忽略NACK模式
 func (lib *library) i2cSetIgnoreNack(fd int, mode uint8) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347I2C_SetIgnoreNack(C.int(fd), C.uchar(mode))
+	success := C.pI2CSetIgnoreNack(C.int(fd), C.uchar(mode))
 	if !success {
 		return errors.New("failed to set I2C ignore NACK")
 	}
 	return nil
 }
 
-// i2cSetDelayMS 设置I2C延迟（毫秒）
 func (lib *library) i2cSetDelayMS(fd int, delay int) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347I2C_SetDelaymS(C.int(fd), C.int(delay))
+	success := C.pI2CSetDelaymS(C.int(fd), C.int(delay))
 	if !success {
 		return errors.New("failed to set I2C delay")
 	}
 	return nil
 }
 
-// i2cSetAckClkDelay 设置I2C ACK时钟延迟（微秒）
 func (lib *library) i2cSetAckClkDelay(fd int, delay int) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347I2C_SetAckClk_DelayuS(C.int(fd), C.int(delay))
+	success := C.pI2CSetAckClkDelayuS(C.int(fd), C.int(delay))
 	if !success {
 		return errors.New("failed to set I2C ACK clock delay")
 	}
 	return nil
 }
 
-// i2cStreamWithAck 执行带ACK返回的I2C流操作
 func (lib *library) i2cStreamWithAck(fd int, writeData []byte, readLength int) ([]byte, int, error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
@@ -544,14 +766,13 @@ func (lib *library) i2cStreamWithAck(fd int, writeData []byte, readLength int) (
 		readPtr = unsafe.Pointer(&readBuffer[0])
 	}
 	var retAck int
-	success := C.CH347StreamI2C_RetAck(C.int(fd), C.int(writeLen), writePtr, C.int(readLength), readPtr, (*C.int)(unsafe.Pointer(&retAck)))
+	success := C.pStreamI2CRetAck(C.int(fd), C.int(writeLen), writePtr, C.int(readLength), readPtr, (*C.int)(unsafe.Pointer(&retAck)))
 	if !success {
 		return nil, 0, errors.New("failed to perform stream I2C operation with ACK")
 	}
 	return readBuffer, retAck, nil
 }
 
-// StreamI2C 在流模式下执行I2C写/读操作
 func (lib *library) StreamI2C(fd int, writeData []byte, readLength int) ([]byte, error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
@@ -569,47 +790,43 @@ func (lib *library) StreamI2C(fd int, writeData []byte, readLength int) ([]byte,
 	if readLength > 0 {
 		readPtr = unsafe.Pointer(&readBuffer[0])
 	}
-	success := C.CH347StreamI2C(C.int(fd), C.int(writeLen), writePtr, C.int(readLength), readPtr)
+	success := C.pStreamI2C(C.int(fd), C.int(writeLen), writePtr, C.int(readLength), readPtr)
 	if !success {
 		return nil, errors.New("failed to perform stream I2C operation")
 	}
 	return readBuffer, nil
 }
 
-// JtagReset 重置JTAG TAP状态
 func (lib *library) JtagReset(fd int) (int, error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	result := C.CH347Jtag_Reset(C.int(fd))
+	result := C.pJtagReset(C.int(fd))
 	if result < 0 {
 		return int(result), &Error{Code: int(result), Message: "failed to reset JTAG"}
 	}
 	return int(result), nil
 }
 
-// JtagInit 初始化JTAG接口
 func (lib *library) JtagInit(fd int, clockRate uint8) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347Jtag_INIT(C.int(fd), C.uchar(clockRate))
+	success := C.pJtagInit(C.int(fd), C.uchar(clockRate))
 	if !success {
 		return errors.New("failed to initialize JTAG")
 	}
 	return nil
 }
 
-// JtagSwitchTapState 切换JTAG状态机
 func (lib *library) JtagSwitchTapState(fd int, tapState uint8) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347Jtag_SwitchTapState(C.int(fd), C.uchar(tapState))
+	success := C.pJtagSwitchTapState(C.int(fd), C.uchar(tapState))
 	if !success {
 		return errors.New("failed to switch JTAG tap state")
 	}
 	return nil
 }
 
-// JtagWriteRead 执行JTAG写/读操作
 func (lib *library) JtagWriteRead(fd int, isDR bool, writeData []byte) ([]byte, error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
@@ -618,10 +835,10 @@ func (lib *library) JtagWriteRead(fd int, isDR bool, writeData []byte) ([]byte, 
 	}
 	var readLength uint32
 	readBuffer := make([]byte, len(writeData))
-	success := C.CH347Jtag_WriteRead(
+	success := C.pJtagWriteRead(
 		C.int(fd),
 		C.bool(isDR),
-		C.int(len(writeData)*8), // bit length
+		C.int(len(writeData)*8),
 		unsafe.Pointer(&writeData[0]),
 		(*C.uint32_t)(unsafe.Pointer(&readLength)),
 		unsafe.Pointer(&readBuffer[0]),
@@ -636,21 +853,19 @@ func (lib *library) JtagWriteRead(fd int, isDR bool, writeData []byte) ([]byte, 
 	return readBuffer, nil
 }
 
-// JtagByteWriteDR 以字节为单位写入JTAG DR数据
 func (lib *library) JtagByteWriteDR(fd int, data []byte) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
 	if len(data) == 0 {
 		return nil
 	}
-	success := C.CH347Jtag_ByteWriteDR(C.int(fd), C.int(len(data)), unsafe.Pointer(&data[0]))
+	success := C.pJtagByteWriteDR(C.int(fd), C.int(len(data)), unsafe.Pointer(&data[0]))
 	if !success {
 		return errors.New("failed to write JTAG DR data")
 	}
 	return nil
 }
 
-// JtagByteReadDR 以字节为单位读取JTAG DR数据
 func (lib *library) JtagByteReadDR(fd int, length int) ([]byte, error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
@@ -659,7 +874,7 @@ func (lib *library) JtagByteReadDR(fd int, length int) ([]byte, error) {
 	}
 	buffer := make([]byte, length)
 	var readLength uint32
-	success := C.CH347Jtag_ByteReadDR(C.int(fd), (*C.uint32_t)(unsafe.Pointer(&readLength)), unsafe.Pointer(&buffer[0]))
+	success := C.pJtagByteReadDR(C.int(fd), (*C.uint32_t)(unsafe.Pointer(&readLength)), unsafe.Pointer(&buffer[0]))
 	if !success {
 		return nil, errors.New("failed to read JTAG DR data")
 	}
@@ -669,7 +884,6 @@ func (lib *library) JtagByteReadDR(fd int, length int) ([]byte, error) {
 	return buffer, nil
 }
 
-// ReadEEPROM 从EEPROM读取数据
 func (lib *library) ReadEEPROM(fd int, eepromType EEPROMType, addr, length int) ([]byte, error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
@@ -677,116 +891,115 @@ func (lib *library) ReadEEPROM(fd int, eepromType EEPROMType, addr, length int) 
 		return nil, errors.New("invalid read length")
 	}
 	buffer := make([]byte, length)
-	success := C.CH347ReadEEPROM(C.int(fd), C.int(eepromType), C.int(addr), C.int(length), (*C.uchar)(unsafe.Pointer(&buffer[0])))
+	success := C.pReadEEPROM(C.int(fd), C.int(eepromType), C.int(addr), C.int(length), (*C.uchar)(unsafe.Pointer(&buffer[0])))
 	if !success {
 		return nil, errors.New("failed to read EEPROM")
 	}
 	return buffer, nil
 }
 
-// WriteEEPROM 向EEPROM写入数据
 func (lib *library) WriteEEPROM(fd int, eepromType EEPROMType, addr int, data []byte) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
 	if len(data) == 0 {
 		return nil
 	}
-	success := C.CH347WriteEEPROM(C.int(fd), C.int(eepromType), C.int(addr), C.int(len(data)), (*C.uchar)(unsafe.Pointer(&data[0])))
+	success := C.pWriteEEPROM(C.int(fd), C.int(eepromType), C.int(addr), C.int(len(data)), (*C.uchar)(unsafe.Pointer(&data[0])))
 	if !success {
 		return errors.New("failed to write EEPROM")
 	}
 	return nil
 }
 
-// OEEnable 使能输出使能
 func (lib *library) OEEnable(fd int) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347_OE_Enable(C.int(fd))
+	success := C.pOEEnable(C.int(fd))
 	if !success {
 		return errors.New("failed to enable output enable")
 	}
 	return nil
 }
 
-// SPIGetHwStreamCfg 获取SPI硬件流配置
 func (lib *library) SPIGetHwStreamCfg(fd int, streamCfg unsafe.Pointer) error {
+	if streamCfg == nil {
+		return errors.New("streamCfg cannot be nil")
+	}
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347SPI_GetHwStreamCfg(C.int(fd), streamCfg)
+	success := C.pSPIGetHwStreamCfg(C.int(fd), streamCfg)
 	if !success {
 		return errors.New("failed to get SPI hardware stream configuration")
 	}
 	return nil
 }
 
-// SPISetAutoCS 设置SPI自动片选
 func (lib *library) SPISetAutoCS(fd int, disable bool) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347SPI_SetAutoCS(C.int(fd), C.bool(disable))
+	success := C.pSPISetAutoCS(C.int(fd), C.bool(disable))
 	if !success {
 		return errors.New("failed to set SPI auto chip select")
 	}
 	return nil
 }
 
-// SPISetDataBits 设置SPI数据位宽
 func (lib *library) SPISetDataBits(fd int, dataBits uint8) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347SPI_SetDataBits(C.int(fd), C.uchar(dataBits))
+	success := C.pSPISetDataBits(C.int(fd), C.uchar(dataBits))
 	if !success {
 		return errors.New("failed to set SPI data bits")
 	}
 	return nil
 }
 
-// SPIGetCfg 获取SPI配置
 func (lib *library) SPIGetCfg(fd int, spiCfg unsafe.Pointer) error {
+	if spiCfg == nil {
+		return errors.New("spiCfg cannot be nil")
+	}
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347SPI_GetCfg(C.int(fd), spiCfg)
+	success := C.pSPIGetCfg(C.int(fd), spiCfg)
 	if !success {
 		return errors.New("failed to get SPI configuration")
 	}
 	return nil
 }
 
-// SPIChangeCS 改变SPI片选状态
 func (lib *library) SPIChangeCS(fd int, status uint8) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347SPI_ChangeCS(C.int(fd), C.uchar(status))
+	success := C.pSPIChangeCS(C.int(fd), C.uchar(status))
 	if !success {
 		return errors.New("failed to change SPI chip select")
 	}
 	return nil
 }
 
-// JtagResetTrst 重置JTAG TRST信号
 func (lib *library) JtagResetTrst(fd int, trstLevel bool) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347Jtag_ResetTrst(C.int(fd), C.bool(trstLevel))
+	success := C.pJtagResetTrst(C.int(fd), C.bool(trstLevel))
 	if !success {
 		return errors.New("failed to reset JTAG TRST")
 	}
 	return nil
 }
 
-// JtagGetCfg 获取JTAG配置
 func (lib *library) JtagGetCfg(fd int, clockRate *uint8) error {
+	if clockRate == nil {
+		return errors.New("clockRate cannot be nil")
+	}
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347Jtag_GetCfg(C.int(fd), (*C.uchar)(unsafe.Pointer(clockRate)))
+	success := C.pJtagGetCfg(C.int(fd), (*C.uchar)(unsafe.Pointer(clockRate)))
 	if !success {
 		return errors.New("failed to get JTAG configuration")
 	}
 	return nil
 }
 
-// JtagClockTms 生成JTAG时钟TMS序列
 func (lib *library) JtagClockTms(bitBangPkt []byte, tms, bi uint32) uint32 {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
@@ -794,10 +1007,9 @@ func (lib *library) JtagClockTms(bitBangPkt []byte, tms, bi uint32) uint32 {
 	if len(bitBangPkt) > 0 {
 		pktPtr = (*C.uchar)(unsafe.Pointer(&bitBangPkt[0]))
 	}
-	return uint32(C.CH347Jtag_ClockTms(pktPtr, C.uint32_t(tms), C.uint32_t(bi)))
+	return uint32(C.pJtagClockTms(pktPtr, C.uint32_t(tms), C.uint32_t(bi)))
 }
 
-// JtagIdleClock 生成JTAG空闲时钟序列
 func (lib *library) JtagIdleClock(bitBangPkt []byte, bi uint32) uint32 {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
@@ -805,10 +1017,9 @@ func (lib *library) JtagIdleClock(bitBangPkt []byte, bi uint32) uint32 {
 	if len(bitBangPkt) > 0 {
 		pktPtr = (*C.uchar)(unsafe.Pointer(&bitBangPkt[0]))
 	}
-	return uint32(C.CH347Jtag_IdleClock(pktPtr, C.uint32_t(bi)))
+	return uint32(C.pJtagIdleClock(pktPtr, C.uint32_t(bi)))
 }
 
-// JtagTmsChange 改变JTAG TMS状态
 func (lib *library) JtagTmsChange(fd int, tmsValue []byte, step, skip uint32) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
@@ -816,14 +1027,13 @@ func (lib *library) JtagTmsChange(fd int, tmsValue []byte, step, skip uint32) er
 	if len(tmsValue) > 0 {
 		tmsPtr = (*C.uchar)(unsafe.Pointer(&tmsValue[0]))
 	}
-	success := C.CH347Jtag_TmsChange(C.int(fd), tmsPtr, C.uint32_t(step), C.uint32_t(skip))
+	success := C.pJtagTmsChange(C.int(fd), tmsPtr, C.uint32_t(step), C.uint32_t(skip))
 	if !success {
 		return errors.New("failed to change JTAG TMS")
 	}
 	return nil
 }
 
-// JtagIoScan 执行JTAG IO扫描
 func (lib *library) JtagIoScan(fd int, dataBits []byte, dataBitsNb uint32, isRead bool) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
@@ -831,14 +1041,13 @@ func (lib *library) JtagIoScan(fd int, dataBits []byte, dataBitsNb uint32, isRea
 	if len(dataBits) > 0 {
 		dataPtr = (*C.uchar)(unsafe.Pointer(&dataBits[0]))
 	}
-	success := C.CH347Jtag_IoScan(C.int(fd), dataPtr, C.uint32_t(dataBitsNb), C.bool(isRead))
+	success := C.pJtagIoScan(C.int(fd), dataPtr, C.uint32_t(dataBitsNb), C.bool(isRead))
 	if !success {
 		return errors.New("failed to perform JTAG IO scan")
 	}
 	return nil
 }
 
-// JtagIoScanT 执行JTAG IO扫描（带结束包标志）
 func (lib *library) JtagIoScanT(fd int, dataBits []byte, dataBitsNb uint32, isRead, isLastPkt bool) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
@@ -846,14 +1055,13 @@ func (lib *library) JtagIoScanT(fd int, dataBits []byte, dataBitsNb uint32, isRe
 	if len(dataBits) > 0 {
 		dataPtr = (*C.uchar)(unsafe.Pointer(&dataBits[0]))
 	}
-	success := C.CH347Jtag_IoScanT(C.int(fd), dataPtr, C.uint32_t(dataBitsNb), C.bool(isRead), C.bool(isLastPkt))
+	success := C.pJtagIoScanT(C.int(fd), dataPtr, C.uint32_t(dataBitsNb), C.bool(isRead), C.bool(isLastPkt))
 	if !success {
 		return errors.New("failed to perform JTAG IO scan with packet flag")
 	}
 	return nil
 }
 
-// JtagWriteReadFast 快速JTAG写/读操作
 func (lib *library) JtagWriteReadFast(fd int, isDR bool, writeData []byte) ([]byte, error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
@@ -862,7 +1070,7 @@ func (lib *library) JtagWriteReadFast(fd int, isDR bool, writeData []byte) ([]by
 	}
 	var readLength uint32
 	readBuffer := make([]byte, len(writeData))
-	success := C.CH347Jtag_WriteRead_Fast(
+	success := C.pJtagWriteReadFast(
 		C.int(fd),
 		C.bool(isDR),
 		C.int(len(writeData)),
@@ -879,21 +1087,19 @@ func (lib *library) JtagWriteReadFast(fd int, isDR bool, writeData []byte) ([]by
 	return readBuffer, nil
 }
 
-// JtagByteWriteIR 以字节为单位写入JTAG IR数据
 func (lib *library) JtagByteWriteIR(fd int, data []byte) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
 	if len(data) == 0 {
 		return nil
 	}
-	success := C.CH347Jtag_ByteWriteIR(C.int(fd), C.int(len(data)), unsafe.Pointer(&data[0]))
+	success := C.pJtagByteWriteIR(C.int(fd), C.int(len(data)), unsafe.Pointer(&data[0]))
 	if !success {
 		return errors.New("failed to write JTAG IR data")
 	}
 	return nil
 }
 
-// JtagByteReadIR 以字节为单位读取JTAG IR数据
 func (lib *library) JtagByteReadIR(fd int, length int) ([]byte, error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
@@ -902,7 +1108,7 @@ func (lib *library) JtagByteReadIR(fd int, length int) ([]byte, error) {
 	}
 	buffer := make([]byte, length)
 	var readLength uint32
-	success := C.CH347Jtag_ByteReadIR(C.int(fd), (*C.uint32_t)(unsafe.Pointer(&readLength)), unsafe.Pointer(&buffer[0]))
+	success := C.pJtagByteReadIR(C.int(fd), (*C.uint32_t)(unsafe.Pointer(&readLength)), unsafe.Pointer(&buffer[0]))
 	if !success {
 		return nil, errors.New("failed to read JTAG IR data")
 	}
@@ -912,35 +1118,32 @@ func (lib *library) JtagByteReadIR(fd int, length int) ([]byte, error) {
 	return buffer, nil
 }
 
-// JtagBitWriteDR 以位为单位写入JTAG DR数据
 func (lib *library) JtagBitWriteDR(fd int, bitLength int, bitBuffer []byte) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
 	if bitLength <= 0 || len(bitBuffer) == 0 {
 		return nil
 	}
-	success := C.CH347Jtag_BitWriteDR(C.int(fd), C.int(bitLength), unsafe.Pointer(&bitBuffer[0]))
+	success := C.pJtagBitWriteDR(C.int(fd), C.int(bitLength), unsafe.Pointer(&bitBuffer[0]))
 	if !success {
 		return errors.New("failed to write JTAG DR bit data")
 	}
 	return nil
 }
 
-// JtagBitWriteIR 以位为单位写入JTAG IR数据
 func (lib *library) JtagBitWriteIR(fd int, bitLength int, bitBuffer []byte) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
 	if bitLength <= 0 || len(bitBuffer) == 0 {
 		return nil
 	}
-	success := C.CH347Jtag_BitWriteIR(C.int(fd), C.int(bitLength), unsafe.Pointer(&bitBuffer[0]))
+	success := C.pJtagBitWriteIR(C.int(fd), C.int(bitLength), unsafe.Pointer(&bitBuffer[0]))
 	if !success {
 		return errors.New("failed to write JTAG IR bit data")
 	}
 	return nil
 }
 
-// JtagBitReadIR 以位为单位读取JTAG IR数据
 func (lib *library) JtagBitReadIR(fd int, bitLength int) ([]byte, error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
@@ -950,7 +1153,7 @@ func (lib *library) JtagBitReadIR(fd int, bitLength int) ([]byte, error) {
 	byteLength := (bitLength + 7) / 8
 	buffer := make([]byte, byteLength)
 	var readBitLength uint32
-	success := C.CH347Jtag_BitReadIR(C.int(fd), (*C.uint32_t)(unsafe.Pointer(&readBitLength)), unsafe.Pointer(&buffer[0]))
+	success := C.pJtagBitReadIR(C.int(fd), (*C.uint32_t)(unsafe.Pointer(&readBitLength)), unsafe.Pointer(&buffer[0]))
 	if !success {
 		return nil, errors.New("failed to read JTAG IR bit data")
 	}
@@ -961,7 +1164,6 @@ func (lib *library) JtagBitReadIR(fd int, bitLength int) ([]byte, error) {
 	return buffer, nil
 }
 
-// JtagBitReadDR 以位为单位读取JTAG DR数据
 func (lib *library) JtagBitReadDR(fd int, bitLength int) ([]byte, error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
@@ -971,7 +1173,7 @@ func (lib *library) JtagBitReadDR(fd int, bitLength int) ([]byte, error) {
 	byteLength := (bitLength + 7) / 8
 	buffer := make([]byte, byteLength)
 	var readBitLength uint32
-	success := C.CH347Jtag_BitReadDR(C.int(fd), (*C.uint32_t)(unsafe.Pointer(&readBitLength)), unsafe.Pointer(&buffer[0]))
+	success := C.pJtagBitReadDR(C.int(fd), (*C.uint32_t)(unsafe.Pointer(&readBitLength)), unsafe.Pointer(&buffer[0]))
 	if !success {
 		return nil, errors.New("failed to read JTAG DR bit data")
 	}
@@ -982,26 +1184,95 @@ func (lib *library) JtagBitReadDR(fd int, bitLength int) ([]byte, error) {
 	return buffer, nil
 }
 
-// GPIOIRQSet 设置GPIO中断
 func (lib *library) GPIOIRQSet(fd int, gpioIndex uint8, enable bool, irqType uint8, isrHandler unsafe.Pointer) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
-	success := C.CH347GPIO_IRQ_Set(C.int(fd), C.uchar(gpioIndex), C.bool(enable), C.uchar(irqType), isrHandler)
+	success := C.pGPIOIRQSet(C.int(fd), C.uchar(gpioIndex), C.bool(enable), C.uchar(irqType), isrHandler)
 	if !success {
 		return errors.New("failed to set GPIO interrupt")
 	}
 	return nil
 }
 
-// UartGetCfg 获取UART配置
 func (lib *library) UartGetCfg(fd int) (baudRate uint32, byteSize, parity, stopBits, byteTimeout uint8, err error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
 	var cBaudRate C.uint32_t
 	var cByteSize, cParity, cStopBits, cByteTimeout C.uchar
-	success := C.CH347Uart_GetCfg(C.int(fd), &cBaudRate, &cByteSize, &cParity, &cStopBits, &cByteTimeout)
+	success := C.pUartGetCfg(C.int(fd), &cBaudRate, &cByteSize, &cParity, &cStopBits, &cByteTimeout)
 	if !success {
 		return 0, 0, 0, 0, 0, errors.New("failed to get UART configuration")
 	}
 	return uint32(cBaudRate), uint8(cByteSize), uint8(cParity), uint8(cStopBits), uint8(cByteTimeout), nil
+}
+
+// findLibPath 定位 CH34x 动态库文件 (.so / .dll)。
+// 查找优先级：
+//  1. 环境变量 CH34X_LIB_PATH（推荐生产部署使用绝对路径，如 /opt/ch347/lib/libch347.so）
+//  2. 相对于项目根目录的 lib/<arch>/libch347.so（仅适用于工作目录为项目根的情形）
+//  3. 系统库路径 /usr/lib/, /usr/local/lib/（推荐将 .so 安装到这些位置）
+//
+// 生产部署建议：
+//   - 通过 CH34X_LIB_PATH 环境变量显式指定绝对路径，避免工作目录依赖
+//   - 或将 libch347.so 复制到 /usr/lib/ 或 /usr/local/lib/ 并运行 ldconfig
+//   - 交叉编译/非标准架构 (mips/sw64/openwrt) 必须通过 CH34X_LIB_PATH 指定
+func findLibPath() string {
+	if runtime.GOOS == "windows" {
+		panic("ch34x: Windows platform is not yet supported for dynamic loading. " +
+			"Use CGO_ENABLED=1 with build tags or set CH34X_LIB_PATH.")
+	}
+
+	if p := os.Getenv("CH34X_LIB_PATH"); p != "" {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+
+	baseDir := archDirName()
+	libName := libFileName()
+
+	candidates := []string{
+		filepath.Join(baseDir, libName),
+		filepath.Join("/usr/lib", libName),
+		filepath.Join("/usr/local/lib", libName),
+	}
+
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+
+	return filepath.Join(baseDir, libName)
+}
+
+func archDirName() string {
+	switch runtime.GOOS + "/" + runtime.GOARCH {
+	case "linux/amd64":
+		return "lib/x64"
+	case "linux/386":
+		return "lib/x86"
+	case "linux/arm64":
+		return "lib/aarch64"
+	case "linux/arm":
+		// ARM 32-bit: 尝试硬浮点, 软浮点需通过 CH34X_LIB_PATH 覆盖
+		return "lib/arm-gnueabihf"
+	case "windows/amd64":
+		return "lib/win"
+	case "windows/386":
+		return "lib/win"
+	default:
+		// mips/sw64/openwrt 等非标准平台需通过 CH34X_LIB_PATH 指定路径
+		return "lib/x64"
+	}
+}
+
+func libFileName() string {
+	if runtime.GOOS == "windows" {
+		if runtime.GOARCH == "amd64" {
+			return "CH347DLLA64.dll"
+		}
+		return "CH347DLL.dll"
+	}
+	return "libch347.so"
 }

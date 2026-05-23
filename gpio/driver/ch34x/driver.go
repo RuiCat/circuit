@@ -2,6 +2,7 @@ package ch34x
 
 import (
 	"circuit/gpio/driver"
+	"fmt"
 	"unsafe"
 )
 
@@ -330,7 +331,7 @@ func (d *GPIODriver) Set(enable, dirOut, dataOut uint8) error {
 	return GlobalLib.GPIOSet(d.fd, enable, dirOut, dataOut)
 }
 
-// SetIRQ 设置GPIO中断
+// SetIRQ 设置 GPIO 中断。handler 不为 nil 时当前实现仅允许传入 nil，返回未实现错误以防止将无效 Go 函数指针传递给 C 库导致崩溃。
 func (d *GPIODriver) SetIRQ(gpioIndex uint8, enable bool, irqType uint8, handler any) error {
 	// 将handler转换为unsafe.Pointer
 	var handlerPtr unsafe.Pointer
@@ -338,6 +339,9 @@ func (d *GPIODriver) SetIRQ(gpioIndex uint8, enable bool, irqType uint8, handler
 		// 这里假设handler已经是函数指针，需要根据实际类型转换
 		// 简化处理，传入nil，实际使用时需要根据接口文档处理
 		handlerPtr = nil
+	}
+	if handlerPtr == nil {
+		return fmt.Errorf("GPIO中断功能未实现")
 	}
 	return GlobalLib.GPIOIRQSet(d.fd, gpioIndex, enable, irqType, handlerPtr)
 }
