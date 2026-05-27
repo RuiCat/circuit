@@ -11,9 +11,9 @@ import (
 
 // 同步元件类型常量
 const (
-	SyncTypeTruthTable = iota // 真值表模式
-	SyncTypeStateMachine       // 状态机模式（预留）
-	SyncTypeScript             // 脚本模式（预留）
+	SyncTypeTruthTable   = iota // 真值表模式
+	SyncTypeStateMachine        // 状态机模式（预留）
+	SyncTypeScript              // 脚本模式（预留）
 )
 
 // SyncType 同步元件类型标识。

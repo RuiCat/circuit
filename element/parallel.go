@@ -32,7 +32,6 @@ func (con *Context) ParallelCallMark(mark Mark) error {
 		con.cacheTime = curTime
 	}
 	con.cacheMu.Unlock()
-
 	switch mark {
 	case MarkReset:
 		return con.CallMark(MarkReset)
@@ -71,15 +70,12 @@ func (con *Context) parallelDoStep() error {
 		workers = runtime.GOMAXPROCS(0)
 	}
 	useCache := con.ParallelOpts.CacheThreshold > 0
-
 	n := len(con.Nodelist)
 	if n == 0 {
 		return nil
 	}
-
 	collectors := make([]*mna.StampCollector, n)
 	var collectorMu sync.Mutex
-
 	var wg sync.WaitGroup
 	chunkSize := (n + workers - 1) / workers
 	for w := 0; w < workers; w++ {
@@ -96,17 +92,14 @@ func (con *Context) parallelDoStep() error {
 			defer wg.Done()
 			for idx := s; idx < e; idx++ {
 				node := con.Nodelist[idx]
-
 				elemFace, ok := getElementFace(node.Base().NodeType)
 				if !ok {
 					continue
 				}
-
 				if useCache && elemFace.IsFlag(FlagCacheStamp) {
 					con.cacheMu.Lock()
 					cache := con.stampCaches[node]
 					con.cacheMu.Unlock()
-
 					if cache != nil && !cache.NeedsBuild() && !cache.HasChanged(con) {
 						collector := mna.NewStampCollector(con)
 						collector.Records = append(collector.Records, cache.GetCached()...)
@@ -115,10 +108,8 @@ func (con *Context) parallelDoStep() error {
 						collectorMu.Unlock()
 						continue
 					}
-
 					collector := mna.NewStampCollector(con)
 					elemFace.DoStep(collector, con.Time, node)
-
 					con.cacheMu.Lock()
 					if cache == nil {
 						cache = mna.NewStampCache(collector, con.ParallelOpts.CacheThreshold)
@@ -127,7 +118,6 @@ func (con *Context) parallelDoStep() error {
 						cache.Update(collector)
 					}
 					con.cacheMu.Unlock()
-
 					collectorMu.Lock()
 					collectors[idx] = collector
 					collectorMu.Unlock()
@@ -142,13 +132,10 @@ func (con *Context) parallelDoStep() error {
 		}(start, end)
 	}
 	wg.Wait()
-
 	for _, c := range collectors {
 		if c != nil {
 			c.Flush(con)
 		}
 	}
-
 	return nil
 }
-

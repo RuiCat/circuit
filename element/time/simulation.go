@@ -32,7 +32,6 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 	nodesNum, voltageSourcesNum := con.GetNodeNum(), con.GetVoltageSourcesNum()
 	// 创建LU分解器
 	systemSize := nodesNum + voltageSourcesNum
-
 	var luSolver maths.LU[float64]
 	var err error
 	if con.ParallelOpts != nil && con.ParallelOpts.StampWorkers > 1 {
@@ -48,17 +47,18 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 	// 标记是否需要重新加盖线性元件（步长变化或首次迭代）
 	needLinearStamp := true
 	// 初始化所有元件状态
-	_ = con.CallMark(element.MarkReset)
-
+	if err = con.CallMark(element.MarkReset); err != nil {
+		return fmt.Errorf("元件状态重置失败: %v", err)
+	}
 	con.ResetTimeStepCount()
 	for !con.IsSimulationFinished() {
+		con.PushEvents() // 将事件值同步到元件 NodeValue
 		// 重置X更新状态，允许本时间步内重新调用UpdateX/RollbackX
 		con.MnaUpdateType.ResetXUpdate()
 		// 检查是否超过最大时间步数
 		if !con.IncrementTimeStepCount() {
 			return fmt.Errorf("达到最大时间步数限制 %f，仿真可能陷入无限循环", con.Time.MaxTimeStep())
 		}
-
 		// 预测阶段：对纯 DC 电路，用 Adams-Bashford 预测提供 Newton 初始猜测
 		// 并通过 LTE 估计增长步长；含储能元件的电路使用固定小步长。
 		if !con.HasReactiveElements() && con.Time.GoodIterations() >= 3 {
@@ -66,13 +66,14 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 				con.Time.CopyPredStateToX(con.GetX())
 			}
 		}
-
 		con.ResetNonlinearIter()
 		// 回滚到线性状态（丢弃非线性迭代的修改）
 		con.A.Rollback()
 		con.Z.Rollback()
 		// 还原解向量X和元件内部状态到上一次收敛结果
-		_ = con.CallMark(element.MarkRollbackElements)
+		if err = con.CallMark(element.MarkRollbackElements); err != nil {
+			return fmt.Errorf("元件状态回滚失败: %v", err)
+		}
 		// 触发点步长预调整：如果步长会越过最近的触发点，截断步长
 		for _, tr := range con.Triggers() {
 			if !tr.Triggered && tr.Time > con.CurrentTime() {
@@ -92,14 +93,20 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 			con.GetA().Base().Zero()
 			con.GetZ().Base().Zero()
 			// 通知元件开始新迭代
-			_ = con.CallMark(element.MarkStartIteration)
+			if err = con.CallMark(element.MarkStartIteration); err != nil {
+				return fmt.Errorf("元件开始新迭代失败: %v", err)
+			}
 			// 加盖线性元件贡献
-			_ = con.CallMark(element.MarkStamp)
+			if err = con.CallMark(element.MarkStamp); err != nil {
+				return fmt.Errorf("元件加盖失败: %v", err)
+			}
 			// 保存线性状态（用于后续回滚）
 			con.Update()
 		} else {
 			// 重用已有的线性贡献，仅通知元件开始新迭代
-			_ = con.CallMark(element.MarkStartIteration)
+			if err = con.CallMark(element.MarkStartIteration); err != nil {
+				return fmt.Errorf("元件开始新迭代失败: %v", err)
+			}
 		}
 		// 非线性迭代（牛顿-拉夫逊法）
 		newtonConverged := false
@@ -186,7 +193,9 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 				con.CheckResidualConvergence()
 				// 如果整个系统现在已经收敛，则更新状态并返回
 				if con.IsConverged() {
-					_ = con.CallMark(element.MarkUpdateElements)
+					if err = con.CallMark(element.MarkUpdateElements); err != nil {
+						return fmt.Errorf("元件状态更新失败: %v", err)
+					}
 					newtonConverged = true
 					break
 				}
@@ -208,13 +217,16 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 			return fmt.Errorf("牛顿迭代在时间 %.6e 未收敛（达到最大迭代次数 %d）", con.CurrentTime(), con.MaxNonlinearIter())
 		}
 		// 后处理：计算电流和更新元件状态
-		_ = con.CallMark(element.MarkCalculateCurrent)
-		_ = con.CallMark(element.MarkStepFinished)
+		if err = con.CallMark(element.MarkCalculateCurrent); err != nil {
+			return fmt.Errorf("电流计算失败: %v", err)
+		}
+		if err = con.CallMark(element.MarkStepFinished); err != nil {
+			return fmt.Errorf("步骤完成失败: %v", err)
+		}
 		// 提取并验证节点电压
 		if !extractAndValidateVoltages(con, nodesNum, voltages) {
 			return fmt.Errorf("检测到无效电压值（NaN/Inf）在时间 %.6e，停止仿真", con.CurrentTime())
 		}
-
 		// 积分误差估计与步长自适应
 		// 仅对纯 DC 电路（无储能元件）执行步长调整，快速跳过稳定状态。
 		// 含储能元件的电路使用固定步长以保证数值稳定性。
@@ -234,7 +246,6 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 				con.Time.BootstrapHistory(convergedState, deriv, con.Time.GoodIterations())
 			}
 		}
-
 		// 注意：残差历史已在 CalculateMNAResidual 中更新，此处不再重复
 		if con.ShouldAdjustStepSize() {
 			needLinearStamp = true // 步长变化较大，需要重新加盖线性元件
@@ -250,7 +261,9 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 				con.Time.SetCorrStateFromX(con.GetX())
 			}
 			// 接受求解状态
-			_ = con.CallMark(element.MarkUpdateElements)
+			if err = con.CallMark(element.MarkUpdateElements); err != nil {
+				return fmt.Errorf("元件状态更新失败: %v", err)
+			}
 			// 重置计数
 			con.ResetTimeStepCount()
 			// 调用用户回调函数
@@ -263,8 +276,8 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 				con.Time.UpdateHistory()
 			}
 			con.Time.IncrementGoodSteps()
-
 			call(voltages)
+			con.PullEvents() // 将生产者元件的状态回写到事件系统
 		} else {
 			// 残差不可接受，减小步长并重新计算当前步
 			newStep := con.CurrentStep() / 2
@@ -282,7 +295,9 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 	// X和LastX，使得MnaType.X指向"待求解"缓冲区。再次交换
 	// 使MnaType.X指向收敛解缓冲区。
 	con.MnaUpdateType.ResetXUpdate()
-	_ = con.CallMark(element.MarkUpdateElements)
+	if err = con.CallMark(element.MarkUpdateElements); err != nil {
+		return fmt.Errorf("元件状态更新失败: %v", err)
+	}
 	return nil
 }
 

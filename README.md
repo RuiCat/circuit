@@ -107,6 +107,33 @@ Go实现的电气仿真,通过底层泛型与接口统一实现对 电子元件,
     1. 实现并发计算与子电路处理
   * [2026-5-3]
     2. 缺陷修复
+  * [2026-5-27] 实现双缓冲结构体与列感知压缩
+    1. 实现 utils/doublebuffer 泛型双缓冲包,支持 [dt+1][x]T 多维数据存储
+    2. 两个缓冲区交替工作,dt>=n 自动切换并写入文件
+    3. 支持 Zlib/DeltaZlib/Noop 三种压缩器
+    4. 实现 BlockWriter/BlockReader 二进制块文件格式 (魔数+dt+x+压缩数据)
+    5. 新增 BufferReader[T] 泛型读取器,自动完成 读取→解压→反序列化
+    6. 通过代码审查+对抗验证修复 4 个严重缺陷 (类型检测、越界、OOM防护、命名类型安全)
+  * [2026-5-27] 实现 RLE 列感知零值跳过压缩
+    1. 新增 BlockCodec[T] 接口与 FlatCodec/RLECompressor 两种实现
+    2. RLE 按列独立编码: base_value + [ZERO_SKIP(run) | DELTA(delta)]* 格式
+    3. 全稳定信号压缩率 0.4% (8000B→33B),RC电路实测压缩率提升 38%
+    4. 增加 RLE 解码器越界保护 (Uvarint/slice 边界校验)
+  * [2026-5-28] 实现事件系统与交互元件
+    1. Context 增加事件系统: sync.Map 存储事件值,SetEvent/PushEvents/PullEvents 方法
+    2. Config 增加 EventSlots map[int]int: nameIdx→±valueIdx,正数消费者负数生产者
+    3. 每步时序: PushEvents(步头)→仿真计算→PullEvents(步尾,生产者回写)
+    4. 新增 EventSwitch(B) 元件: 事件驱动按钮/触点,支持 NO/NC,Base()覆盖实现动态引脚
+    5. 新增 EventResistor(VR) 元件: 事件值 0~1 线性映射到 minR~maxR
+    6. 新增 Coil(RLY) 元件: 继电器线圈,RL串联梯形积分模型,磁滞(I_pullin/I_hold),多通道事件输出
+    7. Node Set 方法增加类型断言,eventTargets 从裸指针改为 NodeFace+index 防悬空
+  * [2026-5-28] 创建测试电路与缺陷修复
+    1. 新增 cmd/volt_record RC电路电压记录测试 (5000步,双缓冲→RLE压缩→文件→读回验证)
+    2. 新增 cmd/relay_test 继电器线圈+触点联动测试 (NO/NC触点,一帧延迟模拟机械动作)
+    3. 修复 EventSwitch Stamp/DoStep 阻抗盖章时序 (回滚后阻抗丢失)
+    4. 修复 Coil RL 梯形积分 I_hist 计算 (VL vs Vdiff) 与 Norton 等效缩放
+    5. 修复 MarkReset 中 EventSlots 负值索引未过滤导致 producer 元件 panic
+    6. 删除 Node.EventBinding 冗余中间层,eventTargets 直接存 Context
 
 ## 开发任务规划
   1. [✔] 实现基于计算图构建矩阵方程求解器  

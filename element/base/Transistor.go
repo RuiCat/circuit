@@ -12,27 +12,27 @@ var TransistorType element.NodeType = element.AddElement(9, &Transistor{
 		Name: "q",
 		Pin:  element.SetPin(element.PinLowVoltage, "b", "c", "e"), // 基极、集电极、发射极
 		ValueInit: []any{
-			bool(false),          // 0: PNP标志 (false=NPN, true=PNP)
-			float64(100),         // 1: 电流增益(hFE)
-			string("default"),    // 2: 模型名称
-			float64(0),           // 3: 上次基极-集电极电压
-			float64(0),           // 4: 上次基极-发射极电压
-			float64(0),           // 5: 临界电压
-			float64(0),           // 6: 集电极电流
-			float64(0),           // 7: 发射极电流
-			float64(0),           // 8: 基极电流
-			float64(0),           // 9: 最小电导
-			float64(0),           // 电流记录
-			float64(0),           // 电流记录
-			float64(0),           // 电流记录
-			float64(0.025865),    // 13: 热电压 thermalVoltage
-			float64(1e-13),       // 14: 饱和电流 csat
-			float64(100.0),       // 15: 反向beta
+			bool(false),       // 0: PNP标志 (false=NPN, true=PNP)
+			float64(100),      // 1: 电流增益(hFE)
+			string("default"), // 2: 模型名称
+			float64(0),        // 3: 上次基极-集电极电压
+			float64(0),        // 4: 上次基极-发射极电压
+			float64(0),        // 5: 临界电压
+			float64(0),        // 6: 集电极电流
+			float64(0),        // 7: 发射极电流
+			float64(0),        // 8: 基极电流
+			float64(0),        // 9: 最小电导
+			float64(0),        // 电流记录
+			float64(0),        // 电流记录
+			float64(0),        // 电流记录
+			float64(0.025865), // 13: 热电压 thermalVoltage
+			float64(1e-13),    // 14: 饱和电流 csat
+			float64(100.0),    // 15: 反向beta
 		},
 		ValueName: []string{"PNP", "hFE", "model", "vbc_last", "vbe_last", "Vcrit", "Ic", "Ie", "Ib", "gmin", "", "", "", "thermalVoltage", "csat", "reverseBeta"},
 		Current:   []int{7, 8, 6},
 		OrigValue: []int{3, 4},
-		Flags:         element.FlagNonlinear | element.FlagCacheStamp,
+		Flags:     element.FlagNonlinear | element.FlagCacheStamp,
 	},
 })
 

@@ -175,11 +175,7 @@ func (d *CANDriver) SendFrame(frame *driver.CANFrame) error {
 	dlcByte := []byte{frame.DLC & 0x0F}
 	cmd = replacePlaceholder(cmd, "{DLC}", dlcByte)
 	// 替换数据（如果有）
-	dlc := frame.DLC
-	if dlc > 8 {
-		// 将 DLC 钳位到 8（CAN 2.0 规范 DLC 有效范围为 0-8），防止 frame.Data 数组越界访问。
-		dlc = 8
-	}
+	dlc := min(frame.DLC, 8) // 将 DLC 钳位到 8（CAN 2.0 规范 DLC 有效范围为 0-8），防止 frame.Data 数组越界访问。
 	if !frame.Remote && dlc > 0 {
 		cmd = replacePlaceholder(cmd, "{DATA}", frame.Data[:dlc])
 	}
@@ -438,10 +434,7 @@ func (d *CANDriver) buildCANPacket(frame *driver.CANFrame) []byte {
 	dlcByte := []byte{frame.DLC & 0x0F}
 	cmd = replacePlaceholder(cmd, "{DLC}", dlcByte)
 	// 替换数据（如果有）
-	dlc := frame.DLC
-	if dlc > 8 {
-		dlc = 8
-	}
+	dlc := min(frame.DLC, 8)
 	if !frame.Remote && dlc > 0 {
 		cmd = replacePlaceholder(cmd, "{DATA}", frame.Data[:dlc])
 	}
@@ -466,7 +459,7 @@ func (d *CANDriver) parseCANPacket(data []byte) (*driver.CANFrame, error) {
 		frame.Remote = (flags & 0x40) != 0
 		frame.DLC = flags & 0x0F
 		if frame.DLC > 8 {
-		// DLC > 8 在 CAN 2.0 标准帧中无效，拒绝解析以防止错误帧传播。
+			// DLC > 8 在 CAN 2.0 标准帧中无效，拒绝解析以防止错误帧传播。
 			return nil, fmt.Errorf("CAN帧DLC无效: %d > 8", frame.DLC)
 		}
 	}

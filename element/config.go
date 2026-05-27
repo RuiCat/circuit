@@ -34,6 +34,7 @@ type Config struct {
 	Voltage   []string // 电压源名称列表，定义元件内部的电压源标识。
 	Internal  []string // 内部引脚名称列表，定义元件的内部节点标识。
 	Flags     Flag     // 元件特性位标记，如 FlagReactive、FlagNonlinear、FlagCacheStamp。
+	EventSlots map[int]int // 事件绑定映射：事件名称参数索引 → 事件值参数索引
 }
 
 // Base 默认配置信息。

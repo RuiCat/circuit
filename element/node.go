@@ -106,11 +106,7 @@ func (node *Node) SetNodePin(i int, n mna.NodeID) {
 // SetNodePins 设置引脚对应的MNA节点索引。
 // 参数n: 引脚连接节点列表。
 func (node *Node) SetNodePins(n ...mna.NodeID) {
-	copyLen := len(n)
-	if copyLen > len(node.Nodes) {
-		copyLen = len(node.Nodes)
-	}
-	copy(node.Nodes, n[:copyLen])
+	copy(node.Nodes, n[:min(len(node.Nodes), len(n))])
 }
 
 // SetVoltSource 设置指定电压源对应的MNA节点索引。
@@ -204,7 +200,9 @@ func (node *Node) GetFloat64(i int) float64 {
 // 参数v: 要设置的整数值。
 func (node *Node) SetInt(i int, v int) {
 	if i >= 0 && i < len(node.NodeValue) {
-		node.NodeValue[i] = v
+		if _, ok := node.NodeValue[i].(int); ok || node.NodeValue[i] == nil {
+			node.NodeValue[i] = v
+		}
 	}
 }
 
@@ -213,7 +211,9 @@ func (node *Node) SetInt(i int, v int) {
 // 参数v: 要设置的逻辑值。
 func (node *Node) SetBool(i int, v bool) {
 	if i >= 0 && i < len(node.NodeValue) {
-		node.NodeValue[i] = v
+		if _, ok := node.NodeValue[i].(bool); ok || node.NodeValue[i] == nil {
+			node.NodeValue[i] = v
+		}
 	}
 }
 
@@ -222,7 +222,9 @@ func (node *Node) SetBool(i int, v bool) {
 // 参数v: 要设置的字符串值。
 func (node *Node) SetString(i int, v string) {
 	if i >= 0 && i < len(node.NodeValue) {
-		node.NodeValue[i] = v
+		if _, ok := node.NodeValue[i].(string); ok || node.NodeValue[i] == nil {
+			node.NodeValue[i] = v
+		}
 	}
 }
 
@@ -231,6 +233,8 @@ func (node *Node) SetString(i int, v string) {
 // 参数v: 要设置的浮点数值。
 func (node *Node) SetFloat64(i int, v float64) {
 	if i >= 0 && i < len(node.NodeValue) {
-		node.NodeValue[i] = v
+		if _, ok := node.NodeValue[i].(float64); ok || node.NodeValue[i] == nil {
+			node.NodeValue[i] = v
+		}
 	}
 }

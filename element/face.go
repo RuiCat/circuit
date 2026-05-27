@@ -25,13 +25,12 @@ type ElementFaceList interface {
 }
 
 var (
-	elementMu       sync.RWMutex // 元件注册表读写锁，保护 ElementList 和 ElementListName 的并发访问。
+	elementMu sync.RWMutex // 元件注册表读写锁，保护 ElementList 和 ElementListName 的并发访问。
 	// ElementList 元件类型注册表，全局映射表。
 	// 键：NodeType（元件类型标识）。
 	// 值：elementFace（元件接口实现）。
 	// 用于存储所有已注册的元件类型及其实现。
 	ElementList = map[NodeType]ElementFaceList{}
-
 	// ElementListName 元件名称注册表，全局映射表。
 	// 键：string 元件标识名称。
 	// 值：NodeType 元件类型。
@@ -50,7 +49,6 @@ func AddElement(eleType NodeType, face ElementFaceList) NodeType {
 	}
 	elementMu.Lock()
 	defer elementMu.Unlock()
-
 	if _, exists := ElementList[eleType]; exists {
 		return eleType
 	}
