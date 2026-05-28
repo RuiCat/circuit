@@ -6,6 +6,7 @@ import (
 	"circuit/mna"
 	"fmt"
 	"math"
+	stdtime "time"
 )
 
 // TransientSimulation 执行瞬态仿真，使用元件回调函数和LU求解器实现迭代计算。
@@ -53,6 +54,37 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 	con.ResetTimeStepCount()
 	for !con.IsSimulationFinished() {
 		con.PushEvents() // 将事件值同步到元件 NodeValue
+		// 连续模式状态检查：处理暂停/停止/单步
+		// 通过类型断言访问 TimeMNA 的 Status 方法（不在 mna.Time 接口中）
+		{
+			type statusChecker interface {
+				Status() SimStatus
+			}
+			if sc, ok := con.Time.(statusChecker); ok {
+				for {
+					st := sc.Status()
+					if st == StatusStopped {
+						return nil // 优雅停止
+					}
+					if st == StatusRunning {
+						break // 正常运行
+					}
+					if st == StatusPaused {
+						// 暂停：自旋等待（小延迟避免 CPU 空转）
+						stdtime.Sleep(10 * stdtime.Millisecond)
+						continue
+					}
+					if st == StatusStepping {
+						// 单步：执行一步后自动暂停
+						if tm, ok2 := con.Time.(*TimeMNA); ok2 {
+							tm.status.CompareAndSwap(int32(StatusStepping), int32(StatusPaused))
+						}
+						break
+					}
+				}
+			}
+		}
+
 		// 重置X更新状态，允许本时间步内重新调用UpdateX/RollbackX
 		con.MnaUpdateType.ResetXUpdate()
 		// 检查是否超过最大时间步数
@@ -321,3 +353,15 @@ func extractAndValidateVoltages(mnaSolver mna.Mna, nodesNum int, voltages []floa
 	}
 	return allValid
 }
+
+// TransientSimulationContinuous 运行连续仿真（永不停止，直到外部调用 Stop()）。
+// 包装 TransientSimulation，自动设置连续模式。
+func TransientSimulationContinuous(con *element.Context, call func([]float64)) error {
+	tm, ok := con.Time.(*TimeMNA)
+	if !ok {
+		return fmt.Errorf("TransientSimulationContinuous: Time 不是 *TimeMNA 类型")
+	}
+	tm.SetContinuousMode()
+	return TransientSimulation(con, call)
+}
+

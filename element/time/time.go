@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sync/atomic"
 )
 
 // 常量定义（通用配置阈值）
@@ -41,6 +42,16 @@ const (
 	minStepScale       = 0.4                              // 最小步长缩减倍数
 	stepAdjustOrder    = 3                                // 积分阶数
 	stepAdjustExponent = 1.0 / float64(stepAdjustOrder+1) // 步长调整指数
+)
+
+// SimStatus 表示仿真运行状态
+type SimStatus int32
+
+const (
+	StatusRunning  SimStatus = 0 // 正在运行
+	StatusPaused   SimStatus = 1 // 已暂停
+	StatusStopped  SimStatus = 2 // 已停止
+	StatusStepping SimStatus = 3 // 单步模式（执行一步后自动暂停）
 )
 
 // TimeMNA 通用时间管理与数值积分核心
@@ -95,6 +106,9 @@ type TimeMNA struct {
 
 	// 触发点管理
 	triggers []mna.Trigger // 仿真触发点列表
+	continuous bool         // 连续模式标志，为 true 时 IsSimulationFinished 始终返回 false
+	tempTarget bool         // 是否为临时目标（AdvanceFor 设置）
+	status     atomic.Int32 // 运行状态（SimStatus），并发安全
 }
 
 // NewTimeMNA 创建通用TimeMNAImpl实例
@@ -346,9 +360,78 @@ func (t *TimeMNA) NoConverged() {
 	t.elementConverged = false
 }
 
-// IsSimulationFinished 检查仿真是否完成（达到目标时间）
+// IsSimulationFinished 检查仿真是否完成（达到目标时间或连续模式控制）
+// 纯连续模式下始终返回 false，仅通过 Stop 退出。
+// 临时目标模式下到达目标时间后自动暂停并返回 true。
 func (t *TimeMNA) IsSimulationFinished() bool {
+	if t.continuous {
+		// 连续模式：检查临时目标（AdvanceFor 设置）
+		if t.tempTarget && t.currentTime >= t.targetTime {
+			t.tempTarget = false
+			t.status.Store(int32(StatusPaused))
+		}
+		// 连续模式下从不因时间到达而结束，由外部 Stop 控制
+		return false
+	}
 	return t.currentTime >= t.targetTime
+}
+
+// ------------------------------
+// 连续模式控制方法（并发安全）
+// ------------------------------
+
+// SetContinuousMode 设置仿真为连续模式（永不自动停止）。
+// 连续模式下 IsSimulationFinished() 始终返回 false，
+// 需通过 Stop() 或外部 goroutine 调用来结束仿真。
+func (t *TimeMNA) SetContinuousMode() {
+	t.continuous = true
+	t.status.Store(int32(StatusRunning))
+}
+
+// Pause 暂停仿真。仅在 Running 状态下有效，恢复需调用 Resume()。
+// 可从外部 goroutine 安全调用。
+func (t *TimeMNA) Pause() {
+	t.status.CompareAndSwap(int32(StatusRunning), int32(StatusPaused))
+}
+
+// Resume 恢复暂停或单步后的仿真。仅 Paused/Stepping → Running。
+// 可从外部 goroutine 安全调用。
+func (t *TimeMNA) Resume() {
+	t.status.CompareAndSwap(int32(StatusPaused), int32(StatusRunning))
+	t.status.CompareAndSwap(int32(StatusStepping), int32(StatusRunning))
+}
+
+// Stop 停止仿真，使主循环优雅退出。
+// 连续模式下调用此方法结束 TransientSimulation。
+func (t *TimeMNA) Stop() {
+	t.status.Store(int32(StatusStopped))
+}
+
+// StepOnce 设置单步模式：执行一步后自动暂停。
+// 仅在 Running/Paused 状态下有效。
+func (t *TimeMNA) StepOnce() {
+	t.status.CompareAndSwap(int32(StatusRunning), int32(StatusStepping))
+	t.status.CompareAndSwap(int32(StatusPaused), int32(StatusStepping))
+}
+
+// Status 返回当前仿真运行状态。
+func (t *TimeMNA) Status() SimStatus {
+	return SimStatus(t.status.Load())
+}
+
+// AdvanceFor 前进指定时间后自动暂停。
+// 连续模式下，设置一个临时目标时间 = currentTime + duration，到达后自动变为 Paused。
+// 非连续模式下，仅延长 targetTime（等效于追加仿真时长）。
+func (t *TimeMNA) AdvanceFor(duration float64) error {
+	if duration <= 0 {
+		return errors.New("前进时间必须大于0")
+	}
+	t.targetTime = t.currentTime + duration
+	if t.continuous {
+		t.tempTarget = true
+	}
+	t.status.CompareAndSwap(int32(StatusPaused), int32(StatusRunning))
+	return nil
 }
 
 // ------------------------------
@@ -830,11 +913,13 @@ func (t *TimeMNA) advanceTimeAndTriggers(adjustStep bool) {
 			nextTime = t.triggers[i].Time
 		}
 	}
-	// 不超过目标时间
-	if nextTime > t.targetTime {
-		nextTime = t.targetTime
-		if adjustStep {
-			t.currentStep = nextTime - t.currentTime
+	// 不超过目标时间（纯连续模式跳过目标时间截断，仅临时目标模式需要）
+	if !t.continuous || t.tempTarget {
+		if nextTime > t.targetTime {
+			nextTime = t.targetTime
+			if adjustStep {
+				t.currentStep = nextTime - t.currentTime
+			}
 		}
 	}
 	t.currentTime = nextTime

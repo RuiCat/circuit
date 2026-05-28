@@ -46,6 +46,23 @@ type Buffer[T Number] interface {
 	// NewReader 基于当前压缩器配置创建一个泛型块读取器
 	// 用于从文件中读取之前写入的块数据
 	NewReader(r io.Reader) *BufferReader[T]
+
+	// SetMaxBlocks 设置最大存储块数。n=0 表示无限制（默认）。
+	// 当 maxBlocks>0 时，超过限制的最旧数据块会被丢弃（环形缓冲）。
+	SetMaxBlocks(n int)
+
+	// MaxBlocks 返回当前最大存储块数
+	MaxBlocks() int
+
+	// BlockCount 返回当前已存储的块数
+	BlockCount() int
+
+	// TotalRows 返回当前存储的总数据行数（包括活跃缓冲和已保存块）
+	TotalRows() int
+
+	// LastRows 返回最近 n 行数据（跨块查询），用于交互式查询最新电压
+	// n 不能超过 TotalRows()，否则返回全部
+	LastRows(n int) [][]T
 }
 
 // Compressor 压缩器接口

@@ -344,16 +344,33 @@ func TestReset(t *testing.T) {
 	}
 }
 
-// TestFlushWithoutWriter 未设置 writer 时 Flush 应返回错误
+// TestFlushWithoutWriter 未设置 writer 时 Flush 应正常完成（纯内存模式）
 func TestFlushWithoutWriter(t *testing.T) {
 	buf := NewBuffer[float64](10, 3)
-	_, err := buf.Append([]float64{1.0, 2.0, 3.0})
-	if err != nil {
-		t.Fatalf("Append 失败: %v", err)
+	// 设置最大块数以启用环形缓冲
+	buf.SetMaxBlocks(5)
+
+	// 写入足够数据使其触发一次缓冲切换（10行满 + 1行）
+	for i := 0; i < 11; i++ {
+		_, err := buf.Append([]float64{float64(i), float64(i) + 0.1, float64(i) + 0.2})
+		if err != nil {
+			t.Fatalf("Append 失败: %v", err)
+		}
 	}
-	err = buf.Flush()
-	if err != ErrWriterNotSet {
-		t.Errorf("期望 ErrWriterNotSet，得到 %v", err)
+
+	// Flush 应成功（无 writer 时仅保存到内存环形缓冲）
+	err := buf.Flush()
+	if err != nil {
+		t.Errorf("无 writer 时 Flush 应成功，得到 %v", err)
+	}
+
+	// 验证数据可通过 LastRows 读取
+	if buf.BlockCount() == 0 {
+		t.Error("期望 BlockCount > 0")
+	}
+	rows := buf.LastRows(11)
+	if len(rows) != 11 {
+		t.Errorf("期望 11 行，得到 %d", len(rows))
 	}
 }
 
