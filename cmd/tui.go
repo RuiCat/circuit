@@ -21,7 +21,7 @@ import (
 )
 
 var tuiCommands = []string{
-	"v", "t", "run", "step", "curve", "trigger",
+	"v", "t", "run", "step", "curve", "trigger", "plot",
 	"set", "pause", "resume", "stop", "status", "help", "quit",
 }
 
@@ -38,7 +38,7 @@ var (
 			Border(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color("#666666")).
 			Padding(0, 1).
-			Width(24)
+			Width(30)
 
 	inputStyle = lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder()).
@@ -85,9 +85,10 @@ var keys = keyMap{
 
 // ===== simUpdate =====
 type simUpdate struct {
-	voltages []float64
-	time     float64
-	steps    int
+	voltages    []float64
+	time        float64
+	steps       int
+	currentStep float64
 }
 
 // ===== tuiModel =====
@@ -96,10 +97,11 @@ type tuiModel struct {
 	timeMNA *etime.TimeMNA
 	bufCfg  doublebuffer.Buffer[float64]
 
-	mu       sync.RWMutex
-	voltages []float64
-	simTime  float64
-	steps    int
+	mu          sync.RWMutex
+	voltages    []float64
+	simTime     float64
+	steps       int
+	currentStep float64
 
 	triggerNode    int
 	triggerOp      string
@@ -116,10 +118,10 @@ type tuiModel struct {
 	history []string
 	histIdx int
 
-	updateCh     chan simUpdate
-	quitting     bool
-	width        int
-	height       int
+	updateCh      chan simUpdate
+	quitting      bool
+	width         int
+	height        int
 	vpHeight      int
 	focusViewport bool // 焦点在 viewport 时为 true，在输入框时为 false
 	lastOutLen    int
@@ -175,11 +177,17 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		vpW := msg.Width - 32
-		if vpW < 20 { vpW = 20 }
+		vpW := msg.Width - 38
+		if vpW < 20 {
+			vpW = 20
+		}
 		m.viewport.Width = vpW
-		m.viewport.Height = msg.Height - 5
-		m.vpHeight = msg.Height - 5
+		vpH := msg.Height - 5
+		if vpH < 5 {
+			vpH = 5
+		}
+		m.viewport.Height = vpH
+		m.vpHeight = vpH
 		// input 宽度 = 终端宽 - 边框(2)
 		m.input.Width = msg.Width - 4
 		return m, nil
@@ -195,14 +203,10 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.handleTabComplete()
 			return m, nil
 
-		// 焦点切换：空输入框按↑ → 切换到 viewport
+		// ↑：浏览历史命令（无历史时切到 viewport）
 		case key.Matches(msg, keys.Up):
 			if m.focusViewport {
 				m.viewport.LineUp(1)
-				return m, nil
-			}
-			if m.input.Value() == "" {
-				m.focusViewport = true
 				return m, nil
 			}
 			if len(m.history) > 0 {
@@ -213,12 +217,23 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.input.SetValue(m.history[m.histIdx])
 				m.input.CursorEnd()
+				return m, nil
+			}
+			if m.input.Value() == "" {
+				m.focusViewport = true
 			}
 			return m, nil
 
+		// ↓：浏览历史命令（首次按下跳到最新一条）
 		case key.Matches(msg, keys.Down):
 			if m.focusViewport {
 				m.viewport.LineDown(1)
+				return m, nil
+			}
+			if len(m.history) > 0 && m.histIdx == -1 {
+				m.histIdx = len(m.history) - 1
+				m.input.SetValue(m.history[m.histIdx])
+				m.input.CursorEnd()
 				return m, nil
 			}
 			if m.histIdx >= 0 {
@@ -284,6 +299,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.voltages = msg.voltages
 		m.simTime = msg.time
 		m.steps = msg.steps
+		m.currentStep = msg.currentStep
 		m.mu.Unlock()
 		cmds = append(cmds, m.listenUpdates())
 	}
@@ -304,7 +320,7 @@ func (m *tuiModel) View() string {
 	statusStr := "运行中"
 	switch st {
 	case etime.StatusPaused:
-		statusStr = "  仿真已暂停"
+		statusStr = "仿真已暂停"
 	case etime.StatusStopped:
 		statusStr = "已停止"
 	case etime.StatusStepping:
@@ -314,6 +330,7 @@ func (m *tuiModel) View() string {
 	m.mu.RLock()
 	t := m.simTime
 	s := m.steps
+	cs := m.currentStep
 	v := m.voltages
 	m.mu.RUnlock()
 
@@ -321,7 +338,7 @@ func (m *tuiModel) View() string {
 	if m.focusViewport {
 		focusStr = "[浏览]"
 	}
-	titleContent := fmt.Sprintf(" circuit  │  t=%.4e s  │  %s  │  步数:%d", t, statusStr, s)
+	titleContent := fmt.Sprintf(" circuit  │  t=%.4e s  │  dt=%.2e s  │  %s  │  步数:%d", t, cs, statusStr, s)
 	contentWidth := m.width - 4 // titleStyle.Width(m.width-2) 减去 Padding(0,1) 的左右各1
 	titleLen := lipgloss.Width(titleContent)
 	focusLen := lipgloss.Width(focusStr)
@@ -335,8 +352,42 @@ func (m *tuiModel) View() string {
 	// --- 主视口内容 ---
 	var mainBuf strings.Builder
 
-	// 电压区
-	if v != nil && len(v) > 0 {
+	// 触发
+	if m.triggerEnabled {
+		mainBuf.WriteString(triggerStyle.Render(
+			fmt.Sprintf("⚡ 触发: node_%d %s %v", m.triggerNode, m.triggerOp, m.triggerValue)) + "\n\n")
+	}
+
+	// 输出历史
+	if len(m.output) > 0 {
+		for i := 0; i < len(m.output); i++ {
+			mainBuf.WriteString(m.output[i] + "\n")
+		}
+	} else if !m.triggerEnabled {
+		mainBuf.WriteString("等待仿真数据...\n")
+	}
+
+	m.viewport.SetContent(mainBuf.String())
+	if len(m.output) != m.lastOutLen {
+		m.viewport.GotoBottom()
+		m.lastOutLen = len(m.output)
+	}
+
+	// --- 侧边栏 ---
+	var side strings.Builder
+
+	// 上半：状态信息
+	side.WriteString("── 状态 ──\n")
+	side.WriteString(fmt.Sprintf(" 状态  %s\n", statusStr))
+	side.WriteString(fmt.Sprintf(" 步长  %.2e s\n", cs))
+	side.WriteString(fmt.Sprintf(" 步数  %d\n", s))
+	side.WriteString(fmt.Sprintf(" 节点  %d\n", len(m.con.CompactNodeID)))
+	side.WriteString(fmt.Sprintf(" 元件  %d\n", len(m.con.Nodelist)))
+	side.WriteString(fmt.Sprintf(" 缓冲  %d行 %d/%d块\n\n", m.bufCfg.TotalRows(), m.bufCfg.BlockCount(), m.bufCfg.MaxBlocks()))
+
+	// 下半：节点电压表格
+	side.WriteString("── 节点电压 ──\n")
+	if len(v) > 0 {
 		type ni struct {
 			rawID int
 			val   float64
@@ -348,56 +399,37 @@ func (m *tuiModel) View() string {
 			}
 		}
 		sort.Slice(nodes, func(i, j int) bool { return nodes[i].rawID < nodes[j].rawID })
-		mainBuf.WriteString("── 节点电压 ──\n")
+		// 表头
+		side.WriteString(" N#    电压(V)\n")
+		side.WriteString(" ──── ──────────\n")
 		for _, n := range nodes {
-			mainBuf.WriteString(fmt.Sprintf("  node_%-4d │ %+.6e V", n.rawID, n.val))
-			mainBuf.WriteString("\n")
+			side.WriteString(fmt.Sprintf(" %-4d %+.4e\n", n.rawID, n.val))
 		}
 	} else {
-		mainBuf.WriteString("等待仿真数据...\n")
+		side.WriteString(" 等待数据...\n")
 	}
-
-	// 触发
-	if m.triggerEnabled {
-		mainBuf.WriteString("\n" + triggerStyle.Render(
-			fmt.Sprintf("⚡ 触发: node_%d %s %v", m.triggerNode, m.triggerOp, m.triggerValue)) + "\n")
-	}
-
-	// 输出历史
-	if len(m.output) > 0 {
-		mainBuf.WriteString("\n── 输出 ──\n")
-		for i := 0; i < len(m.output); i++ {
-			mainBuf.WriteString(m.output[i] + "\n")
-		}
-	}
-
-	m.viewport.SetContent(mainBuf.String())
-	if len(m.output) != m.lastOutLen {
-		m.viewport.GotoBottom()
-		m.lastOutLen = len(m.output)
-	}
-
-	// --- 侧边栏 ---
-	var side strings.Builder
-	side.WriteString(fmt.Sprintf(" 状态  %s\n\n", statusStr))
-	side.WriteString(fmt.Sprintf(" 步数  %d\n", s))
-	side.WriteString(fmt.Sprintf(" 节点  %d\n", len(m.con.CompactNodeID)))
-	side.WriteString(fmt.Sprintf(" 元件  %d\n", len(m.con.Nodelist)))
-	side.WriteString(" ──────────────\n")
-	side.WriteString(m.help.View(keys))
 
 	// --- 组合 ---
-	// 让侧边栏高度匹配 viewport: 填充换行
+	// 让侧边栏高度匹配 viewport: 截断或填充换行
 	sideContent := side.String()
-	vpLines := m.vpHeight - 3
+	vpLines := m.vpHeight - 2
+	if vpLines < 1 {
+		vpLines = 1
+	}
 	curLines := strings.Count(sideContent, "\n") + 1
-	if curLines < vpLines {
-		sideContent += strings.Repeat("\n", vpLines - curLines)
+	if curLines > vpLines {
+		// 截断过长内容，防止 JoinHorizontal 撑高布局溢出终端
+		lines := strings.SplitN(sideContent, "\n", vpLines+1)
+		sideContent = strings.Join(lines[:vpLines], "\n")
+	} else if curLines < vpLines {
+		sideContent += strings.Repeat("\n", vpLines-curLines)
 	}
 	sideView := sidebarStyle.Render(sideContent)
 	middle := lipgloss.JoinHorizontal(lipgloss.Top, m.viewport.View(), sideView)
 	mw := lipgloss.Width(middle)
-	if mw < 40 { mw = 40 }
+	if mw < 40 {
+		mw = 40
+	}
 	if m.focusViewport {
 		m.input.Placeholder = "浏览模式 (按 Esc 返回输入)"
 		m.input.Blur()
@@ -451,7 +483,9 @@ func (m *tuiModel) executeCommand(line string) {
 	}
 	// 分隔线：区分每次命令输出
 	sepW := m.viewport.Width - 6
-	if sepW < 20 { sepW = 20 }
+	if sepW < 20 {
+		sepW = 20
+	}
 	m.output = append(m.output, "  "+strings.Repeat("·", sepW))
 	m.output = append(m.output, "  > "+line)
 	switch strings.ToLower(parts[0]) {
@@ -469,6 +503,8 @@ func (m *tuiModel) executeCommand(line string) {
 		m.output = append(m.output, "  单步执行...")
 	case "curve":
 		m.cmdCurve(parts[1:])
+	case "plot":
+		m.cmdPlot(parts[1:])
 	case "trigger":
 		m.cmdTrigger(parts[1:])
 	case "set":
@@ -485,25 +521,28 @@ func (m *tuiModel) executeCommand(line string) {
 	case "status":
 		m.cmdStatus()
 	case "help":
-		vpW := m.viewport.Width - 4 // viewport 内容宽度
-		sep := strings.Repeat("─", vpW)
-		m.output = append(m.output,
-			"  "+sep,
-			fmt.Sprintf("  %-12s %s", "命令", "说明"),
-			"  "+sep,
-			fmt.Sprintf("  %-12s 查询节点电压 (v 1,2 或 v all)", "v <节点>"),
-			fmt.Sprintf("  %-12s 显示当前仿真时间", "t"),
-			fmt.Sprintf("  %-12s 前进 N 秒后自动暂停", "run <秒>"),
-			fmt.Sprintf("  %-12s 单步执行一步", "step"),
-			fmt.Sprintf("  %-12s 查询历史电压曲线", "curve <节点> <秒>"),
-			fmt.Sprintf("  %-12s 设置电压触发条件", "trigger <节点> <op>"),
-			fmt.Sprintf("  %-12s 清除触发条件", "trigger off"),
-			fmt.Sprintf("  %-12s 设置事件值", "set <事件> <值>"),
-			fmt.Sprintf("  %-12s 暂停 / 恢复仿真", "pause / resume"),
-			fmt.Sprintf("  %-12s 停止仿真并退出", "stop / quit"),
-			"  "+sep,
-			"  ↑↓ 历史  │  Tab 补全  │  Esc 切换焦点  │  PgUp/PgDn 滚动  │  鼠标滚轮",
-		)
+		helpHeaders := []string{"命令", "说明"}
+		helpRows := [][]string{
+			{"v <节点>", "查询节点电压 (v 1,2 或 v all)"},
+			{"t", "显示当前仿真时间"},
+			{"run <秒>", "前进 N 秒后自动暂停"},
+			{"step", "单步执行一步"},
+			{"curve <节点|all> <秒> [点数]", "查询历史电压曲线(可选采样点数)"},
+			{"plot <节点|all> [文件]", "绘制当前缓冲区全部电压曲线(PNG)"},
+			{"trigger <节点> <op> <值>", "设置电压触发条件"},
+			{"trigger off", "清除触发条件"},
+			{"set <事件> <值>", "设置事件值"},
+			{"pause / resume", "暂停 / 恢复仿真"},
+			{"status", "显示仿真状态"},
+			{"help", "显示此帮助"},
+			{"stop / quit", "停止仿真并退出"},
+		}
+		w := m.viewport.Width - 6
+		if w < 40 {
+			w = 40
+		}
+		m.output = appendTable(m.output, helpHeaders, helpRows, w)
+		m.output = append(m.output, "  ↑↓ 历史  │  Tab 补全  │  Esc 切换焦点  │  PgUp/PgDn 滚动  │  鼠标滚轮")
 	default:
 		m.output = append(m.output, fmt.Sprintf("  未知命令: %s (输入 help 查看帮助)", parts[0]))
 	}
@@ -520,22 +559,22 @@ func (m *tuiModel) cmdVoltage(args []string) {
 		m.output = append(m.output, "  仿真尚未开始，请先 resume 或 run")
 		return
 	}
+
+	type ni struct {
+		rawID int
+		val   float64
+	}
+	var nodes []ni
+
 	if len(args) == 0 || args[0] == "all" {
-		type ni struct {
-			rawID int
-			val   float64
-		}
-		var nodes []ni
 		for rawID, ci := range m.con.CompactNodeID {
 			if ci < len(v) {
 				nodes = append(nodes, ni{int(rawID), v[ci]})
 			}
 		}
 		sort.Slice(nodes, func(i, j int) bool { return nodes[i].rawID < nodes[j].rawID })
-		for _, n := range nodes {
-			m.output = append(m.output, fmt.Sprintf("  node_%-4d │ %+.6e V", n.rawID, n.val))
-		}
 	} else {
+		seen := make(map[int]bool)
 		for _, arg := range args {
 			for _, ns := range strings.Split(arg, ",") {
 				ns = strings.TrimSpace(ns)
@@ -547,15 +586,38 @@ func (m *tuiModel) cmdVoltage(args []string) {
 					m.output = append(m.output, fmt.Sprintf("  无效节点: %s", ns))
 					continue
 				}
+				if seen[n] {
+					continue
+				}
 				ci, ok := m.con.CompactNodeID[mna.NodeID(n)]
 				if !ok || ci >= len(v) {
 					m.output = append(m.output, fmt.Sprintf("  节点 %d 不存在", n))
 				} else {
-					m.output = append(m.output, fmt.Sprintf("  node_%-4d │ %+.6e V", n, v[ci]))
+					nodes = append(nodes, ni{n, v[ci]})
+					seen[n] = true
 				}
 			}
 		}
 	}
+
+	if len(nodes) == 0 {
+		m.output = append(m.output, "  无节点数据")
+		return
+	}
+
+	headers := []string{"节点", "电压(V)"}
+	var rows [][]string
+	for _, n := range nodes {
+		rows = append(rows, []string{
+			fmt.Sprintf("node_%d", n.rawID),
+			fmt.Sprintf("%+.6e", n.val),
+		})
+	}
+	w := m.viewport.Width - 6
+	if w < 40 {
+		w = 40
+	}
+	m.output = appendTable(m.output, headers, rows, w)
 }
 
 func (m *tuiModel) cmdRun(args []string) {
@@ -645,7 +707,9 @@ func (m *tuiModel) cmdCurve(args []string) {
 	}
 
 	disp := filtered
-	if pts > 0 && pts < len(filtered) {
+	if pts == 1 && len(filtered) > 0 {
+		disp = [][]float64{filtered[len(filtered)-1]}
+	} else if pts > 1 && pts < len(filtered) {
 		disp = make([][]float64, pts)
 		step := float64(len(filtered)-1) / float64(pts-1)
 		for i := 0; i < pts; i++ {
@@ -658,35 +722,30 @@ func (m *tuiModel) cmdCurve(args []string) {
 	}
 
 	// 自适应宽度表格
-	w := m.viewport.Width - 6
-	if w < 40 { w = 40 }
-	tc := 20              // time 列宽
-	nc := 20              // 每节点列宽
-	nodesW := (w - tc - 3*len(qn))
-	if nodesW < len(qn)*12 {
-		nc = 12
-	} else {
-		nc = nodesW / len(qn)
-		if nc > 20 { nc = 20 }
-	}
-	// 表头
-	hdr := fmt.Sprintf("  %-*s", tc, "time")
+	headers := []string{"time"}
 	for _, n := range qn {
-		hdr += fmt.Sprintf(" │ %-*s", nc, fmt.Sprintf("node_%d", n))
+		headers = append(headers, fmt.Sprintf("node_%d", n))
 	}
-	m.output = append(m.output, hdr)
-	m.output = append(m.output, "  "+strings.Repeat("─", w))
-	// 数据
+
+	var tRows [][]string
 	for _, r := range disp {
-		line := fmt.Sprintf("  %-*s", tc, formatFloat(r[0]))
+		row := []string{formatFloat(r[0])}
 		for _, n := range qn {
 			ci, ok := m.con.CompactNodeID[mna.NodeID(n)]
 			var val float64
-			if ok && ci+1 < len(r) { val = r[ci+1] }
-			line += fmt.Sprintf(" │ %-*.6e", nc, val)
+			if ok && ci+1 < len(r) {
+				val = r[ci+1]
+			}
+			row = append(row, fmt.Sprintf("%.6e", val))
 		}
-		m.output = append(m.output, line)
+		tRows = append(tRows, row)
 	}
+
+	w := m.viewport.Width - 6
+	if w < 40 {
+		w = 40
+	}
+	m.output = appendTable(m.output, headers, tRows, w)
 	m.output = append(m.output, fmt.Sprintf("(%d 点, 跨度 %.3e s)", len(disp), curT-startT))
 }
 
@@ -822,7 +881,7 @@ func runTUI(con *element.Context, cfg config) error {
 			copy(cp, v)
 			stepCnt++
 			select {
-			case ch <- simUpdate{voltages: cp, time: con.CurrentTime(), steps: stepCnt}:
+			case ch <- simUpdate{voltages: cp, time: con.CurrentTime(), steps: stepCnt, currentStep: con.CurrentStep()}:
 			default:
 			}
 			row := make([]float64, 1+len(v))

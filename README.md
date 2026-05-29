@@ -187,6 +187,13 @@ Go实现的电气仿真,通过底层泛型与接口统一实现对 电子元件,
      4. 事件设置: set <事件> <值> 实时注入事件到仿真上下文
      5. 状态查询: status 显示运行状态/步数/时间
      6. 命令集: v/t/run/step/curve/trigger/set/pause/resume/stop/status/help 共 12 个
+    * [2026-5-30] TUI 交互增强: Plot 绘图、步长与缓冲状态显示
+      1. 新增 cmd/plot.go (186行): 基于 gonum/plot v0.17 专业科学绘图库生成 PNG 电压曲线
+      2. plot 命令: `plot <节点|all> [文件名]` 直接绘制缓冲区全部历史数据
+      3. 新增 cmd/table_util.go (118行): 自适应终端表格渲染，根据内容与终端宽度计算列宽
+      4. TUI 标题栏新增当前自适应步长 `dt=%.2e s` (TimeMNA.CurrentStep)
+      5. TUI 侧边栏新增缓冲区信息 `缓冲 N行 M/K块` (TotalRows/BlockCount/MaxBlocks)
+      6. 新增 go.mod 依赖: gonum.org/v1/plot v0.17.0, 升级 x/image v0.26→v0.30
 
 ## 开发任务规划
   1. [✔] 实现基于计算图构建矩阵方程求解器  
