@@ -32,8 +32,11 @@ func (Capacitor) StartIteration(mna mna.Mna, time mna.Time, value element.NodeFa
 		return
 	}
 	c := value.GetFloat64(0)
-	v_prev := value.GetFloat64(3)
-	I_hist := (2*c/dt)*v_prev + value.GetFloat64(4)
+	// 实时读取当前迭代的节点电压，消除伴随模型一个时步的相位延迟（与电感行为统一）
+	v1 := mna.GetNodeVoltage(value.GetNodes(0))
+	v2 := mna.GetNodeVoltage(value.GetNodes(1))
+	v_diff := v1 - v2
+	I_hist := (2*c/dt)*v_diff + value.GetFloat64(4)
 	value.SetFloat64(2, I_hist)
 }
 

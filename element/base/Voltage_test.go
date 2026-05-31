@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// TestVoltageSource 验证直流和交流电压源：DC测试5V固定输出，AC测试正弦波输出并检查频率响应。
 func TestVoltageSource(t *testing.T) {
 	// 测试直流电压源
 	t.Run("DCVoltage", func(t *testing.T) {

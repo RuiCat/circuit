@@ -88,15 +88,19 @@ func openPort(name string, config *driver.UARTConfig) (p *Port, err error) {
 	if err != nil {
 		return
 	}
+	var cleanupDone bool
+	defer func() {
+		if !cleanupDone {
+			f.Close()
+		}
+	}()
 	fd := C.int(f.Fd())
 	if C.isatty(fd) != 1 {
-		f.Close()
 		return nil, errors.New("File is not a tty")
 	}
 	var st C.struct_termios
 	_, err = C.tcgetattr(fd, &st)
 	if err != nil {
-		f.Close()
 		return nil, err
 	}
 	var speed C.speed_t
@@ -135,17 +139,14 @@ func openPort(name string, config *driver.UARTConfig) (p *Port, err error) {
 	case 50:
 		speed = C.B50
 	default:
-		f.Close()
 		return nil, fmt.Errorf("Unknown baud rate %v", baud)
 	}
 	_, err = C.cfsetispeed(&st, speed)
 	if err != nil {
-		f.Close()
 		return nil, err
 	}
 	_, err = C.cfsetospeed(&st, speed)
 	if err != nil {
-		f.Close()
 		return nil, err
 	}
 	// 关闭中断、CR->NL 转换、奇偶校验、剥离和 IXON
@@ -208,7 +209,6 @@ func openPort(name string, config *driver.UARTConfig) (p *Port, err error) {
 	st.c_cc[C.VTIME] = C.cc_t(vtime)
 	_, err = C.tcsetattr(fd, C.TCSANOW, &st)
 	if err != nil {
-		f.Close()
 		return nil, err
 	}
 	r1, _, e := syscall.Syscall(syscall.SYS_FCNTL,
@@ -217,9 +217,9 @@ func openPort(name string, config *driver.UARTConfig) (p *Port, err error) {
 		uintptr(0))
 	if e != 0 || r1 != 0 {
 		s := fmt.Sprint("Clearing NONBLOCK syscall error:", e, r1)
-		f.Close()
 		return nil, errors.New(s)
 	}
+	cleanupDone = true
 	return &Port{f: f}, nil
 }
 

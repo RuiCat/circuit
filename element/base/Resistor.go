@@ -1,8 +1,11 @@
+// Package base 提供电路仿真所有基础元件的实现。包括无源元件(电阻、电容、电感)、有源元件(二极管、三极管、运放)、电源(直流/交流/脉冲/噪声)、电机、变压器、逻辑门、触发器和交互式元件等。
 package base
 
 import (
 	"circuit/element"
 	"circuit/mna"
+	"log"
+	"math"
 )
 
 // ResistorType 定义元件
@@ -25,5 +28,9 @@ type Resistor struct{ *element.Config }
 // 参数time: 仿真时间接口，当前未使用（电阻是线性时不变元件）
 // 参数value: 电阻元件节点接口，用于获取电阻值和节点连接信息
 func (Resistor) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
-	mna.StampImpedance(value.GetNodes(0), value.GetNodes(1), value.GetFloat64(0))
+	r := value.GetFloat64(0)
+	if math.Abs(r) <= 1e-9 {
+		log.Printf("Resistor: 阻值 %.3e 近似为零，将被视为 1nΩ 短路路径", r)
+	}
+	mna.StampImpedance(value.GetNodes(0), value.GetNodes(1), r)
 }

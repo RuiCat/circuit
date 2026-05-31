@@ -73,6 +73,7 @@ func multiplyMatrices[T Number](a, b Matrix[T]) Matrix[T] {
 	return result
 }
 
+// TestLUBlockDecomposition 验证分块 LU 分解的正确性：检查分解后 L*U 是否等于置换后的原矩阵 PA。
 func TestLUBlockDecomposition(t *testing.T) {
 	// 创建一个可逆矩阵
 	A := NewDenseMatrix[float64](4, 4)
@@ -118,6 +119,7 @@ func TestLUBlockDecomposition(t *testing.T) {
 	}
 }
 
+// TestLUBlockSolve 验证分块 LU 分解后求解线性方程组的正确性：检查求解结果 Ax=b 的精度。
 func TestLUBlockSolve(t *testing.T) {
 	// 创建矩阵 A 和向量 b
 	A := NewDenseMatrix[float64](3, 3)
@@ -155,7 +157,8 @@ func TestLUBlockSolve(t *testing.T) {
 	}
 }
 
-// Test with a larger matrix to engage the recursive blocking
+// TestLUBlockDecompositionLarge 验证分块 LU 分解对大型矩阵(超过 BlockThreshold)的正确性：
+// 使用对角占优矩阵，检查分解后能否通过 L*U 重构出置换后的原矩阵。
 func TestLUBlockDecompositionLarge(t *testing.T) {
 	n := 50 // 大于 BlockThreshold
 	A := NewDenseMatrix[float64](n, n)

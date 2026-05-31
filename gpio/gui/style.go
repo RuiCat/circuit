@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -225,6 +226,18 @@ func EaseOutElastic(t float32) float32 {
 // 给定起始值 a、结束值 b 和进度 t（范围 [0,1]），返回插值结果。
 type Interpolator[T any] func(a, b T, t float32) T
 
+
+// clampF32 将 float32 值限制在 [lo, hi] 范围内。
+func clampF32(v, lo, hi float32) float32 {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
+
 // LerpColor 在 RGB565 颜色空间中对两个颜色进行线性插值。
 // 分别提取 R（5位）、G（6位）、B（5位）通道，在各通道上插值后重新组合。
 // Color 为 uint16 RGB565 格式：位 15-11=R, 位 10-5=G, 位 4-0=B。
@@ -238,10 +251,11 @@ func LerpColor(a, b Color, t float32) Color {
 	gb := float32((b >> 5) & 0x3F)
 	bd := float32(b & 0x1F)
 
-	// 各通道线性插值
-	r := uint16(ra+(rb-ra)*t + 0.5)
-	g := uint16(ga+(gb-ga)*t + 0.5)
-	bl := uint16(bc+(bd-bc)*t + 0.5)
+	// clamp 防止弹性缓动超调导致 uint16 负值溢出
+	// 各通道线性插值（夹紧防止缓动函数超调导致溢出）
+	r := uint16(clampF32(ra+(rb-ra)*t, 0, 31) + 0.5)
+	g := uint16(clampF32(ga+(gb-ga)*t, 0, 63) + 0.5)
+	bl := uint16(clampF32(bc+(bd-bc)*t, 0, 31) + 0.5)
 
 	// 重新组合为 RGB565
 	return Color((r << 11) | (g << 5) | bl)
@@ -275,6 +289,8 @@ type animEntry struct {
 // Animator 管理一组属性的动画过渡。
 // 每个动画由唯一的字符串 id 标识。
 type Animator struct {
+	// 保护 entries map 的并发访问（渲染循环 vs 输入处理）
+	mu      sync.Mutex
 	entries map[string]*animEntry
 }
 
@@ -289,6 +305,8 @@ func NewAnimator() *Animator {
 // from 为起始值，to 为目标值，dur 为动画时长，easing 为缓动函数。
 // lerpFn 是类型擦除的插值函数，用于在动画中计算中间值。
 func (a *Animator) AnimateTo(id string, from, to any, dur time.Duration, easing Easing, lerpFn func(any, any, float32) any) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.entries[id] = &animEntry{
 		from:   from,
 		to:     to,
@@ -305,6 +323,8 @@ func (a *Animator) AnimateTo(id string, from, to any, dur time.Duration, easing 
 // 如果动画进行中，使用缓动函数和插值器计算当前值。
 // 如果动画已完成，返回目标值 to。
 func (a *Animator) Resolve(id string, current any) any {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	entry, ok := a.entries[id]
 	if !ok {
 		return current
@@ -328,6 +348,8 @@ func (a *Animator) Resolve(id string, current any) any {
 // IsDone 检查指定 id 的动画是否已经结束。
 // 如果 id 不存在也返回 true。
 func (a *Animator) IsDone(id string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	entry, ok := a.entries[id]
 	if !ok {
 		return true
@@ -344,11 +366,15 @@ func (a *Animator) IsDone(id string) bool {
 
 // Cancel 取消指定 id 的动画，移除其状态。
 func (a *Animator) Cancel(id string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	delete(a.entries, id)
 }
 
 // Clear 清除所有动画状态。
 func (a *Animator) Clear() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.entries = make(map[string]*animEntry)
 }
 

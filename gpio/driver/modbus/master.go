@@ -161,12 +161,26 @@ func (c *Master) sendRequest(pdu []byte) ([]byte, error) {
 	}
 
 	// 接收响应
-	// 注意: 超时功能尚未实现，底层UART不支持设置读取超时
-	// 简单实现: 读取足够大的缓冲区，解析响应
-	// 注意: 底层 UART 暂不支持设置读取超时，timeout 字段目前仅作为预留接口，实际读取行为取决于具体 UART 实现。
-	readBuf, err := c.uart.Read(256)
-	if err != nil {
-		return nil, err
+	// 注意: 使用 goroutine + timer 实现应用层超时
+	// 当底层 UART 支持超时后，可移除此包装，直接使用底层超时机制
+	type readResult struct {
+		data []byte
+		err  error
+	}
+	ch := make(chan readResult, 1)
+	go func() {
+		data, err := c.uart.Read(256)
+		ch <- readResult{data, err}
+	}()
+	var readBuf []byte
+	select {
+	case <-time.After(c.timeout):
+		return nil, fmt.Errorf("modbus: 请求超时 (%v)", c.timeout)
+	case result := <-ch:
+		if result.err != nil {
+			return nil, fmt.Errorf("modbus: 读取失败: %w", result.err)
+		}
+		readBuf = result.data
 	}
 
 	// 验证响应

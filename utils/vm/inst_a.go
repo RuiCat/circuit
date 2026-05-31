@@ -1,5 +1,9 @@
 package vm
 
+// 本文件实现了 RISC-V A（原子操作）扩展的指令处理。
+// 包含 LR（Load-Reserved）、SC（Store-Conditional）以及 AMOSWAP、AMOADD 等原子内存操作，
+// 支持通过 Sv32 MMU 的地址翻译和权限检查。
+
 // handleAMO 处理所有原子内存操作指令 (A 扩展)。
 // 这些指令以原子方式读取、修改并写回内存位置。
 // 格式: amoadd.w rd, rs2, (rs1)

@@ -377,6 +377,7 @@ const (
 type library struct {
 	handle unsafe.Pointer
 	mu     sync.RWMutex
+	closed bool // 防止 dlclose 后调用函数指针导致 SIGSEGV
 }
 
 var (
@@ -419,6 +420,11 @@ func (e *Error) Error() string {
 func (lib *library) Close() error {
 	lib.mu.Lock()
 	defer lib.mu.Unlock()
+	// 幂等关闭：防止重复 dlclose
+	if lib.closed {
+		return nil
+	}
+	lib.closed = true
 	if lib.handle != nil {
 		C.dlclose(lib.handle)
 		lib.handle = nil
@@ -438,7 +444,11 @@ func (lib *library) GetLibInfo() string {
 
 func (lib *library) OpenDevice(path string) (int, error) {
 	lib.mu.RLock()
+	// 防止在已卸载的共享库上调用函数指针导致段错误
 	defer lib.mu.RUnlock()
+	if lib.closed {
+		return 0, errors.New("ch34x: library is closed")
+	}
 	cpath := C.CString(path)
 	defer C.free(unsafe.Pointer(cpath))
 	fd := C.pOpenDevice(cpath)
@@ -530,6 +540,9 @@ func (lib *library) SPISetFrequency(fd int, freqHz uint32) error {
 func (lib *library) SPIInit(fd int, cfg *driver.SPIConfig) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
+	if lib.closed {
+		return errors.New("ch34x: library is closed")
+	}
 	success := C.pSPIInit(C.int(fd), unsafe.Pointer(cfg))
 	if !success {
 		return errors.New("failed to initialize SPI")
@@ -649,6 +662,9 @@ func (lib *library) UartClose(fd int) error {
 func (lib *library) UartInit(fd, baudRate int, byteSize, parity, stopBits, byteTimeout uint8) error {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
+	if lib.closed {
+		return errors.New("ch34x: library is closed")
+	}
 	success := C.pUartInit(C.int(fd), C.int(baudRate), C.uchar(byteSize), C.uchar(parity), C.uchar(stopBits), C.uchar(byteTimeout))
 	if !success {
 		return errors.New("failed to initialize UART")
@@ -776,6 +792,9 @@ func (lib *library) i2cStreamWithAck(fd int, writeData []byte, readLength int) (
 func (lib *library) StreamI2C(fd int, writeData []byte, readLength int) ([]byte, error) {
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
+	if lib.closed {
+		return nil, errors.New("ch34x: library is closed")
+	}
 	var readBuffer []byte
 	if readLength > 0 {
 		readBuffer = make([]byte, readLength)

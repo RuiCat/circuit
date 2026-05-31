@@ -72,6 +72,10 @@ type VmInaState struct {
 //	uint32: 读取到的CSR的值。
 //	bool:   如果CSR地址有效且可读，则为 true；否则为 false。
 func (vmst *VmState) CsrRead(csr uint32) (uint32, bool) {
+	// 特权级别检查：低特权级不能读取高特权级 CSR
+	if vmst.Core.Privilege < csrMinPrivilege(csr) {
+		return 0, false // 返回 false 触发 ILLEGAL_INSTRUCTION
+	}
 	switch csr {
 	// --- Supervisor CSRs ---
 	case CSR_SSTATUS:
@@ -188,6 +192,10 @@ func (vmst *VmState) CsrRead(csr uint32) (uint32, bool) {
 //
 //	bool: 如果CSR地址有效且可写，则为 true；否则为 false。
 func (vmst *VmState) CsrWrite(csr uint32, value uint32) bool {
+	// 特权级别检查：低特权级不能写入高特权级 CSR
+	if vmst.Core.Privilege < csrMinPrivilege(csr) {
+		return false
+	}
 	switch csr {
 	// --- Supervisor CSRs ---
 	case CSR_SSTATUS:
@@ -277,11 +285,13 @@ func (vmst *VmState) CsrWrite(csr uint32, value uint32) bool {
 	case CSR_VSTART:
 		vmst.Core.Vstart = value
 	case CSR_VL:
-		// 限制 Vl 不超过 VLMAX
-		const VLMAX uint32 = 128 // VLEN=128bits, SEW=8bits
-		// 防止 Vl 超过 VLMAX（128），避免向量指令循环时基于 Vl 访问 Vregs 越界。
-		if value > VLMAX {
-			value = VLMAX
+		// VLMAX = VLEN / SEW，其中 VLEN=128（当前实现），SEW 从 vtype 中提取
+		// SEW 编码: 0=8bit, 1=16bit, 2=32bit, 3=64bit
+		sewEnc := (vmst.Core.Vtype >> 2) & 0x7
+		sewBits := uint32(8 << sewEnc) // 8, 16, 32, 64
+		vlmax := uint32(128 / sewBits) // VLEN=128 位
+		if value > vlmax {
+			value = vlmax
 		}
 		vmst.Core.Vl = value
 	case CSR_VTYPE:
@@ -385,12 +395,26 @@ func checkPermissions(pte uint32, accessType int) bool {
 
 // handleTrap 管理 CPU 对异常和中断的响应。
 func (vmst *VmState) handleTrap(trap_code VmMcauseCode, trap_val uint32) {
+	// 检测嵌套陷阱：MSTATUS.MIE=0 且当前在 M-mode 说明正在处理陷阱
+	if (vmst.Core.Mstatus&MSTATUS_MIE) == 0 && vmst.Core.Privilege == PRIV_MACHINE {
+		// 嵌套陷阱不可恢复，标记为错误状态
+		vmst.Core.Mcause = trap_code
+		vmst.Core.Mtval = trap_val
+		vmst.SetStatusErr(VmErrIntErnalCore)
+		return
+	}
 	cause := uint32(trap_code & 0x7FFFFFFF) // 移除符号位以获取纯粹的原因码
 	// --- 1. 陷阱委托 ---
 	// 决定陷阱应该在哪个特权级别处理（M-mode 或 S-mode）。
 	var target_priv uint8
+	// 根据 trap_code 最高位区分中断和异常，使用对应的委托寄存器
+	isInterrupt := (uint32(trap_code) >> 31) != 0
 	var deleg_reg uint32
-	deleg_reg = vmst.Core.Medeleg // 异常委托
+	if isInterrupt {
+		deleg_reg = vmst.Core.Mideleg // 中断委托寄存器
+	} else {
+		deleg_reg = vmst.Core.Medeleg // 异常委托寄存器
+	}
 	// 检查相应的原因位是否在委托寄存器中被设置
 	if vmst.Core.Privilege < PRIV_MACHINE && (deleg_reg&(1<<cause)) != 0 {
 		target_priv = PRIV_SUPERVISOR
@@ -506,6 +530,12 @@ func (vmst *VmState) VmImaStep(count int) VmMcauseCode {
 			if trap == CAUSE_TRAP_CODE_OK {
 				return trap
 			}
+			// ECALL/EBREAK 是特殊"伪异常"：不跳转陷阱向量，直接返回给 Run() 处理
+			// Run() 负责生成系统调用事件，外部环境负责推进 PC
+			if trap == CAUSE_USER_ECALL || trap == CAUSE_SUPERVISOR_ECALL ||
+				trap == CAUSE_MACHINE_ECALL || trap == CAUSE_BREAKPOINT {
+				return trap
+			}
 			trap_val := ir
 			if (ir16 & 0x3) != 0x3 {
 				trap_val = uint32(ir16)
@@ -596,4 +626,19 @@ func (vmst *VmState) GetVelementAddr(reg_start_idx uint32, element_idx uint32, s
 	}
 
 	return addr, true
+}
+
+// csrMinPrivilege 返回访问指定 CSR 所需的最低特权级别
+func csrMinPrivilege(csr uint32) uint8 {
+	addr := csr & 0xFFF
+	if addr >= 0x100 && addr <= 0x1FF {
+		return PRIV_SUPERVISOR // S-mode CSRs (0x100-0x1FF)
+	}
+	if addr >= 0x300 && addr <= 0x3FF {
+		return PRIV_MACHINE // M-mode CSRs (0x300-0x3FF)
+	}
+	if addr >= 0xC00 && addr <= 0xC80 {
+		return PRIV_USER // U-mode CSRs (如 fcsr, frm, fflags)
+	}
+	return PRIV_MACHINE // 未识别 CSR 默认需要最高权限
 }

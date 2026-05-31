@@ -1,3 +1,4 @@
+// Package driver 提供通用 GPIO 外设驱动接口定义。定义了 SPI、UART、GPIO、CAN 等通信协议的配置结构体和接口，支持多种底层硬件驱动。
 package driver
 
 import "unsafe"

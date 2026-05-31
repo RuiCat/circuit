@@ -291,7 +291,11 @@ func doDiodeStep(mna mna.Mna, time mna.Time, value element.NodeFace, voltdiff fl
 		// 缓慢增加gmin，但最大值限制在1e-6
 		// 防止 subIterations > 1000 导致指数参数为正（溢出）
 		ratio := 1.0 - math.Min(float64(subIterations)/1000.0, 1.0)
-		extraGmin := math.Exp(-12 * math.Log(10) * ratio)
+		extraGmin := math.Exp(-12 * math.Ln10 * ratio) // 使用 math.Ln10 常量避免重复计算；下界防止 underflow 产生极小值
+		// 设置下界防止 underflow，上界钳位防止 gmin 过大
+		if extraGmin < 1e-15 {
+			extraGmin = 0 // underflow 保护：极小值视为 0
+		}
 		if extraGmin > 1e-6 {
 			extraGmin = 1e-6
 		}

@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// TestMotor 验证直流电机模型：检查加电后的转速上升曲线和稳态电流。
 func TestMotor(t *testing.T) {
 	netlist := `
 	v1 [1,-1] [0,0,0,0,12]

@@ -1,3 +1,4 @@
+// Package basebyte 提供二进制数据的读写工具。支持固定宽度整数（有符号/无符号）和变长编码（Base-128 Varint）的跨字节序序列化与反序列化。
 package basebyte
 
 import (
@@ -70,7 +71,9 @@ func (w *Write) Uint64(v uint64) {
 	w.Byte = append(w.Byte, b...)
 }
 
-// Int 写入一个平台相关位数的int值（64位平台写8字节，32位平台写4字节）
+// Int 写入一个平台相关位数的int值
+// 注意：此方法在 64 位平台序列化 8 字节，32 位平台序列化 4 字节。
+// 跨平台数据交换请使用 Int64/Uint64 获得固定宽度。
 func (w *Write) Int(v int) {
 	if bit64 {
 		w.Int64(int64(v))
@@ -79,7 +82,9 @@ func (w *Write) Int(v int) {
 	}
 }
 
-// Uint 写入一个平台相关位数的uint值（64位平台写8字节，32位平台写4字节）
+// Uint 写入一个平台相关位数的uint值
+// 注意：此方法在 64 位平台序列化 8 字节，32 位平台序列化 4 字节。
+// 跨平台数据交换请使用 Int64/Uint64 获得固定宽度。
 func (w *Write) Uint(v uint) {
 	if bit64 {
 		w.Uint64(uint64(v))

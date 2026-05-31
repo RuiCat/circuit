@@ -134,6 +134,7 @@ func (c *Coil) StartIteration(mna mna.Mna, time mna.Time, value element.NodeFace
 		return
 	}
 
+	// 注意：此变量虽命名为 G_eq，但计算的是电阻值（欧姆），在 Stamp 中用作串联电阻
 	G_eq := math.Max(2*L/dt, 1e-12) // 梯形积分的等效电导
 	V_diff := mna.GetNodeVoltage(value.GetNodes(0)) - mna.GetNodeVoltage(value.GetNodes(1))
 	I_coil := value.GetFloat64(base + 7) // I_coil (上一时间步)
@@ -211,6 +212,9 @@ func (c *Coil) StepFinished(mna mna.Mna, time mna.Time, value element.NodeFace) 
 }
 
 // countEvents 统计 eventName 类型的 ValueInit 项数量
+// TODO: nEvents 在生命期内不变（完全由 Config.ValueInit 决定），目前 StartIteration/Stamp/DoStep/CalculateCurrent/StepFinished
+// 五个方法每次调用皆遍历 ValueInit（O(ValueNum)）。优化方向：在 NewConfig/BuildNodes 阶段将 nEvents 预计算，存入
+// ValueInit 固定槽位（如 index 20），或提取为 Coil 结构体字段，后续方法直接读取即可。
 func (c *Coil) countEvents(value element.NodeFace) int {
 	cfg := value.Base().ConfigPtr
 	if cfg == nil {

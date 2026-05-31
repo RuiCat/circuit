@@ -1,5 +1,7 @@
 package main
 
+// 本文件提供 TUI 中自适应宽度表格的渲染工具函数，包括动态列宽计算和输出格式化。
+
 import (
 	"strings"
 
@@ -7,7 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// renderTable creates and renders an adaptive-width table.
+// renderTable 创建并渲染自适应宽度表格，根据终端宽度动态分配列宽。
 // Column widths are calculated based on content and available width.
 // Returns the rendered table string, or "" if rows is empty.
 func renderTable(headers []string, rows [][]string, width int) string {
@@ -35,10 +37,7 @@ func renderTable(headers []string, rows [][]string, width int) string {
 	colWidths := make([]int, ncols)
 	totalNatural := 0
 	for i, cw := range contentWidths {
-		w := cw + 2
-		if w < minColWidth {
-			w = minColWidth
-		}
+		w := max(cw+2, minColWidth)
 		colWidths[i] = w
 		totalNatural += w
 	}
@@ -47,7 +46,7 @@ func renderTable(headers []string, rows [][]string, width int) string {
 	if totalNatural < width {
 		// Expand proportionally
 		extra := width - totalNatural
-		for i := 0; i < ncols; i++ {
+		for i := range ncols {
 			share := extra / (ncols - i)
 			colWidths[i] += share
 			extra -= share
@@ -57,17 +56,11 @@ func renderTable(headers []string, rows [][]string, width int) string {
 		scale := float64(width) / float64(totalNatural)
 		allocated := 0
 		for i := 0; i < ncols-1; i++ {
-			w := int(float64(colWidths[i]) * scale)
-			if w < minColWidth {
-				w = minColWidth
-			}
+			w := max(int(float64(colWidths[i])*scale), minColWidth)
 			colWidths[i] = w
 			allocated += w
 		}
-		colWidths[ncols-1] = width - allocated
-		if colWidths[ncols-1] < minColWidth {
-			colWidths[ncols-1] = minColWidth
-		}
+		colWidths[ncols-1] = max(width-allocated, minColWidth)
 	}
 
 	// Build table columns with calculated widths
@@ -104,7 +97,7 @@ func renderTable(headers []string, rows [][]string, width int) string {
 	return t.View()
 }
 
-// appendTable renders a table and appends each line (with "  " indent) to the output slice.
+// appendTable 将格式化表格追加到输出日志。
 func appendTable(out []string, headers []string, rows [][]string, width int) []string {
 	tableStr := renderTable(headers, rows, width)
 	if tableStr == "" {

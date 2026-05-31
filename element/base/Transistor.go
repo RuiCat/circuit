@@ -39,6 +39,7 @@ var TransistorType element.NodeType = element.AddElement(9, &Transistor{
 // Transistor 晶体管
 type Transistor struct{ *element.Config }
 
+// Stamp 为基极-发射极和基极-集电极两结加盖最小电导 gmin，确保矩阵在截止区数值稳定。
 func (Transistor) Stamp(m mna.Mna, time mna.Time, value element.NodeFace) {
 	// 为结添加最小电导，以确保矩阵在数值上稳定
 	gmin := 1e-12
@@ -59,6 +60,7 @@ func (Transistor) Stamp(m mna.Mna, time mna.Time, value element.NodeFace) {
 	m.StampMatrix(nodeC, nodeB, -gmin)
 }
 
+// Reset 初始化晶体管状态：清零各极电流和历史电压，基于热电压和饱和电流计算临界电压 Vcrit。
 func (Transistor) Reset(base element.NodeFace) {
 	// 初始化状态变量
 	base.SetFloat64(3, 0) // lastvbc
@@ -75,6 +77,9 @@ func (Transistor) Reset(base element.NodeFace) {
 	base.SetFloat64(9, 1e-12)
 }
 
+// DoStep 执行晶体管非线性模型的 Newton-Raphson 迭代计算。
+// 包括：极性检测(PNP/NPN)、电压收敛检查、SPICE BJT 模型发射结/集电结电流计算、
+// 诺顿等效线性化、MNA 矩阵和 RHS 向量加盖。
 func (Transistor) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 从电路节点获取电压
 	v1 := mna.GetNodeVoltage(value.GetNodes(0)) // 基极
@@ -133,7 +138,14 @@ func (Transistor) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 
 	// 计算电流
 	beta := value.GetFloat64(1)
+	// 防止 beta 或 reverseBeta 为零时除零产生 Inf 污染 MNA 矩阵
+	if beta < 0.01 {
+		beta = 0.01
+	}
 	reverseBeta := value.GetFloat64(15)
+	if reverseBeta < 0.01 {
+		reverseBeta = 0.01
+	}
 	cc := cbe - cbc // 简化模型：忽略基区电荷调制（Early效应），传输电流=Ibe-Ibc
 	cb := cbe/beta + cbc/reverseBeta
 

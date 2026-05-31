@@ -5,8 +5,8 @@ import (
 	"circuit/maths"
 	"circuit/mna"
 	"fmt"
+	"log"
 	"math"
-	stdtime "time"
 )
 
 // TransientSimulation 执行瞬态仿真，使用元件回调函数和LU求解器实现迭代计算。
@@ -44,7 +44,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 		return fmt.Errorf("LU分解器初始化失败: %v", err)
 	}
 	// 电压数组用于存储每步的节点电压结果
-	voltages := make([]float64, nodesNum)
+	voltages := make([]float64, nodesNum+voltageSourcesNum)
 	// 标记是否需要重新加盖线性元件（步长变化或首次迭代）
 	needLinearStamp := true
 	// 初始化所有元件状态
@@ -53,38 +53,10 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 	}
 	con.ResetTimeStepCount()
 	for !con.IsSimulationFinished() {
-		con.PushEvents() // 将事件值同步到元件 NodeValue
-		// 连续模式状态检查：处理暂停/停止/单步
-		// 通过类型断言访问 TimeMNA 的 Status 方法（不在 mna.Time 接口中）
-		{
-			type statusChecker interface {
-				Status() SimStatus
-			}
-			if sc, ok := con.Time.(statusChecker); ok {
-				for {
-					st := sc.Status()
-					if st == StatusStopped {
-						return nil // 优雅停止
-					}
-					if st == StatusRunning {
-						break // 正常运行
-					}
-					if st == StatusPaused {
-						// 暂停：自旋等待（小延迟避免 CPU 空转）
-						stdtime.Sleep(10 * stdtime.Millisecond)
-						continue
-					}
-					if st == StatusStepping {
-						// 单步：执行一步后自动暂停
-						if tm, ok2 := con.Time.(*TimeMNA); ok2 {
-							tm.status.CompareAndSwap(int32(StatusStepping), int32(StatusPaused))
-						}
-						break
-					}
-				}
-			}
+		// 将事件值同步到元件 NodeValue
+		if !con.PushEvents() {
+			return nil // 优雅停止
 		}
-
 		// 重置X更新状态，允许本时间步内重新调用UpdateX/RollbackX
 		con.MnaUpdateType.ResetXUpdate()
 		// 检查是否超过最大时间步数
@@ -238,6 +210,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 			// 如果循环结束，意味着即使经过额外的迭代也未能收敛
 			// 交叉耦合门可能永远无法收敛；继续牛顿外循环而非失败
 			if con.IsElemIterExhausted() {
+				log.Printf("警告: 时间 %.6e 元件次级迭代耗尽（%d 次），强制推进", con.CurrentTime(), con.MaxElemIter())
 				newtonConverged = true
 			}
 		}
@@ -256,7 +229,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 			return fmt.Errorf("步骤完成失败: %v", err)
 		}
 		// 提取并验证节点电压
-		if !extractAndValidateVoltages(con, nodesNum, voltages) {
+		if !extractAndValidateVoltages(con, nodesNum, voltageSourcesNum, voltages) {
 			return fmt.Errorf("检测到无效电压值（NaN/Inf）在时间 %.6e，停止仿真", con.CurrentTime())
 		}
 		// 积分误差估计与步长自适应
@@ -341,10 +314,15 @@ func doStep(con *element.Context) error {
 	return con.CallMark(element.MarkDoStep)
 }
 
-// extractAndValidateVoltages 从MNA求解器提取节点电压并验证有效性
-func extractAndValidateVoltages(mnaSolver mna.Mna, nodesNum int, voltages []float64) bool {
+// extractAndValidateVoltages 从MNA求解器提取节点电压和电压源电流并验证有效性
+func extractAndValidateVoltages(mnaSolver mna.Mna, nodesNum int, voltageSourcesNum int, voltages []float64) bool {
 	allValid := true
-	for i := mna.NodeID(0); i < mna.NodeID(nodesNum); i++ {
+	// 验证范围扩展到电压源电流分量，防止 NaN/Inf 静默传播
+	totalVars := nodesNum + voltageSourcesNum
+	if len(voltages) < totalVars {
+		return false
+	}
+	for i := mna.NodeID(0); i < mna.NodeID(totalVars); i++ {
 		voltages[i] = mnaSolver.GetNodeVoltage(i)
 		if math.IsNaN(voltages[i]) || math.IsInf(voltages[i], 0) {
 			allValid = false
@@ -364,4 +342,3 @@ func TransientSimulationContinuous(con *element.Context, call func([]float64)) e
 	tm.SetContinuousMode()
 	return TransientSimulation(con, call)
 }
-

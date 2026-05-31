@@ -25,7 +25,10 @@ func (fc *FlatCodec[T]) Encode(data [][]T) ([]byte, error) {
 	if dt > 0 {
 		x = len(data[0])
 	}
-	raw := flatten(data)
+	raw, err := flatten(data)
+	if err != nil {
+		return nil, err
+	}
 	compressed, err := fc.compressor.Compress(raw)
 	if err != nil {
 		return nil, err
@@ -159,6 +162,10 @@ func (rc *RLECompressor[T]) Decode(encoded []byte) ([][]T, error) {
 				run, n := binary.Uvarint(payload[offset:])
 				if n <= 0 {
 					return nil, fmt.Errorf("RLE: 无效的 uvarint 编码")
+				}
+				// 防止恶意数据构造极大 run 值导致内存耗尽或 32 位平台溢出
+				if run > math.MaxInt32 {
+					return nil, fmt.Errorf("RLE: run 值 %d 超出安全范围", run)
 				}
 				offset += n
 				for k := 0; k < int(run) && row < dt; k++ {

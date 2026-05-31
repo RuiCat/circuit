@@ -426,10 +426,12 @@ func handleOpFP(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, Vm
 	return 0, 0, pc + 4, CAUSE_TRAP_CODE_OK
 }
 
+// isNaN_S 检测一个 float32 值是否为 NaN（非数）。利用 NaN 不等于自身这一 IEEE 754 属性进行快速判断。
 func isNaN_S(f float32) bool {
 	return f != f
 }
 
+// classify_float32 根据 IEEE 754 标准对单精度浮点数进行分类，返回对应的分类掩码位。
 func classify_float32(f float32) uint32 {
 	bits := math.Float32bits(f)
 	switch {
@@ -459,6 +461,7 @@ func classify_float32(f float32) uint32 {
 	}
 }
 
+// classify_float64 根据 IEEE 754 标准对双精度浮点数进行分类，返回对应的分类掩码位。
 func classify_float64(f float64) uint32 {
 	bits := math.Float64bits(f)
 	switch {

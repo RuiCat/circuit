@@ -65,6 +65,11 @@ func (f *DFlipFlop) DoStep(m mna.Mna, t mna.Time, value element.NodeFace) {
 	// 和重新加盖期间的瞬态毛刺。只接受干净的满幅时钟边沿。
 	edgeThreshold := highVoltage * 0.9
 	isHigh := clkNow > edgeThreshold
+	// 强制初始化：首次调用或仿真时间超过 1e-9 后，无条件初始化
+	if !initialized && (t.Time() > 1e-9 || !isHigh) {
+		initialized = true
+		value.SetBool(3, true)
+	}
 	wasHigh := prevClk > highVoltage*0.9
 
 	if initialized && isHigh && !wasHigh {

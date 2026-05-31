@@ -34,10 +34,10 @@ type doubleBuffer[T Number] struct {
 	bw               *BlockWriter
 	writeFailed      bool
 
-	maxBlocks   int         // 最大块数，0=无限制
-	blockCount  int         // 已存储块数
-	savedBlocks [][][]T     // 环形保存的已完成块（仅 maxBlocks>0 时使用）
-	blockRing   int         // 环形写入指针，指向下一个写入位置
+	maxBlocks   int     // 最大块数，0=无限制
+	blockCount  int     // 已存储块数
+	savedBlocks [][][]T // 环形保存的已完成块（仅 maxBlocks>0 时使用）
+	blockRing   int     // 环形写入指针，指向下一个写入位置
 }
 
 // NewBuffer 创建双缓冲实例
@@ -155,7 +155,7 @@ func (db *doubleBuffer[T]) Reset() {
 
 // NewReader 基于当前压缩器配置创建泛型块读取器
 func (db *doubleBuffer[T]) NewReader(r io.Reader) *BufferReader[T] {
-	return NewBufferReader[T](r, db.compressor, db.codec)
+	return NewBufferReader(r, db.compressor, db.codec)
 }
 
 // SetMaxBlocks 设置最大存储块数。n=0 表示无限制（默认）。
@@ -299,7 +299,7 @@ type BufferReader[T Number] struct {
 	br     *BlockReader
 	codec  BlockCodec[T]
 	blocks [][][]T // 内存块模式
-	idx    int      // 内存读取当前位置
+	idx    int     // 内存读取当前位置
 }
 
 // NewBufferReader 创建泛型块读取器实例（文件模式）
@@ -361,7 +361,12 @@ func (db *doubleBuffer[T]) flushActive() error {
 				return err
 			}
 		} else {
-			raw = flatten(data)
+			var err error
+			raw, err = flatten(data)
+			if err != nil {
+				db.writeFailed = true
+				return err
+			}
 		}
 		if db.bw == nil {
 			db.bw = NewBlockWriter(db.writer, db.compressor)
@@ -395,7 +400,12 @@ func (db *doubleBuffer[T]) flushNonActive() error {
 				return err
 			}
 		} else {
-			raw = flatten(data)
+			var err error
+			raw, err = flatten(data)
+			if err != nil {
+				db.writeFailed = true
+				return err
+			}
 		}
 		if db.bw == nil {
 			db.bw = NewBlockWriter(db.writer, db.compressor)
@@ -461,16 +471,16 @@ func sizeOf[T Number]() int {
 }
 
 // flatten 将 [][]T 按行优先展平为 []byte
-func flatten[T Number](data [][]T) []byte {
+func flatten[T Number](data [][]T) ([]byte, error) {
 	rows := len(data)
 	if rows == 0 {
-		return nil
+		return nil, nil
 	}
 	cols := len(data[0])
+	// 行长度不一致时返回明确错误，防止静默 nil 导致文件写入损坏
 	for i := 1; i < rows; i++ {
 		if len(data[i]) != cols {
-			// 所有行必须等长，否则数据损坏
-			return nil
+			return nil, fmt.Errorf("doublebuffer: 行 %d 长度 %d 与期望 %d 不匹配", i, len(data[i]), cols)
 		}
 	}
 	elemSize := sizeOf[T]()
@@ -497,7 +507,7 @@ func flatten[T Number](data [][]T) []byte {
 			offset += elemSize
 		}
 	}
-	return buf
+	return buf, nil
 }
 
 // unflatten 将 []byte 按行优先还原为 [][]T

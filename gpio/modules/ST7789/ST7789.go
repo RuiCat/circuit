@@ -515,6 +515,14 @@ func (lcd *Driver) Init() error {
 
 // SetWindow 设置显示窗口
 func (lcd *Driver) SetWindow(xStart, yStart, xEnd, yEnd int, horizontal bool) error {
+	// 参数范围验证
+	if xStart < 0 || yStart < 0 || xEnd > lcd.Width || yEnd > lcd.Height {
+		return fmt.Errorf("SetWindow: 窗口超出屏幕范围 (x=%d-%d, y=%d-%d, screen=%dx%d)",
+			xStart, xEnd, yStart, yEnd, lcd.Width, lcd.Height)
+	}
+	if xStart >= xEnd || yStart >= yEnd {
+		return fmt.Errorf("SetWindow: 无效窗口尺寸 (x=%d-%d, y=%d-%d)", xStart, xEnd, yStart, yEnd)
+	}
 	xOffset := lcd.XOffset
 	yOffset := lcd.YOffset
 	if lcd.OffsetScanDependent {

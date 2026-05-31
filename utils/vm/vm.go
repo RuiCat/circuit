@@ -1,3 +1,4 @@
+// Package vm 提供基于 RISC-V RV32IMAFDC 指令集的虚拟机实现。支持整数(I)、乘除(M)、原子(A)、单精度(F)、双精度(D)、压缩(C)扩展和向量(V)扩展草案，包含 Sv32 MMU 虚拟内存管理和设备映射机制。
 package vm
 
 // VmErr 定义了虚拟机可能出现的错误类型
@@ -133,16 +134,12 @@ func (vmst *VmState) Run(instr_meter uint32) (uint32, VmEvt) {
 	for vmst.Status == VmStatusRunnIng && instr_meter > 0 {
 		// 检查定时器中断(bit7)
 		if (vmst.Core.Mip & (1 << 7)) != 0 {
-		// 定时器中断委托：若 mideleg[7] 置位且 MSTATUS_SIE 使能，中断委托至 S-mode 处理，
-		// 否则在 M-mode 下检查 MSTATUS_MIE 后直接处理。
-			// 检查是否委托到S-mode
-			if (vmst.Core.Mideleg & (1 << 7)) != 0 {
-				// 委托到S-mode：检查SSTATUS_SIE
+			// 仅当在 S-mode 及以下且中断被委托时才使用 S-mode 中断
+			if (vmst.Core.Mideleg & (1 << 7)) != 0 && vmst.Core.Privilege <= PRIV_SUPERVISOR {
 				if (vmst.Core.Mstatus & MSTATUS_SIE) != 0 {
 					vmst.handleTrap(CAUSE_SUPERVISOR_TIMER_INTERRUPT, vmst.Core.PC)
 				}
 			} else {
-				// M-mode处理：检查MSTATUS_MIE
 				if (vmst.Core.Mstatus & MSTATUS_MIE) != 0 {
 					vmst.handleTrap(CAUSE_MACHINE_TIMER_INTERRUPT, vmst.Core.PC)
 				}

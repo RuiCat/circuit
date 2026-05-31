@@ -145,6 +145,8 @@ func currentTarget(subcktStack []*SubCircuitDef, parseTree *ParseTree) *[]*Eleme
 func NewParseTreeDirect(r io.Reader) (parseTree *ParseTree, err error) {
 	scanner := bufio.NewScanner(r)
 	scanner.Split(SplitTokens)
+	// 增大最大 token 到 1MB，防止大型网表文件行被截断
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	// 创建解析树
 	parseTree = &ParseTree{
 		ValueNodes: map[string]string{},
@@ -358,6 +360,11 @@ func parseValueCommandFromScanner(scanner *bufio.Scanner, lineNum int, parseTree
 		valueStr = token
 		break
 	}
+	// 防止恶意网表通过大量 .value 命令耗尽内存
+	const maxValueNodes = 10000
+	if len(parseTree.ValueNodes) >= maxValueNodes {
+		return fmt.Errorf(".value 命令数量超过上限 %d", maxValueNodes)
+	}
 	parseTree.ValueNodes[name] = valueStr
 	return nil
 }
@@ -435,6 +442,10 @@ func parseSubCircuitInstance(scanner *bufio.Scanner, elementType string, element
 func parseElementDefinitionFromScanner(scanner *bufio.Scanner, elementType string, lineNum int) (bool, *ElementNode, *string, error) {
 	// 检查 elementType 是否包含数字后缀（如 U1, R12），如果包含了直接拆分
 	var elementID string
+	// 防止超长类型名大量无意义循环消耗 CPU
+	if len(elementType) > 64 {
+		return false, nil, nil, fmt.Errorf("元件类型名过长: %d 字符（最大 64）", len(elementType))
+	}
 	if len(elementType) > 1 && isNumber(elementType[1:]) {
 		elementID = elementType[1:]
 		elementType = elementType[:1]
@@ -591,10 +602,11 @@ func SplitTokens(data []byte, atEOF bool) (advance int, token []byte, err error)
 			if len(data) > i+1 {
 				switch data[i+1] {
 				case '*':
-					if i := bytes.Index(data, []byte("*/")); i >= 0 {
-						i += 2
-						return i, data[0:i], nil
+					if j := bytes.Index(data[i+2:], []byte("*/")); j >= 0 {
+						return i + j + 4, data[:i], nil
 					}
+					// 未闭合的块注释返回错误，防止后续内容被误解析
+					return len(data), data[:i], fmt.Errorf("未闭合的块注释 /* ... */")
 				case '/':
 					return bufio.ScanLines(data, atEOF)
 				}

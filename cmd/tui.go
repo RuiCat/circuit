@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"sort"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,6 +21,15 @@ import (
 	"circuit/utils/doublebuffer"
 )
 
+// fmtVoltage 格式化电压值，微小值直接显示为 0
+func fmtVoltage(v float64) string {
+	if math.Abs(v) < 1e-8 {
+		return "0"
+	}
+	return fmt.Sprintf("%+.4f", v)
+}
+
+// tuiCommands 交互式 TUI 支持的所有命令名称列表，用于 Tab 补全。
 var tuiCommands = []string{
 	"v", "t", "run", "step", "curve", "trigger", "plot",
 	"set", "pause", "resume", "stop", "status", "help", "quit",
@@ -50,6 +60,7 @@ var (
 )
 
 // ===== keyMap =====
+// keyMap 定义 TUI 键盘快捷键映射，包含导航、执行和退出等按键。
 type keyMap struct {
 	Up    key.Binding
 	Down  key.Binding
@@ -70,6 +81,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{{k.Tab, k.Up, k.Down, k.Enter, k.Esc}}
 }
 
+// keys 默认键盘快捷键映射实例。
 var keys = keyMap{
 	Up:    key.NewBinding(key.WithKeys("up"), key.WithHelp("↑↓", "历史")),
 	Down:  key.NewBinding(key.WithKeys("down"), key.WithHelp("PgUp/Dn", "滚动")),
@@ -84,6 +96,7 @@ var keys = keyMap{
 }
 
 // ===== simUpdate =====
+// simUpdate 仿真后台 goroutine 发送到 UI 的消息，携带当前电压、时间和步数。
 type simUpdate struct {
 	voltages    []float64
 	time        float64
@@ -92,6 +105,7 @@ type simUpdate struct {
 }
 
 // ===== tuiModel =====
+// tuiModel 是 TUI 界面的核心模型，管理仿真状态、用户输入、输出日志和 UI 组件。
 type tuiModel struct {
 	con     *element.Context
 	timeMNA *etime.TimeMNA
@@ -118,15 +132,17 @@ type tuiModel struct {
 	history []string
 	histIdx int
 
-	updateCh      chan simUpdate
-	quitting      bool
-	width         int
-	height        int
-	vpHeight      int
-	focusViewport bool // 焦点在 viewport 时为 true，在输入框时为 false
-	lastOutLen    int
+	updateCh       chan simUpdate
+	quitting       bool
+	width          int
+	height         int
+	vpHeight       int
+	focusViewport  bool // 焦点在 viewport 时为 true，在输入框时为 false
+	lastOutLen     int
+	droppedUpdates int
 }
 
+// newTUIModel 创建并初始化 tuiModel，设置输入框、视口和帮助组件。
 func newTUIModel(con *element.Context, timeMNA *etime.TimeMNA, bufCfg doublebuffer.Buffer[float64],
 	updateCh chan simUpdate, simDone chan error) tuiModel {
 
@@ -155,10 +171,12 @@ func newTUIModel(con *element.Context, timeMNA *etime.TimeMNA, bufCfg doublebuff
 	}
 }
 
+// Init 实现 tea.Model 接口，启动光标闪烁和仿真更新监听。
 func (m *tuiModel) Init() tea.Cmd {
 	return tea.Batch(textinput.Blink, m.listenUpdates())
 }
 
+// listenUpdates 从 updateCh 通道读取仿真更新消息，返回 tea.Msg 供 Update 处理。
 func (m *tuiModel) listenUpdates() tea.Cmd {
 	return func() tea.Msg {
 		u, ok := <-m.updateCh
@@ -170,6 +188,7 @@ func (m *tuiModel) listenUpdates() tea.Cmd {
 }
 
 // ===== Update =====
+// Update 实现 tea.Model 接口，处理按键、窗口大小变化和仿真更新消息。
 func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
@@ -309,9 +328,10 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // ===== View =====
+// View 实现 tea.Model 接口，渲染标题栏、侧边栏、主视口和输入框组成的 TUI 布局。
 func (m *tuiModel) View() string {
 	if m.quitting {
-		m.timeMNA.Stop()
+		// Stop() 已在 executeCommand 和 runTUI 中调用，View() 仅检查状态避免重复
 		return "仿真已停止。\n"
 	}
 
@@ -319,11 +339,11 @@ func (m *tuiModel) View() string {
 	st := m.timeMNA.Status()
 	statusStr := "运行中"
 	switch st {
-	case etime.StatusPaused:
+	case mna.StatusPaused:
 		statusStr = "仿真已暂停"
-	case etime.StatusStopped:
+	case mna.StatusStopped:
 		statusStr = "已停止"
-	case etime.StatusStepping:
+	case mna.StatusStepping:
 		statusStr = "单步中"
 	}
 
@@ -332,6 +352,7 @@ func (m *tuiModel) View() string {
 	s := m.steps
 	cs := m.currentStep
 	v := m.voltages
+	du := m.droppedUpdates
 	m.mu.RUnlock()
 
 	focusStr := "[输入]"
@@ -353,6 +374,7 @@ func (m *tuiModel) View() string {
 	var mainBuf strings.Builder
 
 	// 触发
+	m.mu.RLock()
 	if m.triggerEnabled {
 		mainBuf.WriteString(triggerStyle.Render(
 			fmt.Sprintf("⚡ 触发: node_%d %s %v", m.triggerNode, m.triggerOp, m.triggerValue)) + "\n\n")
@@ -372,6 +394,7 @@ func (m *tuiModel) View() string {
 		m.viewport.GotoBottom()
 		m.lastOutLen = len(m.output)
 	}
+	m.mu.RUnlock()
 
 	// --- 侧边栏 ---
 	var side strings.Builder
@@ -383,7 +406,10 @@ func (m *tuiModel) View() string {
 	side.WriteString(fmt.Sprintf(" 步数  %d\n", s))
 	side.WriteString(fmt.Sprintf(" 节点  %d\n", len(m.con.CompactNodeID)))
 	side.WriteString(fmt.Sprintf(" 元件  %d\n", len(m.con.Nodelist)))
-	side.WriteString(fmt.Sprintf(" 缓冲  %d行 %d/%d块\n\n", m.bufCfg.TotalRows(), m.bufCfg.BlockCount(), m.bufCfg.MaxBlocks()))
+	side.WriteString(fmt.Sprintf(" 缓冲  %d行 %d/%d块\n", m.bufCfg.TotalRows(), m.bufCfg.BlockCount(), m.bufCfg.MaxBlocks()))
+	if du > 0 {
+		side.WriteString(fmt.Sprintf(" 丢弃: %d\n", du))
+	}
 
 	// 下半：节点电压表格
 	side.WriteString("── 节点电压 ──\n")
@@ -403,7 +429,7 @@ func (m *tuiModel) View() string {
 		side.WriteString(" N#    电压(V)\n")
 		side.WriteString(" ──── ──────────\n")
 		for _, n := range nodes {
-			side.WriteString(fmt.Sprintf(" %-4d %+.4e\n", n.rawID, n.val))
+			side.WriteString(fmt.Sprintf(" %-4d %s\n", n.rawID, fmtVoltage(n.val)))
 		}
 	} else {
 		side.WriteString(" 等待数据...\n")
@@ -443,6 +469,7 @@ func (m *tuiModel) View() string {
 }
 
 // ===== Tab 补全 =====
+// handleTabComplete 根据当前输入内容匹配 tuiCommands 中的命令，支持唯一补全和公共前缀补全。
 func (m *tuiModel) handleTabComplete() {
 	val := m.input.Value()
 	if val == "" {
@@ -476,6 +503,7 @@ func (m *tuiModel) handleTabComplete() {
 }
 
 // ===== 命令执行 =====
+// executeCommand 解析用户输入的命令行，分发到对应的 cmd* 方法执行。
 func (m *tuiModel) executeCommand(line string) {
 	parts := strings.Fields(line)
 	if len(parts) == 0 {
@@ -551,6 +579,7 @@ func (m *tuiModel) executeCommand(line string) {
 	}
 }
 
+// cmdVoltage 执行 v 命令：查询指定节点或全部节点的当前电压值并以表格展示。
 func (m *tuiModel) cmdVoltage(args []string) {
 	m.mu.RLock()
 	v := m.voltages
@@ -610,7 +639,7 @@ func (m *tuiModel) cmdVoltage(args []string) {
 	for _, n := range nodes {
 		rows = append(rows, []string{
 			fmt.Sprintf("node_%d", n.rawID),
-			fmt.Sprintf("%+.6e", n.val),
+			fmtVoltage(n.val),
 		})
 	}
 	w := m.viewport.Width - 6
@@ -620,6 +649,7 @@ func (m *tuiModel) cmdVoltage(args []string) {
 	m.output = appendTable(m.output, headers, rows, w)
 }
 
+// cmdRun 执行 run 命令：让仿真以连续模式前进指定秒数后自动暂停。
 func (m *tuiModel) cmdRun(args []string) {
 	if len(args) == 0 {
 		m.output = append(m.output, "  用法: run <秒数>")
@@ -634,6 +664,7 @@ func (m *tuiModel) cmdRun(args []string) {
 	m.output = append(m.output, fmt.Sprintf("  前进 %.3e s...", d))
 }
 
+// cmdCurve 执行 curve 命令：查询指定节点在指定时间范围内的历史电压曲线（支持采样点数控制）。
 func (m *tuiModel) cmdCurve(args []string) {
 	if len(args) < 2 {
 		m.output = append(m.output, "  用法: curve <节点|all> <秒数> [点数]")
@@ -736,7 +767,7 @@ func (m *tuiModel) cmdCurve(args []string) {
 			if ok && ci+1 < len(r) {
 				val = r[ci+1]
 			}
-			row = append(row, fmt.Sprintf("%.6e", val))
+			row = append(row, fmtVoltage(val))
 		}
 		tRows = append(tRows, row)
 	}
@@ -749,6 +780,7 @@ func (m *tuiModel) cmdCurve(args []string) {
 	m.output = append(m.output, fmt.Sprintf("(%d 点, 跨度 %.3e s)", len(disp), curT-startT))
 }
 
+// cmdTrigger 执行 trigger 命令：设置或清除电压触发条件，当节点电压满足条件时自动暂停仿真。
 func (m *tuiModel) cmdTrigger(args []string) {
 	if len(args) == 0 || args[0] == "off" {
 		m.triggerEnabled = false
@@ -783,6 +815,7 @@ func (m *tuiModel) cmdTrigger(args []string) {
 	m.output = append(m.output, fmt.Sprintf("  ⚡ 触发条件: node_%d %s %v", n, args[1], v))
 }
 
+// cmdSetEvent 执行 set 命令：设置仿真电路中的事件值。
 func (m *tuiModel) cmdSetEvent(args []string) {
 	if len(args) < 2 {
 		m.output = append(m.output, "  用法: set <事件名> <值>")
@@ -797,15 +830,16 @@ func (m *tuiModel) cmdSetEvent(args []string) {
 	m.output = append(m.output, fmt.Sprintf("  %s = %v", args[0], v))
 }
 
+// cmdStatus 执行 status 命令：显示当前仿真状态、步数和时间。
 func (m *tuiModel) cmdStatus() {
 	st := m.timeMNA.Status()
 	ss := "运行中"
 	switch st {
-	case etime.StatusPaused:
+	case mna.StatusPaused:
 		ss = "  仿真已暂停"
-	case etime.StatusStopped:
+	case mna.StatusStopped:
 		ss = "已停止"
-	case etime.StatusStepping:
+	case mna.StatusStepping:
 		ss = "单步中"
 	}
 	m.mu.RLock()
@@ -815,7 +849,13 @@ func (m *tuiModel) cmdStatus() {
 	m.output = append(m.output, fmt.Sprintf("  %s | %d 步 | t = %.4e s", ss, s, tt))
 }
 
+// checkTrigger 由仿真 goroutine 每步调用，检查触发条件并在满足时暂停仿真。
 func (m *tuiModel) checkTrigger(v []float64) {
+	// 仿真 goroutine 并发调用，所有共享字段读写需加锁保护
+	m.mu.Lock()
+	// 仿真 goroutine 并发调用，所有共享字段读写需加锁保护
+	defer m.mu.Unlock()
+
 	if !m.triggerEnabled || m.triggerNode < 0 {
 		return
 	}
@@ -846,6 +886,7 @@ func (m *tuiModel) checkTrigger(v []float64) {
 }
 
 // ===== runTUI =====
+// runTUI 启动连续仿真 TUI 模式：初始化时间控制器、双缓冲区和 bubbletea 程序，运行后台仿真 goroutine。
 func runTUI(con *element.Context, cfg config) error {
 	tm, err := etime.NewTimeMNA(1.0)
 	if err != nil {
@@ -861,8 +902,11 @@ func runTUI(con *element.Context, cfg config) error {
 	if cfg.parallel > 0 {
 		con.ParallelOpts = &element.ParallelOptions{StampWorkers: cfg.parallel}
 	}
+	// 缓冲列数 = 节点电压 + 电压源电流 + 时间戳，与 simulation.go 中 voltages 切片大小保持一致
 
-	buf := doublebuffer.NewBuffer[float64](100, con.GetNodeNum()+1)
+	// 缓冲列数 = 节点电压 + 电压源电流 + 时间戳，与 simulation.go 中 voltages 切片大小保持一致
+	totalCols := con.GetNodeNum() + con.GetVoltageSourcesNum() + 1
+	buf := doublebuffer.NewBuffer[float64](100, totalCols)
 	buf.SetMaxBlocks(1000)
 
 	tm.SetContinuousMode()
@@ -881,15 +925,27 @@ func runTUI(con *element.Context, cfg config) error {
 			copy(cp, v)
 			stepCnt++
 			select {
+			// channel 满时静默丢弃更新，计数器用于 UI 显示
 			case ch <- simUpdate{voltages: cp, time: con.CurrentTime(), steps: stepCnt, currentStep: con.CurrentStep()}:
 			default:
+				// channel 满时静默丢弃更新，计数器用于 UI 显示
+				m.droppedUpdates++
 			}
+			// 与 cmdCurve 的 RLock 对称，防止双缓冲并发读写撕裂
 			row := make([]float64, 1+len(v))
 			row[0] = con.CurrentTime()
 			copy(row[1:], v)
+			// 仿真结束后关闭 updateCh，避免 listenUpdates goroutine 永久阻塞
+			// 与 cmdCurve 的 RLock 对称，防止双缓冲并发读写撕裂
+			m.mu.Lock()
+			// 仿真结束后关闭 updateCh，避免 listenUpdates goroutine 永久阻塞
 			buf.Append(row)
+			m.mu.Unlock()
 		}
-		done <- etime.TransientSimulation(con, call)
+		err := etime.TransientSimulation(con, call)
+		// 仿真结束后关闭 updateCh，避免 listenUpdates goroutine 永久阻塞
+		close(ch)
+		done <- err
 	}()
 
 	p := tea.NewProgram(&m, tea.WithAltScreen(), tea.WithMouseCellMotion())

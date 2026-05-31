@@ -14,6 +14,7 @@ import (
 	"circuit/mna"
 )
 
+// plotColors 定义绘图曲线的 8 种颜色，按优先级分配给不同节点。
 var plotColors = []color.Color{
 	color.RGBA{255, 0, 0, 255},
 	color.RGBA{0, 0, 255, 255},
@@ -25,6 +26,8 @@ var plotColors = []color.Color{
 	color.RGBA{165, 42, 42, 255},
 }
 
+// cmdPlot 执行 plot 命令：使用 gonum/plot 生成指定节点的 PNG 电压曲线图。
+// 支持自适应图像尺寸和单/多节点曲线。
 func (m *tuiModel) cmdPlot(args []string) {
 	if len(args) < 1 {
 		m.output = append(m.output, "  用法: plot <节点|all> [文件名]")

@@ -36,6 +36,10 @@ type Gate struct{ *element.Config }
 // Stamp 放置输出电压源到地(GND)，使用上一收敛电压值初始化以避免时间步间的虚假瞬态脉冲。
 // 首次时间步(t=0)时使用电压源 ID 奇偶性初始化以打破交叉耦合锁存器对称性。
 func (g *Gate) Stamp(m mna.Mna, t mna.Time, value element.NodeFace) {
+	if g.PinNum() < 1 {
+		return
+	}
+
 	outputNodeIndex := g.PinNum() - 1
 	outputNode := value.GetNodes(outputNodeIndex)
 
@@ -52,6 +56,10 @@ func (g *Gate) Stamp(m mna.Mna, t mna.Time, value element.NodeFace) {
 // DoStep 根据逻辑门类型和输入计算输出。
 // 使用 0.9 阻尼因子快速收敛交叉耦合锁存器，配合奇偶初始化打破对称性。
 func (g *Gate) DoStep(m mna.Mna, t mna.Time, value element.NodeFace) {
+	if g.PinNum() < 1 {
+		return
+	}
+
 	gateType := value.GetInt(0)
 	highVoltage := value.GetFloat64(1)
 	if highVoltage <= 0 {

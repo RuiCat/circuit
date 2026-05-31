@@ -2,6 +2,7 @@ package maths
 
 import (
 	"errors"
+	"fmt"
 	"runtime"
 	"sync"
 )
@@ -130,7 +131,12 @@ func (lu *ParallelLU[T]) Decompose(matrix Matrix[T]) error {
 
 func (lu *ParallelLU[T]) pivotAndEliminateSequential(k int) error {
 	maxRow := k
-	maxAbsVal := Abs(lu.U.Get(k, k))
+	pivotVal := lu.U.Get(k, k)
+	// 防止 NaN/Inf 主元绕过奇异矩阵检测，污染解向量
+	if !IsValidFloat64(Abs(pivotVal)) {
+		return fmt.Errorf("lu: pivot contains NaN/Inf at k=%d", k)
+	}
+	maxAbsVal := Abs(pivotVal)
 	for i := k + 1; i < lu.n; i++ {
 		if v := Abs(lu.U.Get(i, k)); v > maxAbsVal {
 			maxAbsVal = v
@@ -151,7 +157,7 @@ func (lu *ParallelLU[T]) pivotAndEliminateSequential(k int) error {
 		lu.updatePermutation(k, maxRow)
 	}
 
-	pivotVal := lu.U.Get(k, k)
+	pivotVal = lu.U.Get(k, k)
 	for i := k + 1; i < lu.n; i++ {
 		factor := lu.U.Get(i, k) / pivotVal
 		lu.L.Set(i, k, factor)
@@ -167,7 +173,12 @@ func (lu *ParallelLU[T]) pivotAndEliminateSequential(k int) error {
 
 func (lu *ParallelLU[T]) pivotAndEliminateParallel(k int) error {
 	maxRow := k
-	maxAbsVal := Abs(lu.U.Get(k, k))
+	pivotVal := lu.U.Get(k, k)
+	// 防止 NaN/Inf 主元绕过奇异矩阵检测，污染解向量
+	if !IsValidFloat64(Abs(pivotVal)) {
+		return fmt.Errorf("lu: pivot contains NaN/Inf at k=%d", k)
+	}
+	maxAbsVal := Abs(pivotVal)
 	for i := k + 1; i < lu.n; i++ {
 		if v := Abs(lu.U.Get(i, k)); v > maxAbsVal {
 			maxAbsVal = v
@@ -188,7 +199,7 @@ func (lu *ParallelLU[T]) pivotAndEliminateParallel(k int) error {
 		lu.updatePermutation(k, maxRow)
 	}
 
-	pivotVal := lu.U.Get(k, k)
+	pivotVal = lu.U.Get(k, k)
 	remaining := lu.n - (k + 1)
 	if remaining <= 0 {
 		return nil

@@ -2,6 +2,7 @@ package maths
 
 import (
 	"errors"
+	"fmt"
 )
 
 // NewLU 创建一个稠密矩阵 LU 分解求解器。
@@ -94,7 +95,12 @@ func (lu *luDense[T]) Decompose(matrix Matrix[T]) error {
 		// --- 部分主元选择 (Partial Pivoting) ---
 		// 在当前列 k 中，从对角线元素开始向下寻找绝对值最大的元素，以保证数值稳定性。
 		maxRow := k
-		maxAbsVal := Abs(lu.U.Get(k, k))
+		pivotVal := lu.U.Get(k, k)
+		// 防止 NaN/Inf 主元绕过奇异矩阵检测，污染解向量
+		if !IsValidFloat64(Abs(pivotVal)) {
+			return fmt.Errorf("lu dense decompose: pivot contains NaN/Inf at k=%d", k)
+		}
+		maxAbsVal := Abs(pivotVal)
 		for i := k + 1; i < lu.n; i++ {
 			if v := Abs(lu.U.Get(i, k)); v > maxAbsVal {
 				maxAbsVal = v
@@ -123,7 +129,7 @@ func (lu *luDense[T]) Decompose(matrix Matrix[T]) error {
 		}
 
 		// --- 消元过程 ---
-		pivotVal := lu.U.Get(k, k)
+		pivotVal = lu.U.Get(k, k)
 		// 对 k 列下方的所有行进行操作。
 		for i := k + 1; i < lu.n; i++ {
 			// 计算乘数因子，并存入 L 矩阵。
@@ -199,7 +205,12 @@ func (lu *luSparse[T]) Decompose(matrix Matrix[T]) error {
 	for k := 0; k < lu.n; k++ {
 		// --- 部分主元选择 ---
 		maxRow := k
-		maxAbsVal := Abs(lu.U.Get(k, k))
+		pivotVal := lu.U.Get(k, k)
+		// 防止 NaN/Inf 主元绕过奇异矩阵检测，污染解向量
+		if !IsValidFloat64(Abs(pivotVal)) {
+			return fmt.Errorf("lu sparse decompose: pivot contains NaN/Inf at k=%d", k)
+		}
+		maxAbsVal := Abs(pivotVal)
 		for i := k + 1; i < lu.n; i++ {
 			if v := Abs(lu.U.Get(i, k)); v > maxAbsVal {
 				maxAbsVal = v
@@ -219,7 +230,7 @@ func (lu *luSparse[T]) Decompose(matrix Matrix[T]) error {
 		}
 
 		// --- 消元过程 ---
-		pivotVal := lu.U.Get(k, k)
+		pivotVal = lu.U.Get(k, k)
 		// 获取主元所在行的非零元素，以减少不必要的计算
 		pivotCols, pivotVals := lu.U.GetRow(k)
 
@@ -293,5 +304,3 @@ func (lu *luSparse[T]) SolveReuse(b, x Vector[T]) error {
 	}
 	return nil
 }
-
-//

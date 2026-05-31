@@ -1,3 +1,4 @@
+// Package ch34x 提供基于沁恒 CH347/CH341 系列芯片的 USB 转 SPI/I2C/GPIO 驱动封装。通过 cgo 调用厂商提供的动态链接库实现底层硬件访问。
 package ch34x
 
 import (

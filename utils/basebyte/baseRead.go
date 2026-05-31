@@ -6,7 +6,7 @@ import (
 
 // BaseRead 使用反射将字节数组中的二进制数据读取到任意Go变量中
 // 支持所有基本类型、指针、映射、切片、数组、结构体和接口的递归读取
-func BaseRead(r *Read, v interface{}) error {
+func BaseRead(r *Read, v any) error {
 	return baseRead(r, reflect.ValueOf(v))
 }
 
@@ -107,7 +107,15 @@ func baseRead(r *Read, v reflect.Value) error {
 			return r.Error
 		}
 		v.SetComplex(val)
-	case reflect.Ptr:
+	case reflect.Pointer:
+		// 配对 baseWrite 的 null 标记：读取时区分 null 和非 null 指针
+		isNotNull := r.Bool()
+		if r.Error != nil {
+			return r.Error
+		}
+		if !isNotNull {
+			return nil
+		}
 		if v.IsNil() {
 			v.Set(reflect.New(v.Type().Elem()))
 		}
@@ -154,7 +162,7 @@ func baseRead(r *Read, v reflect.Value) error {
 			return r.Error
 		}
 		v.Set(reflect.MakeSlice(v.Type(), n, n))
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if err := baseRead(r, v.Index(i)); err != nil {
 				return err
 			}
@@ -177,7 +185,7 @@ func baseRead(r *Read, v reflect.Value) error {
 		v.Set(elem)
 	case reflect.Struct:
 		n := v.NumField()
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if err := baseRead(r, v.Field(i)); err != nil {
 				return err
 			}
@@ -225,7 +233,7 @@ func typetoValue(t reflect.Kind) (v reflect.Value, _ bool) {
 	case reflect.String:
 		v = reflect.ValueOf(new(string)).Elem()
 	case reflect.Interface:
-		v = reflect.ValueOf(new(interface{})).Elem()
+		v = reflect.ValueOf(new(any)).Elem()
 	default:
 		return v, false
 	}

@@ -21,6 +21,9 @@ func float32Equal(a, b float32) bool {
 	return math.Abs(float64(a-b)) < epsilon
 }
 
+// TestRunSimpleFPELF 验证虚拟机单精度和双精度浮点运算指令的正确性。
+// 编译并运行包含浮点指令(fadd.s/fmul.s/fdiv.s/fsqrt.s等)的 RISC-V ELF 程序，
+// 检查 fadd.s、fsub.s、fmul.s、fdiv.s、fcvt、fmin.s、fmax.s、fclass.s 等指令的 IEEE 754 合规性。
 func TestRunSimpleFPELF(t *testing.T) {
 	cmd := exec.Command("make")
 	cmd.Dir = "."

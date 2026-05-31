@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// TestTransistorCircuit 验证NPN三极管开关电路：基极高电平应使三极管进入饱和区，检查集电极电压下降。
 func TestTransistorCircuit(t *testing.T) {
 	// 简单NPN开关电路测试
 	vcc := 5.0

@@ -172,10 +172,12 @@ func (um *updateMatrix[T]) Rollback() {
 // BuildFromDense 从一个二维切片重新构建矩阵。
 // 此操作会完全覆盖底层矩阵的数据，并清空所有待处理的缓存更改。
 func (um *updateMatrix[T]) BuildFromDense(dense [][]T) {
+	clear(um.cache)
 	um.Matrix.BuildFromDense(dense)
-	um.Rollback()
-}
+	// 直接重建位图而非 Rollback，防止旧维度位图与新矩阵不匹配
+	um.bitmap = utils.NewBitmap(um.Rows() * um.Cols())
 
+}
 // Zero 将整个矩阵（包括底层和缓存）清零。
 func (um *updateMatrix[T]) Zero() {
 	um.Matrix.Zero()

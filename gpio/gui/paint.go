@@ -319,9 +319,7 @@ func (p *Paint) DrawPoint(x, y int, color Color, dotPixel DotPixel, dotStyle Dot
 
 // DrawLine 使用给定颜色、线宽和线条样式从(xStart, yStart)到(xEnd, yEnd)绘制一条线。
 func (p *Paint) DrawLine(xStart, yStart, xEnd, yEnd int, color Color, lineWidth DotPixel, lineStyle LineStyle) {
-	if xStart < 0 || xStart >= p.Width || yStart < 0 || yStart >= p.Height ||
-		xEnd < 0 || xEnd >= p.Width || yEnd < 0 || yEnd >= p.Height {
-		// 超出可见区域
+	if xStart < 0 || xStart >= p.Width || yStart < 0 || yStart >= p.Height {
 		return
 	}
 	x := xStart
@@ -371,9 +369,7 @@ func (p *Paint) DrawLine(xStart, yStart, xEnd, yEnd int, color Color, lineWidth 
 
 // DrawRectangle 使用给定颜色、线宽和填充样式从(xStart, yStart)到(xEnd, yEnd)绘制一个矩形。
 func (p *Paint) DrawRectangle(xStart, yStart, xEnd, yEnd int, color Color, lineWidth DotPixel, filled DrawFill) {
-	if xStart < 0 || xStart >= p.Width || yStart < 0 || yStart >= p.Height ||
-		xEnd < 0 || xEnd >= p.Width || yEnd < 0 || yEnd >= p.Height {
-		// 超出可见区域
+	if xStart < 0 || xStart >= p.Width || yStart < 0 || yStart >= p.Height {
 		return
 	}
 	if filled == DrawFillFull {
@@ -488,6 +484,11 @@ func (p *Paint) DrawTime(x, y int, pt *PaintTime, face font.Face, bgColor, fgCol
 	if x < 0 || x >= p.Width || y < 0 || y >= p.Height {
 		return
 	}
+	// 输入验证：防止越界
+	// 防止 Hour>=100 时 digits[Hour/10] 索引越界 panic
+	if pt.Hour > 99 || pt.Min > 59 || pt.Sec > 59 {
+		return
+	}
 	digits := []rune{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'}
 	// 获取字符宽度估计值（使用'0'字符的宽度）
 	advance, ok := face.GlyphAdvance('0')
@@ -545,7 +546,7 @@ func (p *Paint) DrawCharRune(x, y int, ch rune, face font.Face, bgColor, fgColor
 	baseY := ascent
 	// 获取字形（dot 坐标为 26.6 定点数，64 单位 = 1 像素）
 	dot := fixed.P(0, baseY<<6)
-	dr, mask, maskp, _, ok := face.Glyph(dot, ch)
+	dr, mask, maskp, advance, ok := face.Glyph(dot, ch)
 	if !ok {
 		return 0, 0
 	}
@@ -566,7 +567,7 @@ func (p *Paint) DrawCharRune(x, y int, ch rune, face font.Face, bgColor, fgColor
 			}
 		}
 	}
-	return dr.Dx(), dr.Dy()
+	return advance.Floor(), dr.Dy()
 }
 
 // DrawRoundRect 绘制圆角矩形

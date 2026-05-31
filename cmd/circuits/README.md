@@ -19,6 +19,7 @@ This directory contains example netlist files for testing and demonstrating the 
 | `07_rlc_circuit.net` | RLC 串联振荡电路 — 含 R、L、C | RLC series oscillator — R, L, C |
 | `08_subcircuit.net` | 子电路示例 — RC 滤波器级联 | Subcircuit example — cascaded RC filters |
 | `09_half_adder.net` | RTL 半加器 — 8-NOR 门数字逻辑 | RTL half adder — 8-NOR gate digital logic |
+| `10_latch_self_hold.net` | 自锁启停电路 — 继电器自保持控制 | Self-holding latch circuit — relay self-hold control |
 
 ---
 
@@ -51,6 +52,9 @@ circuit -t 0.05 --nodes 1,2,3,4 cmd/circuits/08_subcircuit.net
 
 # 半加器
 circuit -t 0.15 --nodes 60,90 cmd/circuits/09_half_adder.net
+
+# 自锁启停电路 (交互式)
+circuit interactive cmd/circuits/10_latch_self_hold.net
 ```
 
 ---
@@ -112,6 +116,9 @@ circuit -t 0.15 --nodes 60,90 cmd/circuits/09_half_adder.net
 | **V** 电压源 | `V<id> [v+,v-] [波形,bias,频率,相位,Vmax,duty]` | 见下方 |
 | **I** 电流源 | `I<id> [v+,v-] [电流A]` | `I1 [1,-1] [0.01]` |
 | **opamp** 运放 | `opamp<id> [noninv+,inv-,out] [V+,V-,开环增益]` | `opamp1 [1,2,3] [15,-15,1e5]` |
+| **B** 事件开关 | `B<id> [v+,v-] [事件名,阈值,常开1/常闭0,Ron,Roff]` | `B1 [1,2] [SB1,0.5,1,1e-6,1e12]` |
+| **MB** 非自锁按钮 | `MB<id> [v+,v-] [事件名,阈值,常开1/常闭0,Ron,Roff]` | `MB1 [1,2] [BTN,0.5,1,1e-6,1e12]` |
+| **RLY** 继电器线圈 | `RLY<id> [c+,c-] [事件名,R_coil,L_coil,I_pullin,I_hold]` | `RLY1 [3,4] [COIL,100,0.01,0.01,0.005]` |
 
 ### 电压源波形类型 / Voltage Source Waveforms
 
@@ -128,6 +135,21 @@ circuit -t 0.15 --nodes 60,90 cmd/circuits/09_half_adder.net
 | 4 | 锯齿波 | `[4,0,100,0,5,0.5]` |
 | 5 | 脉冲波 | `[5,0,1000,0,5,0.5]` |
 | 6 | 噪声 | `[6,0,100,0,1,0]` |
+
+### 事件开关、非自锁按钮与继电器 / Event Switch, Momentary Button & Relay Coil
+
+事件开关(B)通过 TUI `set` 命令实时控制通断，状态保持直到下一次 set。
+非自锁按钮(MB)与事件开关(B)语法相同，但触发后自动复位——每按一次只闭合一个时间步，
+适合真实按钮的脉冲行为。继电器线圈(RLY)是**生产者**元件，吸合后自动将状态回写到事件系统，
+实现自锁闭环控制。
+
+| 参数 | B 事件开关 | RLY 继电器线圈 |
+|------|-----------|---------------|
+| 事件名 | eventName | eventName（可多个通道） |
+| 阈值/电阻 | threshold | R_coil（线圈电阻 Ω） |
+| 模式/电感 | normallyOpen(1常开/0常闭) | L_coil（线圈电感 H） |
+| Ron/I_pullin | R_on（导通电阻 Ω） | I_pullin（吸合电流 A） |
+| Roff/I_hold | R_off（断开电阻 Ω） | I_hold（保持电流 A，< I_pullin） |
 
 ### 子电路语法 / Subcircuit Syntax
 

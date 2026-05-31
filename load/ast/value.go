@@ -13,7 +13,9 @@ type Value struct {
 	Line  int    // 行号
 }
 
-// SeparationPrick 分离字符串前错
+// SeparationPrick 从 Value 字符串中分离类型前缀和数字 ID。
+// 例如 "R1" → typeName="R", id=1; "CAPACITOR3" → typeName="CAPACITOR", id=3。
+// 若字符串不含数字后缀，则 id=0，typeName 为整个字符串的大写形式。
 func (value Value) SeparationPrick() (typeName string, id int) {
 	nameStr := strings.ToUpper(value.Value)
 	for i, char := range nameStr {
@@ -29,7 +31,8 @@ func (value Value) SeparationPrick() (typeName string, id int) {
 	return typeName, id
 }
 
-// ParseBool 解析布尔值
+// ParseBool 将 Value 字符串解析为 bool 类型。
+// 成功时返回解析结果，失败时返回 defaultValue。
 func (value Value) ParseBool(defaultValue bool) bool {
 	if val, err := strconv.ParseBool(value.Value); err == nil {
 		return val
@@ -37,7 +40,8 @@ func (value Value) ParseBool(defaultValue bool) bool {
 	return defaultValue
 }
 
-// ParseInt 解析整数
+// ParseInt 将 Value 字符串解析为 int 类型整数。
+// 成功时返回解析结果，失败时返回 defaultValue。
 func (value Value) ParseInt(defaultValue int) int {
 	if val, err := strconv.Atoi(value.Value); err == nil {
 		return val
@@ -45,7 +49,8 @@ func (value Value) ParseInt(defaultValue int) int {
 	return defaultValue
 }
 
-// ParseInt8 解析8位有符号整数
+// ParseInt8 将 Value 字符串解析为 int8 类型。
+// 成功时返回解析结果，失败时返回 defaultValue。
 func (value Value) ParseInt8(defaultValue int8) int8 {
 	if val, err := strconv.ParseInt(value.Value, 10, 8); err == nil {
 		return int8(val)
@@ -53,7 +58,8 @@ func (value Value) ParseInt8(defaultValue int8) int8 {
 	return defaultValue
 }
 
-// ParseInt16 解析16位有符号整数
+// ParseInt16 将 Value 字符串解析为 int16 类型。
+// 成功时返回解析结果，失败时返回 defaultValue。
 func (value Value) ParseInt16(defaultValue int16) int16 {
 	if val, err := strconv.ParseInt(value.Value, 10, 16); err == nil {
 		return int16(val)
@@ -61,7 +67,8 @@ func (value Value) ParseInt16(defaultValue int16) int16 {
 	return defaultValue
 }
 
-// ParseInt32 解析32位有符号整数
+// ParseInt32 将 Value 字符串解析为 int32 类型。
+// 成功时返回解析结果，失败时返回 defaultValue。
 func (value Value) ParseInt32(defaultValue int32) int32 {
 	if val, err := strconv.ParseInt(value.Value, 10, 32); err == nil {
 		return int32(val)
@@ -69,7 +76,8 @@ func (value Value) ParseInt32(defaultValue int32) int32 {
 	return defaultValue
 }
 
-// ParseInt64 解析64位有符号整数
+// ParseInt64 将 Value 字符串解析为 int64 类型。
+// 成功时返回解析结果，失败时返回 defaultValue。
 func (value Value) ParseInt64(defaultValue int64) int64 {
 	if val, err := strconv.ParseInt(value.Value, 10, 64); err == nil {
 		return val
@@ -77,7 +85,8 @@ func (value Value) ParseInt64(defaultValue int64) int64 {
 	return defaultValue
 }
 
-// ParseUint 解析无符号整数
+// ParseUint 将 Value 字符串解析为 uint 类型。
+// 成功时返回解析结果，失败时返回 defaultValue。
 func (value Value) ParseUint(defaultValue uint) uint {
 	if val, err := strconv.ParseUint(value.Value, 10, 0); err == nil {
 		return uint(val)
@@ -85,7 +94,8 @@ func (value Value) ParseUint(defaultValue uint) uint {
 	return defaultValue
 }
 
-// ParseUint8 解析8位无符号整数
+// ParseUint8 将 Value 字符串解析为 uint8 类型。
+// 成功时返回解析结果，失败时返回 defaultValue。
 func (value Value) ParseUint8(defaultValue uint8) uint8 {
 	if val, err := strconv.ParseUint(value.Value, 10, 8); err == nil {
 		return uint8(val)
@@ -93,7 +103,8 @@ func (value Value) ParseUint8(defaultValue uint8) uint8 {
 	return defaultValue
 }
 
-// ParseUint16 解析16位无符号整数
+// ParseUint16 将 Value 字符串解析为 uint16 类型。
+// 成功时返回解析结果，失败时返回 defaultValue。
 func (value Value) ParseUint16(defaultValue uint16) uint16 {
 	if val, err := strconv.ParseUint(value.Value, 10, 16); err == nil {
 		return uint16(val)
@@ -101,7 +112,8 @@ func (value Value) ParseUint16(defaultValue uint16) uint16 {
 	return defaultValue
 }
 
-// ParseUint32 解析32位无符号整数
+// ParseUint32 将 Value 字符串解析为 uint32 类型。
+// 成功时返回解析结果，失败时返回 defaultValue。
 func (value Value) ParseUint32(defaultValue uint32) uint32 {
 	if val, err := strconv.ParseUint(value.Value, 10, 32); err == nil {
 		return uint32(val)
@@ -109,7 +121,8 @@ func (value Value) ParseUint32(defaultValue uint32) uint32 {
 	return defaultValue
 }
 
-// ParseUint64 解析64位无符号整数
+// ParseUint64 将 Value 字符串解析为 uint64 类型。
+// 成功时返回解析结果，失败时返回 defaultValue。
 func (value Value) ParseUint64(defaultValue uint64) uint64 {
 	if val, err := strconv.ParseUint(value.Value, 10, 64); err == nil {
 		return val
@@ -117,7 +130,8 @@ func (value Value) ParseUint64(defaultValue uint64) uint64 {
 	return defaultValue
 }
 
-// ParseFloat32 解析32位浮点数
+// ParseFloat32 将 Value 字符串解析为 float32 类型。
+// 成功时返回解析结果，失败时返回 defaultValue。
 func (value Value) ParseFloat32(defaultValue float32) float32 {
 	if val, err := strconv.ParseFloat(value.Value, 32); err == nil {
 		return float32(val)
@@ -125,7 +139,8 @@ func (value Value) ParseFloat32(defaultValue float32) float32 {
 	return defaultValue
 }
 
-// ParseFloat64 解析64位浮点数
+// ParseFloat64 将 Value 字符串解析为 float64 类型。
+// 成功时返回解析结果，失败时返回 defaultValue。
 func (value Value) ParseFloat64(defaultValue float64) float64 {
 	if val, err := strconv.ParseFloat(value.Value, 64); err == nil {
 		return val
@@ -133,7 +148,8 @@ func (value Value) ParseFloat64(defaultValue float64) float64 {
 	return defaultValue
 }
 
-// ParseString 安全获取字符串
+// ParseString 安全获取字符串值。若 Value 为空字符串则返回 str，否则返回原始字符串值。
+// 成功时返回解析结果，失败时返回 defaultValue。
 func (value Value) ParseString(str string) string {
 	if value.Value != "" {
 		return value.Value
@@ -141,7 +157,8 @@ func (value Value) ParseString(str string) string {
 	return str
 }
 
-// ParseDuration 解析时间间隔
+// ParseDuration 将 Value 字符串解析为 time.Duration 类型。
+// 成功时返回解析结果，失败时返回 defaultValue。
 func (value Value) ParseDuration(defaultValue time.Duration) time.Duration {
 	if val, err := time.ParseDuration(value.Value); err == nil {
 		return val
@@ -149,7 +166,8 @@ func (value Value) ParseDuration(defaultValue time.Duration) time.Duration {
 	return defaultValue
 }
 
-// ParseComplex128 解析128位复数
+// ParseComplex128 将 Value 字符串解析为 complex128 类型。
+// 成功时返回解析结果，失败时返回 defaultValue。
 func (value Value) ParseComplex128(defaultValue complex128) complex128 {
 	if val, err := strconv.ParseComplex(value.Value, 128); err == nil {
 		return val
@@ -157,7 +175,8 @@ func (value Value) ParseComplex128(defaultValue complex128) complex128 {
 	return defaultValue
 }
 
-// ParseComplex64 解析64位复数
+// ParseComplex64 将 Value 字符串解析为 complex64 类型。
+// 成功时返回解析结果，失败时返回 defaultValue。
 func (value Value) ParseComplex64(defaultValue complex64) complex64 {
 	if val, err := strconv.ParseComplex(value.Value, 64); err == nil {
 		return complex64(val)

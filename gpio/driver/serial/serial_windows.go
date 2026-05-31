@@ -171,6 +171,14 @@ func openPort(name string, config *driver.UARTConfig) (p *Port, err error) {
 // 关闭后，任何未完成的读写操作将返回错误。
 // 重复关闭是安全的，不会导致 panic。
 func (p *Port) Close() error {
+	if p.ro != nil && p.ro.HEvent != 0 {
+		syscall.CloseHandle(p.ro.HEvent)
+		p.ro.HEvent = 0
+	}
+	if p.wo != nil && p.wo.HEvent != 0 {
+		syscall.CloseHandle(p.wo.HEvent)
+		p.wo.HEvent = 0
+	}
 	return p.f.Close()
 }
 

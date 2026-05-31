@@ -1,6 +1,8 @@
 package mna
 
-import "circuit/maths"
+import (
+	"circuit/maths"
+)
 
 // DerivativeFunc 多变量导数函数类型定义
 // 输入：当前状态向量（MNA解向量X）
@@ -12,6 +14,16 @@ type Trigger struct {
 	Time      float64 // 触发时间
 	Triggered bool    // 是否已触发
 }
+
+// SimStatus 表示仿真运行状态
+type SimStatus = int32
+
+const (
+	StatusRunning  SimStatus = 0 // 正在运行
+	StatusPaused   SimStatus = 1 // 已暂停
+	StatusStopped  SimStatus = 2 // 已停止
+	StatusStepping SimStatus = 3 // 单步模式（执行一步后自动暂停）
+)
 
 // Time 仿真时间接口，提供仿真过程中的时间相关信息
 // 用于管理仿真时间步长、控制收敛行为，支持自适应步长调整
@@ -75,6 +87,10 @@ type Time interface {
 	IncrementGoodSteps()
 	// ResidualNorm 获取当前MNA残差范数
 	ResidualNorm() float64
+	// Status 返回当前仿真运行状态
+	Status() SimStatus
+	// Status 设置运行状态
+	SetStatus(old, new SimStatus)
 
 	// ------------------------------
 	// 多变量3阶预测-校正积分核心

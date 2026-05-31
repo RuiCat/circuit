@@ -207,7 +207,10 @@ func TestCompressorRoundtrip(t *testing.T) {
 func TestDeltaCompressorRoundtrip(t *testing.T) {
 	// 构造 float64 数据的 []byte 表示
 	values := []float64{1.0, 2.0, 3.0, 4.0, 5.0, 3.0, 1.0, 100.0}
-	raw := flatten[float64](to2D(values, 1))
+	raw, err := flatten(to2D(values, 1))
+	if err != nil {
+		t.Fatalf("flatten 失败: %v", err)
+	}
 
 	dc := NewDeltaZlibCompressor(8)
 	compressed, err := dc.Compress(raw)
@@ -234,7 +237,10 @@ func TestDeltaCompressorRoundtrip(t *testing.T) {
 // TestDeltaCompressorFloat32 float32 类型的 delta 压缩往返
 func TestDeltaCompressorFloat32(t *testing.T) {
 	values := []float32{1.0, 2.5, 3.7, 4.2, 5.0, 0.1}
-	raw := flatten[float32](to2D32(values, 1))
+	raw, err := flatten(to2D32(values, 1))
+	if err != nil {
+		t.Fatalf("flatten 失败: %v", err)
+	}
 
 	dc := NewDeltaZlibCompressor(4)
 	compressed, err := dc.Compress(raw)
@@ -262,7 +268,10 @@ func TestDeltaCompressorFloat32(t *testing.T) {
 // 验证不会因字节数能被 8 整除而被错误识别为 float64
 func TestDeltaCompressorFloat32Even4(t *testing.T) {
 	values := []float32{1.0, 2.5, 3.7, 4.2}
-	raw := flatten[float32](to2D32(values, 1))
+	raw, err := flatten(to2D32(values, 1))
+	if err != nil {
+		t.Fatalf("flatten 失败: %v", err)
+	}
 
 	dc := NewDeltaZlibCompressor(4)
 	compressed, err := dc.Compress(raw)
@@ -289,7 +298,10 @@ func TestDeltaCompressorFloat32Even4(t *testing.T) {
 // TestDeltaCompressorFloat32Even8 8 个 float32（16 字节）的往返测试
 func TestDeltaCompressorFloat32Even8(t *testing.T) {
 	values := []float32{1.0, 2.5, 3.7, 4.2, 5.0, 6.3, 7.1, 8.9}
-	raw := flatten[float32](to2D32(values, 1))
+	raw, err := flatten(to2D32(values, 1))
+	if err != nil {
+		t.Fatalf("flatten 失败: %v", err)
+	}
 
 	dc := NewDeltaZlibCompressor(4)
 	compressed, err := dc.Compress(raw)
@@ -433,7 +445,10 @@ func TestNamedFloatType(t *testing.T) {
 		{1.5, 2.5},
 		{3.5, 4.5},
 	}
-	raw := flatten(original)
+	raw, err := flatten(original)
+	if err != nil {
+		t.Fatalf("flatten 失败: %v", err)
+	}
 	expectedLen := 2 * 2 * 8
 	if len(raw) != expectedLen {
 		t.Fatalf("flatten 长度期望 %d，实际 %d", expectedLen, len(raw))
@@ -457,7 +472,10 @@ func TestNamedFloat32Type(t *testing.T) {
 		{1.5, 2.5, 3.5},
 		{4.5, 5.5, 6.5},
 	}
-	raw := flatten(original)
+	raw, err := flatten(original)
+	if err != nil {
+		t.Fatalf("flatten 失败: %v", err)
+	}
 	expectedLen := 2 * 3 * 4
 	if len(raw) != expectedLen {
 		t.Fatalf("flatten 长度期望 %d，实际 %d", expectedLen, len(raw))
@@ -599,7 +617,6 @@ func TestBufferNewReader(t *testing.T) {
 		t.Fatal("数据不一致")
 	}
 }
-
 
 // TestRLECodecRoundtrip 验证 RLE 编解码往返正确性
 func TestRLECodecRoundtrip(t *testing.T) {

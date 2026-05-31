@@ -11,6 +11,8 @@ import (
 	"testing"
 )
 
+// TestRunSimpleSubELF 验证虚拟机 RV32I 减法指令(sub)的正确性。
+// 编译并运行包含减法指令的 RISC-V ELF 程序，检查模拟器运行结果。
 func TestRunSimpleSubELF(t *testing.T) {
 	// 1. 构建 ELF 文件
 	cmd := exec.Command("make")

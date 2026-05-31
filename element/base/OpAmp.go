@@ -67,8 +67,14 @@ func (OpAmp) DoStep(mna MNA.Mna, time MNA.Time, value element.NodeFace) {
 	}
 	value.SetFloat64(6, vOut)
 
-	// 如果在饱和区，将 VCVS 方程（Vout = gain*Vd）修改为零增益电压源（Vout = Vclamped）
+	// 如果在饱和区，将 VCVS 方程（Vout = gain*Vd）修改为钳位电压源（Vout = Vclamped）
 	if vOut != vOutIdeal {
+		// 防御性重建 VCVS 方程恢复正确增益系数，确保退出饱和时矩阵正确（不依赖 MarkStamp）
+		mna.StampVCVS(
+			value.GetNodes(2), -1,
+			value.GetNodes(0), value.GetNodes(1),
+			value.GetVoltSource(0), gain,
+		)
 		// 计算电压源在 MNA 扩展矩阵中的行号
 		vsRow := MNA.NodeID(int(value.GetVoltSource(0)) + mna.GetNodeNum())
 		// 清零 VCVS 方程中控制电压节点的系数

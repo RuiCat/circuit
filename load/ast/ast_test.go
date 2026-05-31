@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestParseBasicElements 验证基本元件(R/V/Q)的网表解析，检查解析后的元件数量、类型和ID。
 func TestParseBasicElements(t *testing.T) {
 	input := `R1 [1,0] [1000]
 V1 [1,0] [0,0,0,0,5]
@@ -22,6 +23,7 @@ Q1 [2,3,0] [false,100]`
 	}
 }
 
+// TestParseSubCircuitBasic 验证子电路(.subckt/.ends)定义解析，检查端口名和内部元件。
 func TestParseSubCircuitBasic(t *testing.T) {
 	input := `.subckt inv in out
 R1 [in,out] [100]
@@ -50,6 +52,7 @@ Q1 [out,in,0] [false,100]
 	}
 }
 
+// TestParseMultipleSubCircuits 验证多个子电路与顶层元件混合解析，检查子电路和顶层元件的正确分离。
 func TestParseMultipleSubCircuits(t *testing.T) {
 	input := `.subckt inv in out
 R1 [in,out] [100]
@@ -77,6 +80,7 @@ X2 [mid,out] inv
 	}
 }
 
+// TestParseNestedSubCircuits 验证嵌套子电路(.subckt内嵌.subckt)的解析，检查内外层层级结构。
 func TestParseNestedSubCircuits(t *testing.T) {
 	input := `.subckt outer a b
 .subckt inner c d
@@ -111,6 +115,7 @@ R2 [a,b] [200]
 	}
 }
 
+// TestParseSubCircuitInstance 验证子电路实例(X元件)的解析，检查元件类型、ID、引脚和引用名称。
 func TestParseSubCircuitInstance(t *testing.T) {
 	input := `.subckt inv in out
 R1 [in,out] [100]
@@ -140,6 +145,7 @@ X1 [1,0] inv`
 	}
 }
 
+// TestParseSubCircuitWithValues 验证.value变量设置与子电路内%变量引用解析，检查变量键值和IsVar标志。
 func TestParseSubCircuitWithValues(t *testing.T) {
 	input := `.value R 1000
 
@@ -172,6 +178,7 @@ R1 [in,out] [%R]
 	}
 }
 
+// TestParseSubCircuitWithComment 验证行注释(#和//)和块注释(/* */)的正确忽视。
 func TestParseSubCircuitWithComment(t *testing.T) {
 	input := `.subckt test in out
 # 这是一个注释
@@ -195,6 +202,7 @@ R1 [in,out] [100]
 	}
 }
 
+// TestParseUnmatchedEnds 验证孤立的.ends指令解析报错，检查错误信息是否包含"意外的.ends"。
 func TestParseUnmatchedEnds(t *testing.T) {
 	input := `.ends`
 	_, err := NewParseTree(strings.NewReader(input))
@@ -206,6 +214,7 @@ func TestParseUnmatchedEnds(t *testing.T) {
 	}
 }
 
+// TestParseMissingSubCktName 验证.subckt缺少名称时的解析报错，检查错误信息是否包含"缺少名称"。
 func TestParseMissingSubCktName(t *testing.T) {
 	input := `.subckt`
 	_, err := NewParseTree(strings.NewReader(input))
@@ -217,6 +226,7 @@ func TestParseMissingSubCktName(t *testing.T) {
 	}
 }
 
+// TestParseSubCircuitMissingInstanceName 验证子电路实例X元件缺少子电路名称时的解析报错。
 func TestParseSubCircuitMissingInstanceName(t *testing.T) {
 	input := `.subckt test a b
 X1 [a,b]
@@ -230,6 +240,7 @@ X1 [a,b]
 	}
 }
 
+// TestParseEmptyNetlist 验证空网表的解析，检查返回的解析树是否为空。
 func TestParseEmptyNetlist(t *testing.T) {
 	tree, err := NewParseTree(strings.NewReader(""))
 	if err != nil {
@@ -240,6 +251,7 @@ func TestParseEmptyNetlist(t *testing.T) {
 	}
 }
 
+// TestParseCaseInsensitiveSubCkt 验证.subckt/.ends关键字大小写不敏感，检查.SUBCKT和.ENDS是否能正确识别。
 func TestParseCaseInsensitiveSubCkt(t *testing.T) {
 	input := `.SUBCKT test a b
 R1 [a,b] [100]
@@ -254,6 +266,7 @@ R1 [a,b] [100]
 	}
 }
 
+// TestParseEmptySubCircuit 验证空子电路(无端口无元件)的解析，检查名称、端口和元件数量。
 func TestParseEmptySubCircuit(t *testing.T) {
 	input := `.subckt empty
 .ends empty`
@@ -277,6 +290,7 @@ func TestParseEmptySubCircuit(t *testing.T) {
 	}
 }
 
+// TestParseMultipleNestedLevels 验证多个平级嵌套子电路的解析，检查嵌套数量和名称。
 func TestParseMultipleNestedLevels(t *testing.T) {
 	input := `.subckt a x y
 .subckt b z
@@ -303,6 +317,7 @@ R2 [w,y] [200]
 	}
 }
 
+// TestParseSubCircuitWithXInstance 验证包含子电路实例(X元件)的子电路定义解析，检查嵌套引用关系。
 func TestParseSubCircuitWithXInstance(t *testing.T) {
 	input := `.subckt nand a b out
 R1 [vcc,out] [1000]

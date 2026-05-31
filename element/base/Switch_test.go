@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// TestSwitch 验证开关元件：闭合时低阻抗导通，断开时高阻抗隔离。
 func TestSwitch(t *testing.T) {
 	// 测试开关在导通和关断状态下的行为
 	netlist := `

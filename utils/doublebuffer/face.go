@@ -1,3 +1,4 @@
+// Package doublebuffer 提供泛型双缓冲存储机制，用于仿真数据的采集与持久化。两个缓冲区交替工作，支持 Zlib/DeltaZlib/Noop/RLE 四种压缩编码器，提供 BlockWriter/BlockReader 二进制块文件读写和环形缓冲示波器功能。
 package doublebuffer
 
 import "io"

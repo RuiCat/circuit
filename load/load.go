@@ -18,7 +18,31 @@ func LoadString(s string) (con *element.Context, err error) {
 
 // LoadContext 加载仿真网表。
 func LoadContext(r io.Reader) (con *element.Context, err error) {
-	parseTree, err := ast.NewParseTree(r)
+	// 读取全部网表文本
+	textBytes, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("读取网表失败: %w", err)
+	}
+
+	// 防止超大网表
+	const maxNetlistSize = 100 * 1024 * 1024 // 100MB
+	if len(textBytes) > maxNetlistSize {
+		return nil, fmt.Errorf("网表文件过大: %d 字节（最大 %d 字节）", len(textBytes), maxNetlistSize)
+	}
+
+	// 展开总线表示法（如 data[7:0] → data7 data6 ... data0）
+	expandedText, err := ExpandBusNotation(string(textBytes))
+	if err != nil {
+		return nil, fmt.Errorf("总线展开失败: %w", err)
+	}
+
+	// 防止展开后文本过大
+	const maxExpandedSize = 200 * 1024 * 1024 // 200MB
+	if len(expandedText) > maxExpandedSize {
+		return nil, fmt.Errorf("展开后网表过大: %d 字节（最大 %d 字节）", len(expandedText), maxExpandedSize)
+	}
+
+	parseTree, err := ast.NewParseTree(strings.NewReader(expandedText))
 	if err != nil {
 		return nil, err
 	}

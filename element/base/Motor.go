@@ -34,6 +34,7 @@ var MotorType element.NodeType = element.AddElement(4, &Motor{
 // Motor 电机（直流电机实现）
 type Motor struct{ *element.Config }
 
+// Reset 初始化电机状态：清零转速、电流、转矩、电感补偿电阻和电流源值。
 func (Motor) Reset(base element.NodeFace) {
 	// 初始化状态变量
 	base.SetFloat64(7, 0)  // 当前转速
@@ -43,6 +44,7 @@ func (Motor) Reset(base element.NodeFace) {
 	base.SetFloat64(11, 0) // 电感电流源值
 }
 
+// StartIteration 迭代开始时计算反电动势并更新电压源。梯形积分法时还需计算电感伴随模型的电流源值。
 func (Motor) StartIteration(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 计算反电动势
 	kt := value.GetFloat64(4)    // 转矩常数
@@ -67,6 +69,7 @@ func (Motor) StartIteration(mna mna.Mna, time mna.Time, value element.NodeFace) 
 	}
 }
 
+// Stamp 加盖电机的 MNA 贡献。包括电枢电阻（恒阻抗）、电枢电感（梯形/后向欧拉伴随模型）和反电动势电压源。
 func (Motor) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 电枢电阻
 	ra := value.GetFloat64(2)
@@ -93,12 +96,14 @@ func (Motor) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	mna.StampVoltageSource(value.GetNodes(0), value.GetNodes(1), value.GetVoltSource(0), 0)
 }
 
+// DoStep 加盖电感伴随模型的历史电流源项到 RHS 向量。
 func (Motor) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 电感电流源（伴随模型）
 	curSourceValue := value.GetFloat64(11)
 	mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), curSourceValue)
 }
 
+// CalculateCurrent 计算电机的总电流（电枢电流 + 电感电流）。基于当前电压、反电动势和电枢电阻计算。
 func (Motor) CalculateCurrent(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 获取电枢电压
 	va := mna.GetNodeVoltage(value.GetNodes(0)) - mna.GetNodeVoltage(value.GetNodes(1))
@@ -118,11 +123,10 @@ func (Motor) CalculateCurrent(mna mna.Mna, time mna.Time, value element.NodeFace
 
 	// 电感电流
 	compResistance := value.GetFloat64(10)
-	curSourceValue := value.GetFloat64(11)
 	var iInductor float64
 	if compResistance > 0 {
-		voltdiff := va
-		iInductor = voltdiff/compResistance + curSourceValue
+		current := mna.GetVoltageSourceCurrent(value.GetVoltSource(0))
+		iInductor = va/compResistance + current
 	}
 
 	// 加盖总电流（仅一次）
@@ -130,6 +134,7 @@ func (Motor) CalculateCurrent(mna mna.Mna, time mna.Time, value element.NodeFace
 	mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), -totalCurrent)
 }
 
+// StepFinished 步长结束时更新电机转速。使用显式欧拉法基于转矩和转动惯量计算角加速度和转速，并施加 ±1.5 倍额定转速的钳位限制。
 func (Motor) StepFinished(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	kt := value.GetFloat64(4)
 	j := value.GetFloat64(5)
@@ -151,11 +156,14 @@ func (Motor) StepFinished(mna mna.Mna, time mna.Time, value element.NodeFace) {
 		value.SetFloat64(7, newSpeed)
 	}
 
-	// 限制转速
+	// 限制转速（正负双向钳位，防止发散）
 	finalSpeed := value.GetFloat64(7)
 	ratedSpeed := value.GetFloat64(1)
 	ratedSpeedRad := ratedSpeed * 2 * math.Pi / 60
 	if finalSpeed > 1.5*ratedSpeedRad {
 		value.SetFloat64(7, 1.5*ratedSpeedRad)
+		// 防止显式欧拉法在负转矩驱动下转速负向无限发散
+	} else if finalSpeed < -1.5*ratedSpeedRad {
+		value.SetFloat64(7, -1.5*ratedSpeedRad)
 	}
 }

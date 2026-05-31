@@ -1,3 +1,4 @@
+// Package element 提供电路仿真元件系统的基础接口和全局注册管理机制。定义了元件配置(ConfigFace)、元件实现(ElementFace)和节点操作(NodeFace)等核心接口，所有基础元件通过 AddElement 函数注册到全局元件表。
 package element
 
 import (

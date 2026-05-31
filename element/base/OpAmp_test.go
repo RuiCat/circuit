@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// TestOpAmp 验证运放同相放大电路：检查闭环增益是否符合理论值。
 func TestOpAmp(t *testing.T) {
 	// 创建同相放大器电路：增益 = 1 + R2/R1
 	netlist := `

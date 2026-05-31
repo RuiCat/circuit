@@ -26,14 +26,19 @@ var TransformerType element.NodeType = element.AddElement(8, &Transformer{
 	},
 })
 
+// Transformer 变压器元件，使用梯形积分法建模。
+// 通过耦合系数 k 计算互感 M=k*sqrt(L1*L2)，将一次侧和二次侧建模为耦合电感对，
+// 构建 4x4 的伴随导纳矩阵 G=[G11 G12; G21 G22] 和 Norton 等效历史电流源。
 type Transformer struct{ *element.Config }
 
+// Reset 初始化变压器状态：清零所有历史电流和电导系数。
 func (Transformer) Reset(base element.NodeFace) {
 	for i := 3; i <= 8; i++ {
 		base.SetFloat64(i, 0)
 	}
 }
 
+// Stamp 加盖变压器的 MNA 贡献。根据 L1/Ratio/k 计算等效电导矩阵，填充自导纳和互导纳项。
 func (Transformer) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	l1 := value.GetFloat64(0)
 	ratio := value.GetFloat64(1)
@@ -78,6 +83,7 @@ func (Transformer) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	mna.StampAdmittance(value.GetNodes(2), value.GetNodes(3), g22)
 }
 
+// StartIteration 迭代开始时更新历史电流源。根据梯形法用当前电压和电流更新 I_hist 供下一步使用。
 func (t Transformer) StartIteration(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 获取当前电压差
 	v1 := mna.GetNodeVoltage(value.GetNodes(0)) - mna.GetNodeVoltage(value.GetNodes(1))
@@ -97,6 +103,7 @@ func (t Transformer) StartIteration(mna mna.Mna, time mna.Time, value element.No
 	value.SetFloat64(8, i2+g21*v1+g22*v2)
 }
 
+// DoStep 将历史电流项加盖到 RHS 向量中，完成 Norton 等效电流源注入。
 func (Transformer) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 将历史电流项加盖到 RHS 向量中
 	mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), value.GetFloat64(7))

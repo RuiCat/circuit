@@ -56,18 +56,28 @@ func (sc *StampCache) GetCached() []RecordedStamp {
 	if !sc.Valid {
 		return nil
 	}
-	return sc.Contributions
+	// 返回深拷贝，防止调用方修改缓存数据
+	result := make([]RecordedStamp, len(sc.Contributions))
+	copy(result, sc.Contributions)
+	return result
 }
 
 // Update 更新缓存快照和加盖记录
 // 从collector中读取当前节点电压和电压源电流快照，并复制最新的加盖记录
 func (sc *StampCache) Update(collector *StampCollector) {
+	// 重建快照，仅保留当前仍在监控的节点，防止旧条目导致 HasChanged 误判
+	newNodeSnapshots := make(map[NodeID]float64, len(collector.ReadNodes))
 	for nodeID := range collector.ReadNodes {
-		sc.NodeSnapshots[nodeID] = collector.Inner.GetNodeVoltage(nodeID)
+		newNodeSnapshots[nodeID] = collector.Inner.GetNodeVoltage(nodeID)
 	}
+	sc.NodeSnapshots = newNodeSnapshots
+
+	newVsrcSnapshots := make(map[VoltageID]float64, len(collector.ReadVsrcs))
 	for vsrcID := range collector.ReadVsrcs {
-		sc.VsrcSnapshots[vsrcID] = collector.Inner.GetVoltageSourceCurrent(vsrcID)
+		newVsrcSnapshots[vsrcID] = collector.Inner.GetVoltageSourceCurrent(vsrcID)
 	}
+	sc.VsrcSnapshots = newVsrcSnapshots
+
 	sc.Contributions = make([]RecordedStamp, len(collector.Records))
 	copy(sc.Contributions, collector.Records)
 	sc.Valid = true

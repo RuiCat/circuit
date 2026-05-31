@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestSparseMatrixResize 验证稀疏矩阵 Resize 操作的正确性：检查调整大小后行列维度正确且所有元素归零。
 func TestSparseMatrixResize(t *testing.T) {
 	// 1. 创建一个稀疏矩阵并添加一些元素
 	sm := NewSparseMatrix[float64](3, 3)
@@ -43,6 +44,7 @@ func TestSparseMatrixResize(t *testing.T) {
 	}
 }
 
+// TestDenseMatrixGetRow 验证稠密矩阵 GetRow 操作的正确性：检查返回的非零列索引和值是否与预期一致。
 func TestDenseMatrixGetRow(t *testing.T) {
 	// 1. 创建一个具有零和非零值的稠密矩阵并设置一行
 	dm := NewDenseMatrix[float64](3, 4)

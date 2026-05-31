@@ -6,7 +6,7 @@ import (
 
 // BaseWrite 使用反射将任意Go变量序列化为二进制字节数据
 // 支持所有基本类型、指针、映射、切片、数组、结构体和接口的递归写入
-func BaseWrite(w *Write, v interface{}) error {
+func BaseWrite(w *Write, v any) error {
 	return baseWrite(w, reflect.ValueOf(v))
 }
 
@@ -49,7 +49,13 @@ func baseWrite(w *Write, v reflect.Value) error {
 		w.Complex128(v.Complex())
 	case reflect.String:
 		w.Bytes([]byte(v.String()))
-	case reflect.Ptr:
+	case reflect.Pointer:
+	// 防止 nil 指针调用 v.Elem() 导致 panic
+		if v.IsNil() {
+			w.Bool(false)
+			return nil
+		}
+		w.Bool(true)
 		return baseWrite(w, v.Elem())
 	case reflect.Map:
 		w.Int(v.Len())
@@ -65,7 +71,7 @@ func baseWrite(w *Write, v reflect.Value) error {
 	case reflect.Array, reflect.Slice:
 		count := v.Len()
 		w.Int(count)
-		for i := 0; i < count; i++ {
+		for i := range count {
 			if err := baseWrite(w, v.Index(i)); err != nil {
 				return err
 			}
@@ -81,7 +87,7 @@ func baseWrite(w *Write, v reflect.Value) error {
 		}
 	case reflect.Struct:
 		n := v.NumField()
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if err := baseWrite(w, v.Field(i)); err != nil {
 				return err
 			}

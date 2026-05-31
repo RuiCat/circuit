@@ -1,3 +1,4 @@
+// Package mna 提供改进节点分析(Modified Nodal Analysis)求解器的完整实现。支持实数(float64)和复数(complex128)两种数值类型的泛型矩阵求解，内置矩阵更新/回滚机制(Update/Rollback)以支持迭代收敛计算。
 package mna
 
 import (
@@ -179,10 +180,24 @@ func (m *MnaType[T]) StampMatrix(i, j NodeID, value T) {
 }
 
 // StampMatrixSet 直接设置矩阵A的(i,j)元素的值。地节点索引将被忽略。
+// 内部通过 isValidNodeID 过滤地节点和越界索引，
+// 并通过 maths.IsValidFloat64/IsValidComplex128 过滤 NaN/Inf 值。
 func (m *MnaType[T]) StampMatrixSet(i, j NodeID, v T) {
-	if m.isValidNodeID(i) && m.isValidNodeID(j) {
-		m.A.Set(int(i), int(j), v)
+	if !m.isValidNodeID(i) || !m.isValidNodeID(j) {
+		return
 	}
+	// NaN/Inf 过滤，与 StampMatrix/StampRightSide 保持一致，防止脏数据直入矩阵
+	switch v := any(v).(type) {
+	case float64:
+		if !maths.IsValidFloat64(v) {
+			return
+		}
+	case complex128:
+		if !maths.IsValidComplex128(v) {
+			return
+		}
+	}
+	m.A.Set(int(i), int(j), v)
 }
 
 // StampRightSide 将一个值加到向量Z的第i个元素上。
@@ -206,10 +221,24 @@ func (m *MnaType[T]) StampRightSide(i NodeID, value T) {
 }
 
 // StampRightSideSet 直接设置向量Z的第i个元素的值。地节点索引将被忽略。
+// 内部通过 isValidNodeID 过滤地节点和越界索引，
+// 并通过 maths.IsValidFloat64/IsValidComplex128 过滤 NaN/Inf 值。
 func (m *MnaType[T]) StampRightSideSet(i NodeID, v T) {
-	if m.isValidNodeID(i) {
-		m.Z.Set(int(i), v)
+	if !m.isValidNodeID(i) {
+		return
 	}
+	// NaN/Inf 过滤，与 StampMatrix/StampRightSide 保持一致，防止脏数据直入矩阵
+	switch v := any(v).(type) {
+	case float64:
+		if !maths.IsValidFloat64(v) {
+			return
+		}
+	case complex128:
+		if !maths.IsValidComplex128(v) {
+			return
+		}
+	}
+	m.Z.Set(int(i), v)
 }
 
 // ------------------------------ 无源元件加盖 ------------------------------

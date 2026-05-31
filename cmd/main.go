@@ -1,3 +1,4 @@
+// Command circuit 是电路仿真命令行工具，支持批处理仿真和交互式 TUI 连续仿真两种模式。基于 bubbletea 的终端界面提供实时电压监控、事件设置和曲线绘制功能。
 package main
 
 import (
@@ -18,6 +19,8 @@ import (
 )
 
 
+// errWriter 包装 io.Writer，记录首次写入错误。
+// 后续写入自动丢弃，避免静默数据丢失。
 type errWriter struct {
 	w   io.Writer
 	err error
@@ -32,6 +35,7 @@ func (ew *errWriter) Write(p []byte) (int, error) {
 	return n, ew.err
 }
 
+// config 存储命令行解析后的仿真配置参数。
 type config struct {
 	mode        string
 	targetTime  float64
@@ -51,6 +55,8 @@ type config struct {
 	netlistPath string
 }
 
+// main 程序入口：解析参数、加载网表、运行仿真、输出结果。
+// 支持批处理和交互式两种模式。
 func main() {
 	cfg := parseFlags()
 
@@ -138,6 +144,7 @@ func main() {
 	}
 }
 
+// parseFlags 解析命令行参数并返回 config 结构体。
 func parseFlags() config {
 	var cfg config
 
@@ -201,6 +208,7 @@ func parseFlags() config {
 	return cfg
 }
 
+// printHelp 输出命令行帮助信息到 stderr。
 func printHelp() {
 	fmt.Fprint(os.Stderr, `circuit - 电路仿真命令行工具
 用法:
@@ -230,13 +238,16 @@ func printHelp() {
 `)
 }
 
+// maxTableRows 限制终端表格输出的最大行数，超出后自动降级为 csv 格式。
 const maxTableRows = 10000
 
+// tableRow 表示表格输出的一行数据，包含时间和多个节点电压值。
 type tableRow struct {
 	time string
 	vals []string
 }
 
+// runSim 执行完整的批处理仿真流程，包括时间控制器设置、节点筛选、步进执行和结果输出。
 func runSim(w io.Writer, con *element.Context, cfg config) error {
 	ew := &errWriter{w: w}
 
@@ -373,6 +384,7 @@ func runSim(w io.Writer, con *element.Context, cfg config) error {
 	return nil
 }
 
+// buildHeaders 根据节点 ID 列表构建输出表格的列标题，第一列为 time，后续为 node_N。
 func buildHeaders(nodeIDs []int) []string {
 	headers := make([]string, 1+len(nodeIDs))
 	headers[0] = "time"
@@ -389,10 +401,12 @@ func (r tableRow) toCells() []string {
 	return cells
 }
 
+// formatFloat 以科学记数法（e 格式，最短表示）格式化浮点数。
 func formatFloat(f float64) string {
 	return strconv.FormatFloat(f, 'e', -1, 64)
 }
 
+// writeTable 以 ASCII 表格格式输出数据行，自动计算列宽并添加分隔线。
 func writeTable(w io.Writer, headers []string, rows []tableRow) {
 	colWidths := make([]int, len(headers))
 	for i, h := range headers {
@@ -419,6 +433,7 @@ func writeTable(w io.Writer, headers []string, rows []tableRow) {
 	fmt.Fprintln(w, sep)
 }
 
+// buildSeparator 根据列宽构建表格分隔行，格式为 +---+---+...。
 func buildSeparator(widths []int) string {
 	var sb strings.Builder
 	sb.WriteByte('+')
@@ -429,6 +444,7 @@ func buildSeparator(widths []int) string {
 	return sb.String()
 }
 
+// writeRow 输出表格的一行数据，按列宽对齐填充空白。
 func writeRow(w io.Writer, cells []string, widths []int) {
 	var sb strings.Builder
 	sb.WriteByte('|')

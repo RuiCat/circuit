@@ -1,3 +1,4 @@
+// Package utils 提供电路仿真器的基础工具类。包含基于条件变量的并发事件管理(Flag)、位图状态标记(Bitmap)等功能。
 package utils
 
 import (
@@ -90,8 +91,10 @@ func (f *flagImpl) ReleaseEvent(flag FlagValue) bool {
 	}
 	// 标记为已释放
 	f.released[flag] = true
-	// 通知所有等待的 goroutine
-	f.cond.Broadcast()
+	// Signal() 替代 Broadcast() 避免惊群效应，TODO: 为每个标记使用独立条件变量
+	// 通知单个等待的 goroutine，避免惊群效应
+	// TODO: 为每个标记使用独立的条件变量，完全消除惊群效应
+	f.cond.Signal()
 	return true
 }
 

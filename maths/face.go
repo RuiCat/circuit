@@ -1,3 +1,4 @@
+// Package maths 提供泛型数值线性代数计算所需的核心数据结构与算法。包含 Matrix/Vector 接口、DenseMatrix/DenseVector 实现、LU 分解求解器、子矩阵操作和数值验证等底层功能。
 package maths
 
 import (

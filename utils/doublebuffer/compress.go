@@ -75,6 +75,10 @@ func (dc *DeltaZlibCompressor) Decompress(data []byte) ([]byte, error) {
 	return dc.deltaDecode(raw), nil
 }
 
+// deltaEncode 计算相邻值之间的无符号整数差值。
+// 已知限制：对于跨越零值的 IEEE 754 浮点数（正负交替），delta 值会非常大，
+// 导致 zlib 压缩率降低。未来的优化方向：在 delta 编码前对符号位进行 XOR 映射。
+//
 // deltaEncode 对字节数据进行 delta 编码
 // 第一个值原样保留，后续值存储与前一个值的差（无符号整数回绕）
 func (dc *DeltaZlibCompressor) deltaEncode(data []byte) []byte {

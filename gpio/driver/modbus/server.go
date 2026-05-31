@@ -57,6 +57,7 @@ type Server struct {
 	handler          RequestHandler // 请求处理器，处理具体的读写操作
 	running          bool           // 服务器运行状态标志
 	mu               sync.RWMutex   // 读写锁，保护服务器状态和共享数据
+	wg               sync.WaitGroup // 等待 listenLoop goroutine 退出
 	coils            []bool         // 内部线圈存储（如果使用默认处理器）
 	discreteInputs   []bool         // 内部离散输入存储（如果使用默认处理器）
 	holdingRegisters []uint16       // 内部保持寄存器存储（如果使用默认处理器）
@@ -259,23 +260,28 @@ func (s *Server) Start() error {
 	s.running = true
 	s.mu.Unlock()
 
+	s.wg.Add(1)
 	go s.listenLoop()
+
 	return nil
 }
 
 // Stop 停止服务器
 func (s *Server) Stop() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if !s.running {
+		s.mu.Unlock()
 		return
 	}
 	close(s.stopChan)
 	s.running = false
+	s.mu.Unlock()
+	s.wg.Wait()
 }
 
 // listenLoop 监听循环，处理接收到的请求
 func (s *Server) listenLoop() {
+	defer s.wg.Done()
 	// 使用缓冲 channel 在单独的 goroutine 中进行 UART 读取
 	readChan := make(chan struct {
 		data []byte

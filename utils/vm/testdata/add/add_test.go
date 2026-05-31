@@ -11,6 +11,8 @@ import (
 	"testing"
 )
 
+// TestRunSimpleAddELF 验证虚拟机 RV32I 基本整数加法指令(add/addi)的正确性。
+// 编译并运行包含加法指令的 RISC-V ELF 程序，检查模拟器运行结果。
 func TestRunSimpleAddELF(t *testing.T) {
 	// 1. 构建 ELF 文件
 	cmd := exec.Command("make")

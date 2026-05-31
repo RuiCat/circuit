@@ -35,23 +35,14 @@ const (
 	// 局部截断误差(LTE)系数
 	lteCoeffPredictor = 3.0 / 8.0   // 预测器误差系数 C*
 	lteCoeffCorrector = -1.0 / 24.0 // 校正器误差系数 C
-	lteFactor         = lteCoeffCorrector / (lteCoeffPredictor - lteCoeffCorrector)
+	// lteFactor = |C/(C*-C)| = 0.1（负值，实际使用时取绝对值）
+	lteFactor = lteCoeffCorrector / (lteCoeffPredictor - lteCoeffCorrector)
 
 	// 步长调整参数
 	maxStepScale       = 2.5                              // 最大步长增长倍数
 	minStepScale       = 0.4                              // 最小步长缩减倍数
 	stepAdjustOrder    = 3                                // 积分阶数
 	stepAdjustExponent = 1.0 / float64(stepAdjustOrder+1) // 步长调整指数
-)
-
-// SimStatus 表示仿真运行状态
-type SimStatus int32
-
-const (
-	StatusRunning  SimStatus = 0 // 正在运行
-	StatusPaused   SimStatus = 1 // 已暂停
-	StatusStopped  SimStatus = 2 // 已停止
-	StatusStepping SimStatus = 3 // 单步模式（执行一步后自动暂停）
 )
 
 // TimeMNA 通用时间管理与数值积分核心
@@ -105,10 +96,10 @@ type TimeMNA struct {
 	corrDer   []float64 // 校正导数
 
 	// 触发点管理
-	triggers []mna.Trigger // 仿真触发点列表
-	continuous bool         // 连续模式标志，为 true 时 IsSimulationFinished 始终返回 false
-	tempTarget bool         // 是否为临时目标（AdvanceFor 设置）
-	status     atomic.Int32 // 运行状态（SimStatus），并发安全
+	triggers   []mna.Trigger // 仿真触发点列表
+	continuous bool          // 连续模式标志，为 true 时 IsSimulationFinished 始终返回 false
+	tempTarget bool          // 是否为临时目标（AdvanceFor 设置）
+	status     atomic.Int32  // 运行状态（SimStatus），并发安全
 }
 
 // NewTimeMNA 创建通用TimeMNAImpl实例
@@ -175,6 +166,10 @@ func (t *TimeMNA) MaxElemIter() int {
 	return t.maxElemIter
 }
 
+// Deprecated: UpdateResidualHistory 的功能已被 CalculateMNAResidual 完全覆盖（该函数内部已更新残差历史），
+// 此方法保留仅为满足 mna.Time 接口兼容性，外部不应再调用。
+// 未来版本将移除此方法。
+//
 // UpdateResidualHistory 更新残差历史记录
 func (t *TimeMNA) UpdateResidualHistory() {
 	// 移动历史记录
@@ -268,6 +263,10 @@ func (t *TimeMNA) ResetTimeStepCount() {
 
 // IncrementTimeStepCount 增加时间步计数，返回是否超过限制
 func (t *TimeMNA) IncrementTimeStepCount() bool {
+	// 防止极端漫长仿真中 int 溢出导致步数限制失效
+	if t.timeStepCount == math.MaxInt {
+		return false
+	}
 	t.timeStepCount++
 	return t.timeStepCount <= t.maxTimeSteps
 }
@@ -368,7 +367,7 @@ func (t *TimeMNA) IsSimulationFinished() bool {
 		// 连续模式：检查临时目标（AdvanceFor 设置）
 		if t.tempTarget && t.currentTime >= t.targetTime {
 			t.tempTarget = false
-			t.status.Store(int32(StatusPaused))
+			t.status.Store(mna.StatusPaused)
 		}
 		// 连续模式下从不因时间到达而结束，由外部 Stop 控制
 		return false
@@ -385,38 +384,43 @@ func (t *TimeMNA) IsSimulationFinished() bool {
 // 需通过 Stop() 或外部 goroutine 调用来结束仿真。
 func (t *TimeMNA) SetContinuousMode() {
 	t.continuous = true
-	t.status.Store(int32(StatusRunning))
+	t.status.Store(mna.StatusRunning)
 }
 
 // Pause 暂停仿真。仅在 Running 状态下有效，恢复需调用 Resume()。
 // 可从外部 goroutine 安全调用。
 func (t *TimeMNA) Pause() {
-	t.status.CompareAndSwap(int32(StatusRunning), int32(StatusPaused))
+	t.status.CompareAndSwap(mna.StatusRunning, mna.StatusPaused)
 }
 
 // Resume 恢复暂停或单步后的仿真。仅 Paused/Stepping → Running。
 // 可从外部 goroutine 安全调用。
 func (t *TimeMNA) Resume() {
-	t.status.CompareAndSwap(int32(StatusPaused), int32(StatusRunning))
-	t.status.CompareAndSwap(int32(StatusStepping), int32(StatusRunning))
+	t.status.CompareAndSwap(mna.StatusPaused, mna.StatusRunning)
+	t.status.CompareAndSwap(mna.StatusStepping, mna.StatusRunning)
 }
 
 // Stop 停止仿真，使主循环优雅退出。
 // 连续模式下调用此方法结束 TransientSimulation。
 func (t *TimeMNA) Stop() {
-	t.status.Store(int32(StatusStopped))
+	t.status.Store(mna.StatusStopped)
 }
 
 // StepOnce 设置单步模式：执行一步后自动暂停。
 // 仅在 Running/Paused 状态下有效。
 func (t *TimeMNA) StepOnce() {
-	t.status.CompareAndSwap(int32(StatusRunning), int32(StatusStepping))
-	t.status.CompareAndSwap(int32(StatusPaused), int32(StatusStepping))
+	t.status.CompareAndSwap(mna.StatusRunning, mna.StatusStepping)
+	t.status.CompareAndSwap(mna.StatusPaused, mna.StatusStepping)
 }
 
 // Status 返回当前仿真运行状态。
-func (t *TimeMNA) Status() SimStatus {
-	return SimStatus(t.status.Load())
+func (t *TimeMNA) Status() mna.SimStatus {
+	return mna.SimStatus(t.status.Load())
+}
+
+// Status 设置当前仿真运行状态。
+func (t *TimeMNA) SetStatus(old, new mna.SimStatus) {
+	t.status.CompareAndSwap(old, new)
 }
 
 // AdvanceFor 前进指定时间后自动暂停。
@@ -430,7 +434,7 @@ func (t *TimeMNA) AdvanceFor(duration float64) error {
 	if t.continuous {
 		t.tempTarget = true
 	}
-	t.status.CompareAndSwap(int32(StatusPaused), int32(StatusRunning))
+	t.status.CompareAndSwap(mna.StatusPaused, mna.StatusRunning)
 	return nil
 }
 
@@ -458,7 +462,12 @@ func (t *TimeMNA) Predict() error {
 // CopyPredStateToX 将预测状态复制到MNA解向量X，用于Newton迭代的初始猜测。
 func (t *TimeMNA) CopyPredStateToX(x maths.Vector[float64]) {
 	for i := range t.predState {
-		x.Set(i, t.predState[i])
+		val := t.predState[i]
+		// NaN/Inf 兜底：防止预测异常值污染 MNA 求解链
+		if math.IsNaN(val) || math.IsInf(val, 0) {
+			val = 0.0 // NaN/Inf 兜底，避免污染 MNA 求解链
+		}
+		x.Set(i, val)
 	}
 }
 
@@ -466,6 +475,10 @@ func (t *TimeMNA) CopyPredStateToX(x maths.Vector[float64]) {
 func (t *TimeMNA) Correct() error {
 	if !t.historyInited {
 		return errors.New("历史数据未初始化，无法执行校正")
+	}
+	// 防御性检查：确保预测导数已通过 Predict() 就绪
+	if len(t.predDer) == 0 {
+		return errors.New("预测导数未就绪，请先调用 Predict()")
 	}
 	// 获取历史数据
 	stateN, derN, derN1 := t.historyStates[0], t.historyDers[0], t.historyDers[1]
@@ -716,6 +729,10 @@ func (t *TimeMNA) AdjustStepSize() error {
 		t.currentStep = math.Max(t.minStep, t.currentStep/2)
 		return nil
 	}
+	// 误差为零时（精确 DC 工作点），防止除零导致步长异常膨胀
+	if errorQuotient < minValidStep {
+		errorQuotient = minValidStep
+	}
 	// 步长调整公式：h_new = h_old * (safety / errorQuotient)^(1/(order+1))
 	stepScale := math.Pow(t.safety/errorQuotient, stepAdjustExponent)
 	// 限制步长变化幅度（避免突变）
@@ -795,8 +812,7 @@ func (t *TimeMNA) initializeIfNeeded(mnaSolver mna.Mna, derFunc mna.DerivativeFu
 	if err := t.InitHistory(initialState, derFunc); err != nil {
 		return fmt.Errorf("历史数据初始化失败: %v", err)
 	}
-	// 初始时间推进到第一个步长
-	t.currentTime = t.currentStep
+	// 不在此设置 currentTime，由调用方首次 advanceTimeAndTriggers 推进，避免 AdvanceTimeStep 路径首次步长翻倍
 	return nil
 }
 
@@ -807,18 +823,27 @@ func (t *TimeMNA) performPredictionCorrection(derFunc mna.DerivativeFunc) error 
 		return fmt.Errorf("预测步骤失败: %v", err)
 	}
 	var err error
-	t.predDer, err = derFunc(t.predState)
+	predDer, err := derFunc(t.predState)
 	if err != nil {
 		return fmt.Errorf("计算预测导数失败: %v", err)
 	}
+	// 校验导数向量长度，防止 derFunc 返回不匹配数据导致后续越界 panic
+	if len(predDer) != len(t.predState) {
+		return fmt.Errorf("预测导数长度(%d)与状态向量长度(%d)不匹配", len(predDer), len(t.predState))
+	}
+	t.predDer = predDer
 	// 校正步骤：计算校正状态和校正导数
 	if err = t.Correct(); err != nil {
 		return fmt.Errorf("校正步骤失败: %v", err)
 	}
-	t.corrDer, err = derFunc(t.corrState)
+	corrDer, err := derFunc(t.corrState)
 	if err != nil {
 		return fmt.Errorf("计算校正导数失败: %v", err)
 	}
+	if len(corrDer) != len(t.corrState) {
+		return fmt.Errorf("校正导数长度(%d)与状态向量长度(%d)不匹配", len(corrDer), len(t.corrState))
+	}
+	t.corrDer = corrDer
 	return nil
 }
 

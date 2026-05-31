@@ -42,6 +42,7 @@ var VoltageType element.NodeType = element.AddElement(11, &Voltage{
 // Voltage 电压源
 type Voltage struct{ *element.Config }
 
+// Reset 初始化电压源状态。噪声波形时，根据最大电压和偏置生成初始噪声值。
 func (Voltage) Reset(base element.NodeFace) {
 	// 初始化噪声值
 	if base.GetInt(0) == WfNOISE {
@@ -49,6 +50,7 @@ func (Voltage) Reset(base element.NodeFace) {
 	}
 }
 
+// Stamp 加盖电压源的 MNA 贡献。直流波形时直接加盖固定电压；其他波形先设零偏置，后续通过 UpdateVoltageSource 动态更新。
 func (Voltage) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	waveform := value.GetInt(0)
 	if waveform == WfDC {
@@ -59,6 +61,7 @@ func (Voltage) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	}
 }
 
+// DoStep 在每个仿真步长中更新非直流波形的电压值。根据当前时间和波形参数（直流/正弦/脉冲/三角/噪声等）计算瞬时电压。
 func (Voltage) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	waveform := value.GetInt(0)
 	if waveform != WfDC {
@@ -67,6 +70,7 @@ func (Voltage) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	}
 }
 
+// StepFinished 步长结束时更新噪声值，为下一步生成新的随机噪声采样。
 func (Voltage) StepFinished(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 更新噪声值
 	if value.GetInt(0) == WfNOISE {
@@ -100,7 +104,10 @@ func getVoltage(value element.NodeFace, time mna.Time) float64 {
 
 	// 计算角度
 	t := time.Time()
-	w := (2*math.Pi)*(t-freqTimeZero)*frequency + phaseShift
+	// 使用模运算将时间限制在周期内，防止长时间仿真精度损失
+	period := 1.0 / frequency
+	t_mod := math.Mod(t-freqTimeZero, period)
+	w := 2*math.Pi*t_mod*frequency + phaseShift
 
 	switch waveform {
 	case WfAC:
