@@ -3,7 +3,7 @@ package load
 import (
 	"testing"
 
-	_ "circuit/element/base"
+	_ "circuit/element/register"
 )
 
 func TestExpandRangeBusInPins(t *testing.T) {

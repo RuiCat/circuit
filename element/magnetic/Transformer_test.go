@@ -1,0 +1,50 @@
+package magnetic
+
+import (
+	_ "circuit/element/source"
+	_ "circuit/element/passive"
+	"circuit/element/time"
+	"circuit/load"
+	"math"
+	"testing"
+)
+
+// TestTransformer 验证变压器元件的仿真正确性
+// 测试电路：电压源驱动变压器原边，副边接负载电阻，验证变压和传输特性
+func TestTransformer(t *testing.T) {
+	netlist := `
+	v1 [0,-1] [1,0,50,0,5]
+	r1 [0,1] [10]
+	xfmr1 [1,-1,2,-1] [4.0,1.0,0.999]
+	r2 [2,-1] [1000]
+	`
+	con, err := load.LoadString(netlist)
+	if err != nil {
+		t.Fatalf("加载上下文失败: %s", err)
+	}
+	con.Time, err = time.NewTimeMNA(0.1)
+	if err != nil {
+		t.Fatalf("创建仿真时间失败 %s", err)
+	}
+
+	var maxV1, maxV2 float64
+
+	// 4. 执行仿真
+	time.TransientSimulation(con, func(voltages []float64) {
+		// 记录节点 1 和 节点 2 的最大绝对值（峰值）
+		v1 := math.Abs(con.GetNodeVoltage(1))
+		v2 := math.Abs(con.GetNodeVoltage(2))
+		if v1 > maxV1 {
+			maxV1 = v1
+		}
+		if v2 > maxV2 {
+			maxV2 = v2
+		}
+	})
+
+	ratio := maxV2 - maxV1
+	if ratio > 0.001 && maxV1 != 0 {
+		t.Errorf("变压器耦合效率太低: %.4f", ratio)
+	}
+
+}

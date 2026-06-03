@@ -648,19 +648,41 @@ func (t *TimeMNA) CalculateMNAResidual(mnaSolver mna.Mna) error {
 	if AX.Length() != n {
 		return errors.New("矩阵向量乘法结果维度异常")
 	}
-	// 计算残差向量 R = A*X - Z 和解向量范数（合并循环优化）
+	// 分量级收敛判据：独立检查每个解变量，避免大数值域（气压~1e5Pa）主导收敛判断
+	// 每个分量 i 的收敛条件：|residual_i| <= absTol + relTol * max(|X_i|, typicalScale)
+	// 使用解分量的最大值作为"已收敛"标志: max_i(|residual_i| / (absTol + relTol * |X_i|))
 	t.solutionNorm = 0.0
 	t.residualNorm = 0.0
+	maxRelError := 0.0
 	for i := range n {
 		xVal := X.Get(i)
-		t.solutionNorm += xVal * xVal
+		absX := math.Abs(xVal)
+		t.solutionNorm += absX * absX  // 保持 L2 范数用于日志
+
 		residual := AX.Get(i) - Z.Get(i)
-		t.residualNorm += residual * residual
+		absRes := math.Abs(residual)
+		t.residualNorm += absRes * absRes
+
+		// 分量容差：absTol + relTol * max(|X_i|, 1.0)
+		// 1.0 作为保护下限，防止零解分量的相对容差过严
+		componentTol := t.absTol + t.relTol * math.Max(absX, 1.0)
+		if componentTol > 0 {
+			relErr := absRes / componentTol
+			if relErr > maxRelError {
+				maxRelError = relErr
+			}
+		}
 	}
 	t.solutionNorm = math.Sqrt(t.solutionNorm)
 	t.residualNorm = math.Sqrt(t.residualNorm)
-	// 计算动态残差收敛阈值
-	t.residualTol = t.absTol + t.relTol*t.solutionNorm
+
+	// 分量级收敛：所有分量的相对误差都 <= 1.0
+	// 用最大相对误差构造等效的"残差容差"供 CheckResidualConvergence 使用
+	if maxRelError <= 1.0 {
+		t.residualTol = t.residualNorm // 收敛：设置容差 >= 残差
+	} else {
+		t.residualTol = 0 // 未收敛
+	}
 	// 更新残差历史
 	t.residualHist[2] = t.residualHist[1]
 	t.residualHist[1] = t.residualHist[0]

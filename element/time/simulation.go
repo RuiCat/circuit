@@ -125,8 +125,9 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 			if err := doStep(con); err != nil {
 				return err
 			}
-			// 求解MNA方程
-			if err := luSolver.Decompose(con.GetA()); err != nil {
+			// 求解MNA方程（使用均衡化LU分解以处理混合域）
+			rowScale, colScale, err := maths.EquilibrateAndDecompose(luSolver, con.GetA())
+			if err != nil {
 				newStep := con.CurrentStep() / 2
 				if newStep < con.MinTimeStep() {
 					return fmt.Errorf("矩阵分解失败且步长已最小（时间=%.6e）: %v", con.CurrentTime(), err)
@@ -137,7 +138,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 				break
 			}
 			// 执行前向替换和后向替换
-			if err := luSolver.SolveReuse(con.GetZ(), con.GetX()); err != nil {
+			if err := maths.SolveEquilibrated(luSolver, con.GetZ(), con.GetX(), rowScale, colScale); err != nil {
 				newStep := con.CurrentStep() / 2
 				if newStep < con.MinTimeStep() {
 					return fmt.Errorf("方程求解失败且步长已最小（时间=%.6e）: %v", con.CurrentTime(), err)
@@ -169,8 +170,9 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 				if err := doStep(con); err != nil {
 					return err
 				}
-				// 重新求解MNA方程
-				if err := luSolver.Decompose(con.GetA()); err != nil {
+				// 重新求解MNA方程（使用均衡化LU分解以处理混合域）
+				rowScale, colScale, err := maths.EquilibrateAndDecompose(luSolver, con.GetA())
+				if err != nil {
 					newStep := con.CurrentStep() / 2
 					if newStep < con.MinTimeStep() {
 						return fmt.Errorf("元件迭代中矩阵分解失败且步长已最小（时间=%.6e）: %v", con.CurrentTime(), err)
@@ -180,7 +182,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 					luRetry = true
 					break
 				}
-				if err := luSolver.SolveReuse(con.GetZ(), con.GetX()); err != nil {
+				if err := maths.SolveEquilibrated(luSolver, con.GetZ(), con.GetX(), rowScale, colScale); err != nil {
 					newStep := con.CurrentStep() / 2
 					if newStep < con.MinTimeStep() {
 						return fmt.Errorf("元件迭代中方程求解失败且步长已最小（时间=%.6e）: %v", con.CurrentTime(), err)

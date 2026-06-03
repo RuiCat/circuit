@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	_ "circuit/element/base"
+	_ "circuit/element/register"
 	"circuit/element"
 	"circuit/element/time"
 	"circuit/load"

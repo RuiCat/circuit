@@ -324,10 +324,10 @@ func (m *MnaType[T]) StampVoltageSource(n1, n2 NodeID, vs VoltageID, v T) {
 
 // StampVCCS 为电压控制电流源(VCCS)添加MNA加盖。它修改矩阵A中的四个元素，以建立输出电流和控制电压之间的跨导关系。
 func (m *MnaType[T]) StampVCCS(cn1, cn2, vn1, vn2 NodeID, gain T) {
-	m.StampMatrix(cn1, vn1, gain)
-	m.StampMatrix(cn1, vn2, -gain)
-	m.StampMatrix(cn2, vn1, -gain)
-	m.StampMatrix(cn2, vn2, gain)
+	m.StampMatrix(cn1, vn1, -gain)
+	m.StampMatrix(cn1, vn2, gain)
+	m.StampMatrix(cn2, vn1, gain)
+	m.StampMatrix(cn2, vn2, -gain)
 }
 
 // StampCCCS 为电流控制电流源(CCCS)添加MNA加盖。它通过修改矩阵A的两个元素来反映控制电流对输出节点的影响。
@@ -336,8 +336,8 @@ func (m *MnaType[T]) StampCCCS(cn1, cn2 NodeID, cs VoltageID, gain T) {
 		return
 	}
 	csCol := NodeID(cs) + NodeID(m.NodesNum)
-	m.StampMatrix(cn1, csCol, gain)
-	m.StampMatrix(cn2, csCol, -gain)
+	m.StampMatrix(cn1, csCol, -gain)
+	m.StampMatrix(cn2, csCol, gain)
 }
 
 // StampVCVS 为电压控制电压源(VCVS)添加MNA加盖。它引入一个新的电流未知量，并通过修改矩阵A中的一行和两列来建立电压增益关系。

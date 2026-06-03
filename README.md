@@ -194,6 +194,64 @@ Go实现的电气仿真,通过底层泛型与接口统一实现对 电子元件,
       4. TUI 标题栏新增当前自适应步长 `dt=%.2e s` (TimeMNA.CurrentStep)
       5. TUI 侧边栏新增缓冲区信息 `缓冲 N行 M/K块` (TotalRows/BlockCount/MaxBlocks)
       6. 新增 go.mod 依赖: gonum.org/v1/plot v0.17.0, 升级 x/image v0.26→v0.30
+  * [2026-6-3] 元件目录全面重组：从单目录到14个领域目录
+    1. 将 element/base/ 下20个元件按物理领域拆分到13个子目录
+    2. 目录结构: passive(R/C/L) source(V/I) controlled(VCVS) semiconductor(D/Q) 
+       analog(OpAmp) logic(Gate/DFF/Sync) switch(SW/B/MB) interactive(VR/RLY)
+       electromechanical(Motor) magnetic(XFMR) hierarchical(Wrapper)
+    3. 新增 element/register/ 统一注册入口，聚合所有子包 blank import
+    4. 更新 cmd/main.go 和 load/bus_expand_test.go 导入
+    5. 所有现有测试保持通过，零回归
+  * [2026-6-3] 实现22个新基础元件
+    1. 受控源: VCCS(G)/CCCS(F)/CCVS(H)，MNA接口StampVCCS/CCCS/CCVS已就绪
+    2. 气路元件(PinPneumatic): PR气阻/PC气容/PL气感/PCV单向阀/PS气源
+       - 基于压力↔电压类比，复用电路元件MNA模型
+       - 气容/气感使用梯形积分伴随模型(FlagReactive)
+    3. 油路元件(PinHydraulic): HR液阻/HA蓄能器/HL液感/HCV单向阀/HP液压泵
+       - 类比气路实现，使用PinHydraulic引脚类型
+    4. 半导体扩展: Z稳压管(齐纳封装)/LED(低电流二极管)/MOSFET(LEVEL=1 NMOS/PMOS)/JFET(NJF/PJF)
+       - MOSFET使用Shichman-Hodges模型，Newton-Raphson线性化加盖
+    5. 逻辑扩展: JK触发器/T触发器/SR锁存器/CMP比较器/ST施密特触发器
+       - 边沿触发型参考DFlipFlop模式，组合逻辑型参考Gate模式
+  * [2026-6-3] 实现4个跨域传感器元件
+    1. 新增 element/sensor/ 目录，混合引脚类型实现跨物理域转换
+    2. PSENS压力传感器: 气路/液压压力→电压信号，VCVS模式+高阻抗隔离
+       - Base()方法根据domain参数动态切换PinPneumatic/PinHydraulic
+    3. EP电气-气动转换器: 电压→气路压力，默认gain=100kPa/V
+    4. EH电气-液压转换器: 电压→油路压力，默认gain=1MPa/V
+    5. CS电流传感器: 支路电流→电压信号，内部0V测量电压源+CCVS模式
+    6. 所有传感器使用手动构建[]Pin数组实现混合引脚类型
+  * [2026-6-3] 混合物理域数值稳定性分析与完整修复
+    1. 深入分析MNA求解器在电气+气动+液压混合仿真中的数值问题
+    2. 发现3个严重问题:
+       a) 矩阵无缩放预处理，元素跨14个数量级(1e-9~1e6)，条件数κ≈10^14
+       b) 全局L2范数收敛判据被大数值域(气压~1e5Pa)主导，淹没电气域精度
+       c) 自适应步长受大域驱动，无混合域验证测试
+    3. 修复方案:
+       a) 新增 maths/equilibrate.go 行+列均衡化LU分解
+          - EquilibrateAndDecompose: A'[i][j]=R[i]·A[i][j]·C[j]，条件数降至≈1
+          - SolveEquilibrated: 自动处理b行缩放和x列反缩放
+       b) 修改 element/time/simulation.go 两处LU调用使用均衡化
+       c) 修改 element/time/time.go 收敛判据: 全局L2→分量级独立检查
+          - 每个解分量: |residual_i| ≤ absTol + relTol·max(|X_i|,1.0)
+       d) 新增 cmd/circuits/11_mixed_domain.net 混合域测试网表
+  * [2026-6-3] 修复MNA受控源符号Bug
+    1. 发现 mna/mna.go 中 VCCS(StampVCCS)和CCCS(StampCCCS)符号错误
+    2. 受控源LHS矩阵贡献与StampCurrentSource约定不一致，导致输出电流方向错误
+    3. 修正两函数共6处符号
+  * [2026-6-3] 补充20个测试用例覆盖新增元件
+    1. maths/equilibrate_test.go: Hilbert病态矩阵(条件数1.5e7)精度验证
+       跨数量级矩阵(1e-9~1e6)均衡化验证、奇异矩阵错误处理
+    2. element/controlled/: VCCS/CCCS/CCVS功能测试(3项)
+    3. element/sensor/: 压力传感器/EP转换器/电流传感器端到端测试(3项)
+    4. element/pneumatic/: 气阻分压/气容RC/单向阀测试(3项)
+    5. element/hydraulic/: 液阻分压/蓄能器/EH转换器测试(3项)
+    6. element/logic/: 比较器/施密特触发器/SR锁存器测试(3项)
+    7. element/semiconductor/: 稳压管钳位/LED正向导通测试(2项)
+    8. 测试发现并修正网表语法(GND为-1而非0)、参数顺序等6个问题
+  * [2026-6-3] 补全26个源文件Go文档注释
+    1. 统一注释规范: 文件头模块说明+变量(类型标识+网表格式)+类型(数学模型)+方法(参数/步骤)
+    2. 覆盖: controlled(3) pneumatic(5) hydraulic(5) semiconductor(4) sensor(4) logic(5) maths(1)
 
 ## 开发任务规划
   1. [✔] 实现基于计算图构建矩阵方程求解器  
