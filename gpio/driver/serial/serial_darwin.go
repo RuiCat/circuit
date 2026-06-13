@@ -1,9 +1,9 @@
-//go:build !windows && !linux && !darwin
-// +build !windows,!linux,!darwin
+//go:build darwin
+// +build darwin
 
-// 本文件包含 serial 包在 BSD 系统（FreeBSD、NetBSD、OpenBSD 等）下的实现。
+// 本文件包含 serial 包在 macOS (darwin) 下的实现。
 // 使用 golang.org/x/sys/unix 进行纯 Go 系统调用，无需 cgo。
-// macOS (darwin) 使用 serial_darwin.go，因为其 Termios 字段类型为 uint64。
+// macOS 的 Termios 结构使用 uint64 字段，与 Linux/BSD 的 uint32 不同。
 package serial
 
 import (
@@ -15,9 +15,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// bauds 波特率映射表（标准 POSIX 波特率，所有 Unix 系统通用）。
-// 注意：B460800 及以上为扩展波特率，部分平台（macOS）不支持，需使用平台特定机制。
-var bauds = map[int]uint32{
+// bauds 波特率映射表（macOS 支持的波特率）。
+var bauds = map[int]uint64{
 	50:     unix.B50,
 	75:     unix.B75,
 	110:    unix.B110,
@@ -30,15 +29,19 @@ var bauds = map[int]uint32{
 	1800:   unix.B1800,
 	2400:   unix.B2400,
 	4800:   unix.B4800,
+	7200:   unix.B7200,
 	9600:   unix.B9600,
+	14400:  unix.B14400,
 	19200:  unix.B19200,
+	28800:  unix.B28800,
 	38400:  unix.B38400,
 	57600:  unix.B57600,
+	76800:  unix.B76800,
 	115200: unix.B115200,
 	230400: unix.B230400,
 }
 
-// openPort 在 Unix 系统上打开一个串行端口。
+// openPort 在 macOS 上打开一个串行端口。
 func openPort(name string, config *driver.UARTConfig) (p *Port, err error) {
 	baud := int(config.BaudRate)
 	databits := config.ByteSize
@@ -94,16 +97,16 @@ func openPort(name string, config *driver.UARTConfig) (p *Port, err error) {
 		}
 	}()
 
-	cflagToUse := unix.CREAD | unix.CLOCAL | rate
+	cflagToUse := uint64(unix.CREAD) | uint64(unix.CLOCAL) | rate
 	switch databits {
 	case 5:
-		cflagToUse |= unix.CS5
+		cflagToUse |= uint64(unix.CS5)
 	case 6:
-		cflagToUse |= unix.CS6
+		cflagToUse |= uint64(unix.CS6)
 	case 7:
-		cflagToUse |= unix.CS7
+		cflagToUse |= uint64(unix.CS7)
 	case 8:
-		cflagToUse |= unix.CS8
+		cflagToUse |= uint64(unix.CS8)
 	default:
 		return nil, ErrBadSize
 	}
@@ -112,7 +115,7 @@ func openPort(name string, config *driver.UARTConfig) (p *Port, err error) {
 	case Stop1:
 		// 默认 1 位停止位
 	case Stop2:
-		cflagToUse |= unix.CSTOPB
+		cflagToUse |= uint64(unix.CSTOPB)
 	default:
 		return nil, ErrBadStopBits
 	}
@@ -121,10 +124,10 @@ func openPort(name string, config *driver.UARTConfig) (p *Port, err error) {
 	case ParityNone:
 		// 默认无校验
 	case ParityOdd:
-		cflagToUse |= unix.PARENB
-		cflagToUse |= unix.PARODD
+		cflagToUse |= uint64(unix.PARENB)
+		cflagToUse |= uint64(unix.PARODD)
 	case ParityEven:
-		cflagToUse |= unix.PARENB
+		cflagToUse |= uint64(unix.PARENB)
 	default:
 		return nil, ErrBadParity
 	}
@@ -133,17 +136,15 @@ func openPort(name string, config *driver.UARTConfig) (p *Port, err error) {
 
 	var vmin, vtime uint8
 	if config.ByteTimeout == 0 {
-		// 阻塞读取，无超时
 		vmin = 1
 		vtime = 0
 	} else {
-		// 非阻塞读取，字符间超时
 		vmin = 0
 		vtime = (config.ByteTimeout + 99) / 100
 	}
 
 	t := unix.Termios{
-		Iflag:  unix.IGNPAR,
+		Iflag:  uint64(unix.IGNPAR),
 		Cflag:  cflagToUse,
 		Ispeed: rate,
 		Ospeed: rate,
@@ -151,7 +152,6 @@ func openPort(name string, config *driver.UARTConfig) (p *Port, err error) {
 	t.Cc[unix.VMIN] = vmin
 	t.Cc[unix.VTIME] = vtime
 
-	// macOS/BSD 使用 TIOCSETA，Linux 使用 TCSETS
 	if _, _, errno := unix.Syscall6(
 		unix.SYS_IOCTL,
 		uintptr(fd),

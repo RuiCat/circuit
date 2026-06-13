@@ -43,7 +43,7 @@ var (
 // 参数eleType: 元件类型标识，必须是唯一的。
 // 参数face: 元件接口实现，包含配置和行为的完整实现。
 // 返回：注册成功的元件类型标识。
-// 注意：如果元件类型已注册，会触发致命错误并终止程序。
+// 注意：如果元件类型已注册，静默返回已有类型标识，不重复注册。
 func AddElement(eleType NodeType, face ElementFaceList) NodeType {
 	if face == nil {
 		return eleType

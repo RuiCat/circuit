@@ -68,6 +68,9 @@ func (con *Context) parallelDoStep() error {
 	workers := con.ParallelOpts.StampWorkers
 	if workers < 1 {
 		workers = runtime.GOMAXPROCS(0)
+		if workers < 1 {
+			workers = 1 // 防御性兜底
+		}
 	}
 	useCache := con.ParallelOpts.CacheThreshold > 0
 	n := len(con.Nodelist)

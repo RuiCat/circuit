@@ -25,8 +25,10 @@ type Context struct {
 	eventValues sync.Map
 	// eventTargets 事件名 → NodeValue 槽位指针列表（懒初始化一次）
 	// 保护 eventTargets map 的并发读写（MarkReset 写 / PushEvents、PullEvents 读）
-eventTargets map[string][]*any
+	eventTargets map[string][]*any
 	eventMu      sync.RWMutex
+	resumeMu     sync.Mutex // 保护 resumeCond 的条件变量互斥锁
+	resumeCond   *sync.Cond // 仿真恢复条件变量，状态从 Paused 离开时广播
 }
 
 // ComputeStateDerivative 基于当前 MNA 解和元件状态计算状态导数向量 dx/dt。
@@ -173,13 +175,22 @@ func (con *Context) GetEvent(name string) any {
 	return v
 }
 
+// InitResumeCond 初始化恢复条件变量（由 load 或 cmd 在创建 Context 后调用）。
+func (con *Context) InitResumeCond() {
+	con.resumeCond = sync.NewCond(&con.resumeMu)
+}
+
+// ResumeCond 返回恢复条件变量，供外部设置 notifier 使用。
+// 若未初始化则返回 nil。
+func (con *Context) ResumeCond() *sync.Cond {
+	return con.resumeCond
+}
+
 // rebuildEventTargets 重建事件目标指针表。
 // 在 MarkReset / MarkUpdateElements / MarkRollbackElements 后调用，
 // 确保 eventTargets 中的指针指向最新的 NodeValue 内存地址。
 func (con *Context) rebuildEventTargets() {
-	con.eventMu.Lock()
-	con.eventTargets = make(map[string][]*any)
-	con.eventMu.Unlock()
+	newTargets := make(map[string][]*any)
 	for _, elem := range con.Nodelist {
 		cfg := elem.Config()
 		if cfg == nil || len(cfg.EventSlots) == 0 {
@@ -188,7 +199,7 @@ func (con *Context) rebuildEventTargets() {
 		node := elem.Base()
 		for nameIdx, valueIdx := range cfg.EventSlots {
 			eventName := ""
-			if valueIdx >= 0 && valueIdx < len(node.NodeValue) {
+			if valueIdx >= 0 && valueIdx < len(node.NodeValue) && nameIdx >= 0 && nameIdx < len(node.NodeValue) {
 				if s, ok := node.NodeValue[nameIdx].(string); ok {
 					eventName = s
 				}
@@ -196,10 +207,13 @@ func (con *Context) rebuildEventTargets() {
 					continue
 				}
 				ptr := &node.NodeValue[valueIdx]
-				con.eventTargets[eventName] = append(con.eventTargets[eventName], ptr)
+				newTargets[eventName] = append(newTargets[eventName], ptr)
 			}
 		}
 	}
+	con.eventMu.Lock()
+	con.eventTargets = newTargets
+	con.eventMu.Unlock()
 }
 
 // PushEvents 将事件值同步到各元件的 NodeValue 中
@@ -216,7 +230,7 @@ func (con *Context) PushEvents() bool {
 			continue
 		}
 		for _, ptr := range targets {
-			if reflect.TypeOf(*ptr) != reflect.TypeOf(vAny) {
+			if *ptr != nil && reflect.TypeOf(*ptr) != reflect.TypeOf(vAny) {
 				continue
 			}
 			*ptr = vAny
@@ -236,7 +250,16 @@ func (con *Context) PushEvents() bool {
 			return true
 		case mna.StatusPaused: // 暂停
 		}
-		time.Sleep(10 * time.Millisecond)
+		// 使用 cond 等待状态变化，避免 busy-wait 轮询
+		if con.resumeCond != nil {
+			con.resumeMu.Lock()
+			for con.Time.Status() == mna.StatusPaused {
+				con.resumeCond.Wait()
+			}
+			con.resumeMu.Unlock()
+		} else {
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
 }
 

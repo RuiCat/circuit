@@ -7,6 +7,9 @@ import (
 	"strings"
 )
 
+// DefaultWrapperNodeType 层级封装元件的默认类型 ID（与 init() 中注册值一致）
+const DefaultWrapperNodeType element.NodeType = 17
+
 // WrapperType 层级封装元件类型标识。
 var WrapperType element.NodeType
 
@@ -78,7 +81,7 @@ func (w *Wrapper) DoStep(m mna.Mna, t mna.Time, value element.NodeFace) {}
 // init 确保 Wrapper 元件在包初始化时注册。
 func init() {
 	if _, ok := element.ElementListName["X"]; !ok {
-		WrapperType = element.AddElement(element.NodeType(17), &Wrapper{
+		WrapperType = element.AddElement(DefaultWrapperNodeType, &Wrapper{
 			&element.Config{
 				Name: "X",
 				Pin:  []element.Pin{},

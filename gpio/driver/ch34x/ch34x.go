@@ -1,7 +1,6 @@
 package ch34x
 
 /*
-#include <dlfcn.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -153,6 +152,70 @@ static t_CH347WriteEEPROM         _fp_WriteEEPROM;
 // Lib Info
 static t_CH347GetLibInfo          _fp_GetLibInfo;
 
+// ===== Setter 函数：供 Go 层通过 dynlib 设置函数指针 =====
+#define SETTER(name, type) \
+	static void set_##name(void* ptr) { _fp_##name = (type)ptr; }
+
+SETTER(OpenDevice, t_CH347OpenDevice)
+SETTER(CloseDevice, t_CH347CloseDevice)
+SETTER(SetTimeout, t_CH34xSetTimeout)
+SETTER(GetDriverVersion, t_CH34x_GetDriverVersion)
+SETTER(GetChipVersion, t_CH34x_GetChipVersion)
+SETTER(GetChipType, t_CH34x_GetChipType)
+SETTER(GetDeviceID, t_CH34X_GetDeviceID)
+SETTER(OEEnable, t_CH347_OE_Enable)
+SETTER(SPIGetHwStreamCfg, t_CH347SPI_GetHwStreamCfg)
+SETTER(SPISetFrequency, t_CH347SPI_SetFrequency)
+SETTER(SPISetAutoCS, t_CH347SPI_SetAutoCS)
+SETTER(SPISetDataBits, t_CH347SPI_SetDataBits)
+SETTER(SPIInit, t_CH347SPI_Init)
+SETTER(SPIGetCfg, t_CH347SPI_GetCfg)
+SETTER(SPIChangeCS, t_CH347SPI_ChangeCS)
+SETTER(SPIWrite, t_CH347SPI_Write)
+SETTER(SPIRead, t_CH347SPI_Read)
+SETTER(SPIWriteRead, t_CH347SPI_WriteRead)
+SETTER(JtagReset, t_CH347Jtag_Reset)
+SETTER(JtagResetTrst, t_CH347Jtag_ResetTrst)
+SETTER(JtagInit, t_CH347Jtag_INIT)
+SETTER(JtagGetCfg, t_CH347Jtag_GetCfg)
+SETTER(JtagClockTms, t_CH347Jtag_ClockTms)
+SETTER(JtagIdleClock, t_CH347Jtag_IdleClock)
+SETTER(JtagTmsChange, t_CH347Jtag_TmsChange)
+SETTER(JtagIoScan, t_CH347Jtag_IoScan)
+SETTER(JtagIoScanT, t_CH347Jtag_IoScanT)
+SETTER(JtagWriteRead, t_CH347Jtag_WriteRead)
+SETTER(JtagWriteReadFast, t_CH347Jtag_WriteRead_Fast)
+SETTER(JtagSwitchTapState, t_CH347Jtag_SwitchTapState)
+SETTER(JtagByteWriteDR, t_CH347Jtag_ByteWriteDR)
+SETTER(JtagByteReadDR, t_CH347Jtag_ByteReadDR)
+SETTER(JtagByteWriteIR, t_CH347Jtag_ByteWriteIR)
+SETTER(JtagByteReadIR, t_CH347Jtag_ByteReadIR)
+SETTER(JtagBitWriteDR, t_CH347Jtag_BitWriteDR)
+SETTER(JtagBitWriteIR, t_CH347Jtag_BitWriteIR)
+SETTER(JtagBitReadIR, t_CH347Jtag_BitReadIR)
+SETTER(JtagBitReadDR, t_CH347Jtag_BitReadDR)
+SETTER(GPIOGet, t_CH347GPIO_Get)
+SETTER(GPIOSet, t_CH347GPIO_Set)
+SETTER(GPIOIRQSet, t_CH347GPIO_IRQ_Set)
+SETTER(UartOpen, t_CH347Uart_Open)
+SETTER(UartClose, t_CH347Uart_Close)
+SETTER(UartGetCfg, t_CH347Uart_GetCfg)
+SETTER(UartInit, t_CH347Uart_Init)
+SETTER(UartRead, t_CH347Uart_Read)
+SETTER(UartWrite, t_CH347Uart_Write)
+SETTER(I2CSet, t_CH347I2C_Set)
+SETTER(I2CSetStretch, t_CH347I2C_SetStretch)
+SETTER(I2CSetDriveMode, t_CH347I2C_SetDriveMode)
+SETTER(I2CSetIgnoreNack, t_CH347I2C_SetIgnoreNack)
+SETTER(I2CSetDelaymS, t_CH347I2C_SetDelaymS)
+SETTER(I2CSetAckClkDelayuS, t_CH347I2C_SetAckClk_DelayuS)
+SETTER(StreamI2C, t_CH347StreamI2C)
+SETTER(StreamI2CRetAck, t_CH347StreamI2C_RetAck)
+SETTER(ReadEEPROM, t_CH347ReadEEPROM)
+SETTER(WriteEEPROM, t_CH347WriteEEPROM)
+SETTER(GetLibInfo, t_CH347GetLibInfo)
+
+#undef SETTER
 
 // ===== 包装函数：Go 通过 C.pXXX 调用这些函数 =====
 
@@ -230,82 +293,12 @@ static bool          pWriteEEPROM(int a, int b, int c, int d, uint8_t* e) { retu
 // Lib Info
 static const char*   pGetLibInfo(void)                    { return _fp_GetLibInfo(); }
 
-// ===== 符号加载器 =====
-// 使用宏简化重复的 dlsym 调用
-// 返回加载失败的符号数量（0 = 全部成功）
-static int load_ch34x_symbols(void* handle) {
-    int errors = 0;
-    #define L(var, type, name) do { \
-        var = (type)dlsym(handle, name); \
-        if (!var) errors++; \
-    } while(0)
-
-    L(_fp_OpenDevice,       t_CH347OpenDevice,       "CH347OpenDevice");
-    L(_fp_CloseDevice,      t_CH347CloseDevice,      "CH347CloseDevice");
-    L(_fp_SetTimeout,       t_CH34xSetTimeout,       "CH34xSetTimeout");
-    L(_fp_GetDriverVersion, t_CH34x_GetDriverVersion,"CH34x_GetDriverVersion");
-    L(_fp_GetChipVersion,   t_CH34x_GetChipVersion,  "CH34x_GetChipVersion");
-    L(_fp_GetChipType,      t_CH34x_GetChipType,     "CH34x_GetChipType");
-    L(_fp_GetDeviceID,      t_CH34X_GetDeviceID,     "CH34X_GetDeviceID");
-    L(_fp_OEEnable,         t_CH347_OE_Enable,       "CH347_OE_Enable");
-    L(_fp_SPIGetHwStreamCfg,t_CH347SPI_GetHwStreamCfg,"CH347SPI_GetHwStreamCfg");
-    L(_fp_SPISetFrequency,  t_CH347SPI_SetFrequency, "CH347SPI_SetFrequency");
-    L(_fp_SPISetAutoCS,     t_CH347SPI_SetAutoCS,    "CH347SPI_SetAutoCS");
-    L(_fp_SPISetDataBits,   t_CH347SPI_SetDataBits,  "CH347SPI_SetDataBits");
-    L(_fp_SPIInit,          t_CH347SPI_Init,         "CH347SPI_Init");
-    L(_fp_SPIGetCfg,        t_CH347SPI_GetCfg,       "CH347SPI_GetCfg");
-    L(_fp_SPIChangeCS,      t_CH347SPI_ChangeCS,     "CH347SPI_ChangeCS");
-    L(_fp_SPIWrite,         t_CH347SPI_Write,        "CH347SPI_Write");
-    L(_fp_SPIRead,          t_CH347SPI_Read,         "CH347SPI_Read");
-    L(_fp_SPIWriteRead,     t_CH347SPI_WriteRead,    "CH347SPI_WriteRead");
-    L(_fp_JtagReset,        t_CH347Jtag_Reset,       "CH347Jtag_Reset");
-    L(_fp_JtagResetTrst,    t_CH347Jtag_ResetTrst,   "CH347Jtag_ResetTrst");
-    L(_fp_JtagInit,         t_CH347Jtag_INIT,        "CH347Jtag_INIT");
-    L(_fp_JtagGetCfg,       t_CH347Jtag_GetCfg,      "CH347Jtag_GetCfg");
-    L(_fp_JtagClockTms,     t_CH347Jtag_ClockTms,    "CH347Jtag_ClockTms");
-    L(_fp_JtagIdleClock,    t_CH347Jtag_IdleClock,   "CH347Jtag_IdleClock");
-    L(_fp_JtagTmsChange,    t_CH347Jtag_TmsChange,   "CH347Jtag_TmsChange");
-    L(_fp_JtagIoScan,       t_CH347Jtag_IoScan,      "CH347Jtag_IoScan");
-    L(_fp_JtagIoScanT,      t_CH347Jtag_IoScanT,     "CH347Jtag_IoScanT");
-    L(_fp_JtagWriteRead,    t_CH347Jtag_WriteRead,   "CH347Jtag_WriteRead");
-    L(_fp_JtagWriteReadFast,t_CH347Jtag_WriteRead_Fast,"CH347Jtag_WriteRead_Fast");
-    L(_fp_JtagSwitchTapState,t_CH347Jtag_SwitchTapState,"CH347Jtag_SwitchTapState");
-    L(_fp_JtagByteWriteDR,  t_CH347Jtag_ByteWriteDR, "CH347Jtag_ByteWriteDR");
-    L(_fp_JtagByteReadDR,   t_CH347Jtag_ByteReadDR,  "CH347Jtag_ByteReadDR");
-    L(_fp_JtagByteWriteIR,  t_CH347Jtag_ByteWriteIR, "CH347Jtag_ByteWriteIR");
-    L(_fp_JtagByteReadIR,   t_CH347Jtag_ByteReadIR,  "CH347Jtag_ByteReadIR");
-    L(_fp_JtagBitWriteDR,   t_CH347Jtag_BitWriteDR,  "CH347Jtag_BitWriteDR");
-    L(_fp_JtagBitWriteIR,   t_CH347Jtag_BitWriteIR,  "CH347Jtag_BitWriteIR");
-    L(_fp_JtagBitReadIR,    t_CH347Jtag_BitReadIR,   "CH347Jtag_BitReadIR");
-    L(_fp_JtagBitReadDR,    t_CH347Jtag_BitReadDR,   "CH347Jtag_BitReadDR");
-    L(_fp_GPIOGet,          t_CH347GPIO_Get,         "CH347GPIO_Get");
-    L(_fp_GPIOSet,          t_CH347GPIO_Set,         "CH347GPIO_Set");
-    L(_fp_GPIOIRQSet,       t_CH347GPIO_IRQ_Set,     "CH347GPIO_IRQ_Set");
-    L(_fp_UartOpen,         t_CH347Uart_Open,        "CH347Uart_Open");
-    L(_fp_UartClose,        t_CH347Uart_Close,       "CH347Uart_Close");
-    L(_fp_UartGetCfg,       t_CH347Uart_GetCfg,      "CH347Uart_GetCfg");
-    L(_fp_UartInit,         t_CH347Uart_Init,        "CH347Uart_Init");
-    L(_fp_UartRead,         t_CH347Uart_Read,        "CH347Uart_Read");
-    L(_fp_UartWrite,        t_CH347Uart_Write,       "CH347Uart_Write");
-    L(_fp_I2CSet,           t_CH347I2C_Set,          "CH347I2C_Set");
-    L(_fp_I2CSetStretch,    t_CH347I2C_SetStretch,   "CH347I2C_SetStretch");
-    L(_fp_I2CSetDriveMode,  t_CH347I2C_SetDriveMode, "CH347I2C_SetDriveMode");
-    L(_fp_I2CSetIgnoreNack, t_CH347I2C_SetIgnoreNack,"CH347I2C_SetIgnoreNack");
-    L(_fp_I2CSetDelaymS,    t_CH347I2C_SetDelaymS,   "CH347I2C_SetDelaymS");
-    L(_fp_I2CSetAckClkDelayuS,t_CH347I2C_SetAckClk_DelayuS,"CH347I2C_SetAckClk_DelayuS");
-    L(_fp_StreamI2C,        t_CH347StreamI2C,        "CH347StreamI2C");
-    L(_fp_StreamI2CRetAck,  t_CH347StreamI2C_RetAck, "CH347StreamI2C_RetAck");
-    L(_fp_ReadEEPROM,       t_CH347ReadEEPROM,       "CH347ReadEEPROM");
-    L(_fp_WriteEEPROM,      t_CH347WriteEEPROM,      "CH347WriteEEPROM");
-    L(_fp_GetLibInfo,       t_CH347GetLibInfo,       "CH347GetLibInfo");
-
-    #undef L
-    return errors;
-}
 */
 import "C"
 import (
 	"circuit/gpio/driver"
+	"circuit/gpio/driver/ch34x/lib"
+	"circuit/gpio/driver/dynlib"
 	"errors"
 	"fmt"
 	"os"
@@ -384,27 +377,111 @@ var (
 	GlobalLib *library
 )
 
+// loadSymbols 使用 dynlib 加载 CH34x 动态库的全部函数指针符号。
+// 返回加载失败的符号数量（0 = 全部成功）。
+func loadSymbols(h dynlib.Handle) int {
+	missing := 0
+	load := func(name string, setter func(unsafe.Pointer)) {
+		ptr, err := dynlib.Lookup(h, name)
+		if err != nil {
+			missing++
+			return
+		}
+		setter(ptr)
+	}
+
+	// 基础设备操作
+	load("CH347OpenDevice", func(p unsafe.Pointer) { C.set_OpenDevice(p) })
+	load("CH347CloseDevice", func(p unsafe.Pointer) { C.set_CloseDevice(p) })
+	load("CH34xSetTimeout", func(p unsafe.Pointer) { C.set_SetTimeout(p) })
+	load("CH34x_GetDriverVersion", func(p unsafe.Pointer) { C.set_GetDriverVersion(p) })
+	load("CH34x_GetChipVersion", func(p unsafe.Pointer) { C.set_GetChipVersion(p) })
+	load("CH34x_GetChipType", func(p unsafe.Pointer) { C.set_GetChipType(p) })
+	load("CH34X_GetDeviceID", func(p unsafe.Pointer) { C.set_GetDeviceID(p) })
+	load("CH347_OE_Enable", func(p unsafe.Pointer) { C.set_OEEnable(p) })
+
+	// SPI
+	load("CH347SPI_GetHwStreamCfg", func(p unsafe.Pointer) { C.set_SPIGetHwStreamCfg(p) })
+	load("CH347SPI_SetFrequency", func(p unsafe.Pointer) { C.set_SPISetFrequency(p) })
+	load("CH347SPI_SetAutoCS", func(p unsafe.Pointer) { C.set_SPISetAutoCS(p) })
+	load("CH347SPI_SetDataBits", func(p unsafe.Pointer) { C.set_SPISetDataBits(p) })
+	load("CH347SPI_Init", func(p unsafe.Pointer) { C.set_SPIInit(p) })
+	load("CH347SPI_GetCfg", func(p unsafe.Pointer) { C.set_SPIGetCfg(p) })
+	load("CH347SPI_ChangeCS", func(p unsafe.Pointer) { C.set_SPIChangeCS(p) })
+	load("CH347SPI_Write", func(p unsafe.Pointer) { C.set_SPIWrite(p) })
+	load("CH347SPI_Read", func(p unsafe.Pointer) { C.set_SPIRead(p) })
+	load("CH347SPI_WriteRead", func(p unsafe.Pointer) { C.set_SPIWriteRead(p) })
+
+	// JTAG
+	load("CH347Jtag_Reset", func(p unsafe.Pointer) { C.set_JtagReset(p) })
+	load("CH347Jtag_ResetTrst", func(p unsafe.Pointer) { C.set_JtagResetTrst(p) })
+	load("CH347Jtag_INIT", func(p unsafe.Pointer) { C.set_JtagInit(p) })
+	load("CH347Jtag_GetCfg", func(p unsafe.Pointer) { C.set_JtagGetCfg(p) })
+	load("CH347Jtag_ClockTms", func(p unsafe.Pointer) { C.set_JtagClockTms(p) })
+	load("CH347Jtag_IdleClock", func(p unsafe.Pointer) { C.set_JtagIdleClock(p) })
+	load("CH347Jtag_TmsChange", func(p unsafe.Pointer) { C.set_JtagTmsChange(p) })
+	load("CH347Jtag_IoScan", func(p unsafe.Pointer) { C.set_JtagIoScan(p) })
+	load("CH347Jtag_IoScanT", func(p unsafe.Pointer) { C.set_JtagIoScanT(p) })
+	load("CH347Jtag_WriteRead", func(p unsafe.Pointer) { C.set_JtagWriteRead(p) })
+	load("CH347Jtag_WriteRead_Fast", func(p unsafe.Pointer) { C.set_JtagWriteReadFast(p) })
+	load("CH347Jtag_SwitchTapState", func(p unsafe.Pointer) { C.set_JtagSwitchTapState(p) })
+	load("CH347Jtag_ByteWriteDR", func(p unsafe.Pointer) { C.set_JtagByteWriteDR(p) })
+	load("CH347Jtag_ByteReadDR", func(p unsafe.Pointer) { C.set_JtagByteReadDR(p) })
+	load("CH347Jtag_ByteWriteIR", func(p unsafe.Pointer) { C.set_JtagByteWriteIR(p) })
+	load("CH347Jtag_ByteReadIR", func(p unsafe.Pointer) { C.set_JtagByteReadIR(p) })
+	load("CH347Jtag_BitWriteDR", func(p unsafe.Pointer) { C.set_JtagBitWriteDR(p) })
+	load("CH347Jtag_BitWriteIR", func(p unsafe.Pointer) { C.set_JtagBitWriteIR(p) })
+	load("CH347Jtag_BitReadIR", func(p unsafe.Pointer) { C.set_JtagBitReadIR(p) })
+	load("CH347Jtag_BitReadDR", func(p unsafe.Pointer) { C.set_JtagBitReadDR(p) })
+
+	// GPIO
+	load("CH347GPIO_Get", func(p unsafe.Pointer) { C.set_GPIOGet(p) })
+	load("CH347GPIO_Set", func(p unsafe.Pointer) { C.set_GPIOSet(p) })
+	load("CH347GPIO_IRQ_Set", func(p unsafe.Pointer) { C.set_GPIOIRQSet(p) })
+
+	// UART
+	load("CH347Uart_Open", func(p unsafe.Pointer) { C.set_UartOpen(p) })
+	load("CH347Uart_Close", func(p unsafe.Pointer) { C.set_UartClose(p) })
+	load("CH347Uart_GetCfg", func(p unsafe.Pointer) { C.set_UartGetCfg(p) })
+	load("CH347Uart_Init", func(p unsafe.Pointer) { C.set_UartInit(p) })
+	load("CH347Uart_Read", func(p unsafe.Pointer) { C.set_UartRead(p) })
+	load("CH347Uart_Write", func(p unsafe.Pointer) { C.set_UartWrite(p) })
+
+	// I2C
+	load("CH347I2C_Set", func(p unsafe.Pointer) { C.set_I2CSet(p) })
+	load("CH347I2C_SetStretch", func(p unsafe.Pointer) { C.set_I2CSetStretch(p) })
+	load("CH347I2C_SetDriveMode", func(p unsafe.Pointer) { C.set_I2CSetDriveMode(p) })
+	load("CH347I2C_SetIgnoreNack", func(p unsafe.Pointer) { C.set_I2CSetIgnoreNack(p) })
+	load("CH347I2C_SetDelaymS", func(p unsafe.Pointer) { C.set_I2CSetDelaymS(p) })
+	load("CH347I2C_SetAckClk_DelayuS", func(p unsafe.Pointer) { C.set_I2CSetAckClkDelayuS(p) })
+	load("CH347StreamI2C", func(p unsafe.Pointer) { C.set_StreamI2C(p) })
+	load("CH347StreamI2C_RetAck", func(p unsafe.Pointer) { C.set_StreamI2CRetAck(p) })
+
+	// EEPROM
+	load("CH347ReadEEPROM", func(p unsafe.Pointer) { C.set_ReadEEPROM(p) })
+	load("CH347WriteEEPROM", func(p unsafe.Pointer) { C.set_WriteEEPROM(p) })
+
+	// Lib Info
+	load("CH347GetLibInfo", func(p unsafe.Pointer) { C.set_GetLibInfo(p) })
+
+	return missing
+}
+
 func init() {
 	libPath := findLibPath()
-	cPath := C.CString(libPath)
-	defer C.free(unsafe.Pointer(cPath))
-
-	handle := C.dlopen(cPath, C.RTLD_NOW)
-	if handle == nil {
-		cErr := C.dlerror()
-		if cErr == nil {
-			panic("ch34x: failed to load CH34x library " + libPath + ": unknown error")
-		}
-		errMsg := C.GoString(cErr)
-		panic("ch34x: failed to load CH34x library " + libPath + ": " + errMsg)
+	h, err := dynlib.Load(libPath)
+	if err != nil {
+		panic("ch34x: " + err.Error())
 	}
 
-	missing := C.load_ch34x_symbols(handle)
+	// Go 层使用 dynlib 加载所有函数指针符号
+	missing := loadSymbols(h)
 	if missing != 0 {
-		panic(fmt.Sprintf("ch34x: failed to resolve %d symbol(s) in CH34x library %s", int(missing), libPath))
+		dynlib.Close(h)
+		panic(fmt.Sprintf("ch34x: 未能解析 CH34x 库 %s 中的 %d 个符号", libPath, int(missing)))
 	}
 
-	GlobalLib = &library{handle: handle}
+	GlobalLib = &library{handle: unsafe.Pointer(h)}
 }
 
 type Error struct {
@@ -417,16 +494,18 @@ func (e *Error) Error() string {
 }
 
 // Close 释放动态库句柄。调用后 GlobalLib 不可再使用。
+// 幂等关闭：重复调用安全。
 func (lib *library) Close() error {
 	lib.mu.Lock()
 	defer lib.mu.Unlock()
-	// 幂等关闭：防止重复 dlclose
 	if lib.closed {
 		return nil
 	}
 	lib.closed = true
 	if lib.handle != nil {
-		C.dlclose(lib.handle)
+		if err := dynlib.Close(dynlib.Handle(lib.handle)); err != nil {
+			return fmt.Errorf("ch34x: %w", err)
+		}
 		lib.handle = nil
 	}
 	return nil
@@ -1227,20 +1306,13 @@ func (lib *library) UartGetCfg(fd int) (baudRate uint32, byteSize, parity, stopB
 
 // findLibPath 定位 CH34x 动态库文件 (.so / .dll)。
 // 查找优先级：
-//  1. 环境变量 CH34X_LIB_PATH（推荐生产部署使用绝对路径，如 /opt/ch347/lib/libch347.so）
-//  2. 相对于项目根目录的 lib/<arch>/libch347.so（仅适用于工作目录为项目根的情形）
-//  3. 系统库路径 /usr/lib/, /usr/local/lib/（推荐将 .so 安装到这些位置）
-//
-// 生产部署建议：
-//   - 通过 CH34X_LIB_PATH 环境变量显式指定绝对路径，避免工作目录依赖
-//   - 或将 libch347.so 复制到 /usr/lib/ 或 /usr/local/lib/ 并运行 ldconfig
-//   - 交叉编译/非标准架构 (mips/sw64/openwrt) 必须通过 CH34X_LIB_PATH 指定
+//  1. 环境变量 CH34X_LIB_PATH（推荐生产部署使用绝对路径）
+//  2. 相对于工作目录的 lib/<arch>/libch347.so
+//  3. 系统库路径 /usr/lib/ 和 /usr/local/lib/
+//  4. 从二进制内嵌库中提取到临时目录（通过 go:embed 编译时嵌入）
 func findLibPath() string {
-	if runtime.GOOS == "windows" {
-		panic("ch34x: Windows platform is not yet supported for dynamic loading. " +
-			"Use CGO_ENABLED=1 with build tags or set CH34X_LIB_PATH.")
-	}
 
+	// 1. 环境变量优先
 	if p := os.Getenv("CH34X_LIB_PATH"); p != "" {
 		if _, err := os.Stat(p); err == nil {
 			return p
@@ -1250,6 +1322,7 @@ func findLibPath() string {
 	baseDir := archDirName()
 	libName := libFileName()
 
+	// 2-3. 工作目录相对路径 及 系统路径
 	candidates := []string{
 		filepath.Join(baseDir, libName),
 		filepath.Join("/usr/lib", libName),
@@ -1262,7 +1335,27 @@ func findLibPath() string {
 		}
 	}
 
+	// 4. 从二进制内嵌库中提取（跨平台自动选择对应架构的 .so）
+	if libPath := extractEmbeddedLib(); libPath != "" {
+		return libPath
+	}
+
+	// 均失败：返回默认路径（让 dlopen 报清晰错误）
 	return filepath.Join(baseDir, libName)
+}
+
+// extractEmbeddedLib 将编译时内嵌的动态库提取到临时目录并返回路径。
+// 若当前平台无内嵌库则返回空字符串。
+func extractEmbeddedLib() string {
+	tmpDir := filepath.Join(os.TempDir(), "circuit_ch34x")
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		return ""
+	}
+	p, err := lib.Extract(tmpDir)
+	if err != nil {
+		return ""
+	}
+	return p
 }
 
 func archDirName() string {

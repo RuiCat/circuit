@@ -257,6 +257,14 @@ func runSim(w io.Writer, con *element.Context, cfg config) error {
 	}
 	con.Time = timeMNA
 
+	// 初始化恢复条件变量并连接到时间管理器
+	con.InitResumeCond()
+	if tm, ok := con.Time.(*time.TimeMNA); ok {
+		tm.SetNotifier(func() {
+			con.ResumeCond().Broadcast()
+		})
+	}
+
 	if err := con.Time.SetTolerances(cfg.absTol, cfg.relTol); err != nil {
 		return fmt.Errorf("设置容差失败: %w", err)
 	}

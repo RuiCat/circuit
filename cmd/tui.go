@@ -893,6 +893,13 @@ func runTUI(con *element.Context, cfg config) error {
 		return fmt.Errorf("TimeMNA: %w", err)
 	}
 	con.Time = tm
+	// 初始化恢复条件变量并连接到时间管理器
+	con.InitResumeCond()
+	if tm, ok := con.Time.(*etime.TimeMNA); ok {
+		tm.SetNotifier(func() {
+			con.ResumeCond().Broadcast()
+		})
+	}
 	con.Time.SetTolerances(cfg.absTol, cfg.relTol)
 	con.Time.SetStepLimits(cfg.minStep, cfg.maxStep)
 	ei := tm.MaxElemIter()

@@ -9,6 +9,7 @@ package serial
 
 import (
 	"circuit/gpio/driver"
+	"circuit/gpio/driver/dynlib"
 	"fmt"
 	"os"
 	"sync"
@@ -247,30 +248,30 @@ var (
 // 注意: kernel32.dll 随进程生命周期保持加载，不调用 FreeLibrary 是 Windows 平台的常见做法，
 // 提前卸载会导致其他组件调用失败。
 func init() {
-	k32, err := syscall.LoadLibrary("kernel32.dll")
+	k32, err := dynlib.Load("kernel32.dll")
 	if err != nil {
-		panic("LoadLibrary " + err.Error())
+		panic("serial: failed to load kernel32.dll: " + err.Error())
 	}
-	nSetCommState = getProcAddr(k32, "SetCommState")
-	nSetCommTimeouts = getProcAddr(k32, "SetCommTimeouts")
-	nSetCommMask = getProcAddr(k32, "SetCommMask")
-	nSetupComm = getProcAddr(k32, "SetupComm")
-	nGetOverlappedResult = getProcAddr(k32, "GetOverlappedResult")
-	nCreateEvent = getProcAddr(k32, "CreateEventW")
-	nResetEvent = getProcAddr(k32, "ResetEvent")
-	nPurgeComm = getProcAddr(k32, "PurgeComm")
-	nFlushFileBuffers = getProcAddr(k32, "FlushFileBuffers")
+
+	load := func(name string) uintptr {
+		ptr, err := dynlib.Lookup(k32, name)
+		if err != nil {
+			panic("serial: failed to find " + name + " in kernel32.dll: " + err.Error())
+		}
+		return uintptr(ptr)
+	}
+
+	nSetCommState = load("SetCommState")
+	nSetCommTimeouts = load("SetCommTimeouts")
+	nSetCommMask = load("SetCommMask")
+	nSetupComm = load("SetupComm")
+	nGetOverlappedResult = load("GetOverlappedResult")
+	nCreateEvent = load("CreateEventW")
+	nResetEvent = load("ResetEvent")
+	nPurgeComm = load("PurgeComm")
+	nFlushFileBuffers = load("FlushFileBuffers")
 }
 
-// getProcAddr 从动态链接库中获取函数地址。
-// 如果获取失败，程序将 panic，因为相应的串口操作无法执行。
-func getProcAddr(lib syscall.Handle, name string) uintptr {
-	addr, err := syscall.GetProcAddress(lib, name)
-	if err != nil {
-		panic(name + " " + err.Error())
-	}
-	return addr
-}
 
 // setCommState 设置串口通信状态
 func setCommState(h syscall.Handle, baud int, databits byte, parity Parity, stopbits StopBits) error {

@@ -545,7 +545,7 @@ func (p *Paint) DrawCharRune(x, y int, ch rune, face font.Face, bgColor, fgColor
 	// 计算基线位置
 	baseY := ascent
 	// 获取字形（dot 坐标为 26.6 定点数，64 单位 = 1 像素）
-	dot := fixed.P(0, baseY<<6)
+	dot := fixed.P(0, baseY)
 	dr, mask, maskp, advance, ok := face.Glyph(dot, ch)
 	if !ok {
 		return 0, 0

@@ -100,6 +100,7 @@ type TimeMNA struct {
 	continuous bool          // 连续模式标志，为 true 时 IsSimulationFinished 始终返回 false
 	tempTarget bool          // 是否为临时目标（AdvanceFor 设置）
 	status     atomic.Int32  // 运行状态（SimStatus），并发安全
+	notifier   func()        // 状态改变通知回调，当状态从 Paused 离开时调用
 }
 
 // NewTimeMNA 创建通用TimeMNAImpl实例
@@ -387,6 +388,14 @@ func (t *TimeMNA) SetContinuousMode() {
 	t.status.Store(mna.StatusRunning)
 }
 
+// SetNotifier 设置状态改变通知回调。
+// 当仿真状态从 Paused 转换为其他状态时（Resume/Stop/StepOnce/AdvanceFor），
+// 回调 fn 将被调用。fn 必须是非阻塞的轻量操作。
+// 参数 fn 为 nil 时禁用通知。
+func (t *TimeMNA) SetNotifier(fn func()) {
+	t.notifier = fn
+}
+
 // Pause 暂停仿真。仅在 Running 状态下有效，恢复需调用 Resume()。
 // 可从外部 goroutine 安全调用。
 func (t *TimeMNA) Pause() {
@@ -396,21 +405,31 @@ func (t *TimeMNA) Pause() {
 // Resume 恢复暂停或单步后的仿真。仅 Paused/Stepping → Running。
 // 可从外部 goroutine 安全调用。
 func (t *TimeMNA) Resume() {
-	t.status.CompareAndSwap(mna.StatusPaused, mna.StatusRunning)
-	t.status.CompareAndSwap(mna.StatusStepping, mna.StatusRunning)
+	old := t.Status()
+	if t.status.CompareAndSwap(mna.StatusPaused, mna.StatusRunning) {
+		t.notifyIfResumed(old)
+	}
+	if t.status.CompareAndSwap(mna.StatusStepping, mna.StatusRunning) {
+		// Stepping→Running 不需要通知（Stepping 不阻塞 PushEvents）
+	}
 }
 
 // Stop 停止仿真，使主循环优雅退出。
 // 连续模式下调用此方法结束 TransientSimulation。
 func (t *TimeMNA) Stop() {
+	old := t.Status()
 	t.status.Store(mna.StatusStopped)
+	t.notifyIfResumed(old)
 }
 
 // StepOnce 设置单步模式：执行一步后自动暂停。
 // 仅在 Running/Paused 状态下有效。
 func (t *TimeMNA) StepOnce() {
+	old := t.Status()
+	if t.status.CompareAndSwap(mna.StatusPaused, mna.StatusStepping) {
+		t.notifyIfResumed(old)
+	}
 	t.status.CompareAndSwap(mna.StatusRunning, mna.StatusStepping)
-	t.status.CompareAndSwap(mna.StatusPaused, mna.StatusStepping)
 }
 
 // Status 返回当前仿真运行状态。
@@ -434,8 +453,18 @@ func (t *TimeMNA) AdvanceFor(duration float64) error {
 	if t.continuous {
 		t.tempTarget = true
 	}
-	t.status.CompareAndSwap(mna.StatusPaused, mna.StatusRunning)
+	old := t.Status()
+	if t.status.CompareAndSwap(mna.StatusPaused, mna.StatusRunning) {
+		t.notifyIfResumed(old)
+	}
 	return nil
+}
+
+// notifyIfResumed 如果旧状态是 Paused 且 notifier 已设置，调用 notifier。
+func (t *TimeMNA) notifyIfResumed(oldStatus mna.SimStatus) {
+	if t.notifier != nil && oldStatus == mna.StatusPaused {
+		t.notifier()
+	}
 }
 
 // ------------------------------

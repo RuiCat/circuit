@@ -89,7 +89,15 @@ func processLine(line string) (string, error) {
 // splitLineComment 将行分为代码部分和注释部分。
 // 注释以 # 或 // 开始。
 func splitLineComment(line string) (code, comment string) {
+	inQuote := false
 	for i := 0; i < len(line); i++ {
+		if line[i] == '"' {
+			inQuote = !inQuote
+			continue
+		}
+		if inQuote {
+			continue
+		}
 		if line[i] == '#' {
 			return line[:i], line[i:]
 		}

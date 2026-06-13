@@ -5,6 +5,8 @@ import (
 	"circuit/mna"
 	"math"
 	"math/rand"
+	"sync"
+	"time"
 )
 
 // 电源类型
@@ -16,6 +18,11 @@ const (
 	WfSAWTOOTH = 4 // 锯齿波
 	WfPULSE    = 5 // 脉冲波
 	WfNOISE    = 6 // 噪声波
+)
+
+var (
+	rng   = rand.New(rand.NewSource(time.Now().UnixNano()))
+	rngMu sync.Mutex
 )
 
 // VoltageType 定义元件
@@ -46,7 +53,10 @@ type Voltage struct{ *element.Config }
 func (Voltage) Reset(base element.NodeFace) {
 	// 初始化噪声值
 	if base.GetInt(0) == WfNOISE {
-		base.SetFloat64(7, rand.NormFloat64()*base.GetFloat64(4)+base.GetFloat64(1))
+		rngMu.Lock()
+		v := rng.NormFloat64()*base.GetFloat64(4)+base.GetFloat64(1)
+		rngMu.Unlock()
+		base.SetFloat64(7, v)
 	}
 }
 
@@ -74,7 +84,10 @@ func (Voltage) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 func (Voltage) StepFinished(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 更新噪声值
 	if value.GetInt(0) == WfNOISE {
-		value.SetFloat64(7, rand.NormFloat64()*value.GetFloat64(4)+value.GetFloat64(1))
+		rngMu.Lock()
+		v := rng.NormFloat64()*value.GetFloat64(4)+value.GetFloat64(1)
+		rngMu.Unlock()
+		value.SetFloat64(7, v)
 	}
 }
 

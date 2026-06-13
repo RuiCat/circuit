@@ -61,7 +61,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 		con.MnaUpdateType.ResetXUpdate()
 		// 检查是否超过最大时间步数
 		if !con.IncrementTimeStepCount() {
-			return fmt.Errorf("达到最大时间步数限制 %f，仿真可能陷入无限循环", con.Time.MaxTimeStep())
+			return fmt.Errorf("达到最大时间步数限制，仿真可能陷入无限循环（已执行 %d 步后超限）", con.Time.GoodIterations())
 		}
 		// 预测阶段：对纯 DC 电路，用 Adams-Bashford 预测提供 Newton 初始猜测
 		// 并通过 LTE 估计增长步长；含储能元件的电路使用固定小步长。

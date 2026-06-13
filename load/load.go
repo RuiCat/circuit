@@ -2,6 +2,7 @@ package load
 
 import (
 	"circuit/element"
+	"circuit/element/hierarchical"
 	"circuit/load/ast"
 	"circuit/mna"
 	"fmt"
@@ -331,7 +332,7 @@ func createWrapperInstance(elemNode *ast.ElementNode) (element.NodeFace, error) 
 	}
 
 	// 查找 Wrapper 的 NodeType
-	nodeType := element.NodeType(17)
+	nodeType := hierarchical.DefaultWrapperNodeType
 	if nt, ok := element.ElementListName["X"]; ok {
 		nodeType = nt
 	}

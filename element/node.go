@@ -1,6 +1,9 @@
 package element
 
-import "circuit/mna"
+import (
+	"circuit/mna"
+	"log"
+)
 
 // Node 元件节点结构体，存储元件的动态数据和连接信息。
 // 这些数据在仿真过程中会不断更新，反映元件的当前状态。
@@ -155,6 +158,7 @@ func (node *Node) GetInt(i int) int {
 		if v, ok := node.NodeValue[i].(int); ok {
 			return v
 		}
+		log.Printf("警告: GetInt 类型断言失败，索引 %d，实际类型 %T", i, node.NodeValue[i])
 	}
 	return 0
 }
@@ -167,6 +171,7 @@ func (node *Node) GetBool(i int) bool {
 		if v, ok := node.NodeValue[i].(bool); ok {
 			return v
 		}
+		log.Printf("警告: GetBool 类型断言失败，索引 %d，实际类型 %T", i, node.NodeValue[i])
 	}
 	return false
 }
@@ -179,6 +184,7 @@ func (node *Node) GetString(i int) string {
 		if v, ok := node.NodeValue[i].(string); ok {
 			return v
 		}
+		log.Printf("警告: GetString 类型断言失败，索引 %d，实际类型 %T", i, node.NodeValue[i])
 	}
 	return ""
 }
@@ -191,6 +197,7 @@ func (node *Node) GetFloat64(i int) float64 {
 		if v, ok := node.NodeValue[i].(float64); ok {
 			return v
 		}
+		log.Printf("警告: GetFloat64 类型断言失败，索引 %d，实际类型 %T", i, node.NodeValue[i])
 	}
 	return 0
 }
@@ -202,6 +209,8 @@ func (node *Node) SetInt(i int, v int) {
 	if i >= 0 && i < len(node.NodeValue) {
 		if _, ok := node.NodeValue[i].(int); ok || node.NodeValue[i] == nil {
 			node.NodeValue[i] = v
+		} else {
+			log.Printf("警告: SetInt 类型不匹配，索引 %d，期望 int，实际类型 %T", i, node.NodeValue[i])
 		}
 	}
 }
@@ -213,6 +222,8 @@ func (node *Node) SetBool(i int, v bool) {
 	if i >= 0 && i < len(node.NodeValue) {
 		if _, ok := node.NodeValue[i].(bool); ok || node.NodeValue[i] == nil {
 			node.NodeValue[i] = v
+		} else {
+			log.Printf("警告: SetBool 类型不匹配，索引 %d，期望 bool，实际类型 %T", i, node.NodeValue[i])
 		}
 	}
 }
@@ -224,6 +235,8 @@ func (node *Node) SetString(i int, v string) {
 	if i >= 0 && i < len(node.NodeValue) {
 		if _, ok := node.NodeValue[i].(string); ok || node.NodeValue[i] == nil {
 			node.NodeValue[i] = v
+		} else {
+			log.Printf("警告: SetString 类型不匹配，索引 %d，期望 string，实际类型 %T", i, node.NodeValue[i])
 		}
 	}
 }
@@ -235,6 +248,8 @@ func (node *Node) SetFloat64(i int, v float64) {
 	if i >= 0 && i < len(node.NodeValue) {
 		if _, ok := node.NodeValue[i].(float64); ok || node.NodeValue[i] == nil {
 			node.NodeValue[i] = v
+		} else {
+			log.Printf("警告: SetFloat64 类型不匹配，索引 %d，期望 float64，实际类型 %T", i, node.NodeValue[i])
 		}
 	}
 }
