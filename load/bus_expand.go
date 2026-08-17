@@ -16,6 +16,9 @@ var (
 // maxBusWidth 单条总线最大展开宽度。
 const maxBusWidth = 4096
 
+// maxExpandedSize 展开后网表文本的最大累计字节数，防止总线展开放大攻击导致 OOM。
+const maxExpandedSize = 200 * 1024 * 1024 // 200MB
+
 // ExpandBusNotation 将网表文本中的总线表示法展开为独立信号线。
 // 支持两种模式：
 //   - name[msb:lsb] 范围总线 → name<msb> name<msb±1> ... name<lsb>（降序或升序）
@@ -39,6 +42,10 @@ func ExpandBusNotation(text string) (string, error) {
 			return "", err
 		}
 		result.WriteString(processed)
+		// 增量检查累计大小，在展开完成前及时终止，防止大量总线展开导致 OOM。
+		if result.Len() > maxExpandedSize {
+			return "", fmt.Errorf("展开后网表过大（超过 %d 字节）", maxExpandedSize)
+		}
 	}
 	return result.String(), nil
 }

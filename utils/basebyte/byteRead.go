@@ -29,7 +29,9 @@ func (r *Read) CheckBounds(required int) error {
 	switch {
 	case r.Offset < 0:
 		return ErrOutOfBounds
-	case r.Offset+required > len(r.Byte):
+	case required < 0:
+		return ErrOutOfBounds
+	case r.Offset > len(r.Byte)-required:
 		return ErrOutOfBounds
 	case r.Offset == len(r.Byte):
 		return ErrOutOfBounds
@@ -196,8 +198,9 @@ func (r *Read) Complex128() (v complex128) {
 // Bytes 从字节数组中读取一个字节切片（先读长度，再读数据），偏移量前进len+4/8字节
 func (r *Read) Bytes() (v []byte) {
 	length := r.Int()
-	if err := r.CheckBounds(length); err != nil {
-		r.Error = err
+	// 分配前先校验长度非负且不越界，防止负数/超大长度触发 makeslice panic 或 OOM。
+	if length < 0 || r.Offset < 0 || length > len(r.Byte)-r.Offset {
+		r.Error = ErrOutOfBounds
 		return nil
 	}
 	v = make([]byte, length)
@@ -210,11 +213,12 @@ func (r *Read) Bytes() (v []byte) {
 // 参数i: 需要读取的字节数。若i<=0，返回空切片
 func (r *Read) GetByte(i int) (v []byte) {
 	if i > 0 {
-		v = make([]byte, i)
+		// 先做边界检查再分配，防止超大 i 触发 OOM。
 		if err := r.CheckBounds(i); err != nil {
 			r.Error = err
 			return nil
 		}
+		v = make([]byte, i)
 		copy(v, r.Byte[r.Offset:r.Offset+i])
 		r.Offset += i
 	} else {

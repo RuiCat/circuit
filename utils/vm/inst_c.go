@@ -38,7 +38,8 @@ func handleC0(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, VmMc
 		if imm == 0 {
 			return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 		}
-		return CRegs[rd_p], vmst.Core.Regs[2] + imm, pc + 2, CAUSE_TRAP_CODE_OK
+		// C.ADDI4SPN 的立即数为 4 的倍数（nzuimm<<2），需左移 2 位再相加。
+		return CRegs[rd_p], vmst.Core.Regs[2] + (imm << 2), pc + 2, CAUSE_TRAP_CODE_OK
 
 	case FUNCT3_C_LW: // C.LW: 加载字
 		// imm[6:2] 布局: 5=6, 10:12=5:3, 6=2

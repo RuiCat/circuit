@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/zlib"
 	"encoding/binary"
+	"fmt"
 	"io"
 )
 
@@ -35,11 +36,16 @@ func (zc *ZlibCompressor) Decompress(data []byte) ([]byte, error) {
 		return nil, err
 	}
 	defer r.Close()
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, r); err != nil {
+	// 限制解压输出大小，防止解压炸弹（zlib 最大膨胀比约 1032:1）。
+	lr := &io.LimitedReader{R: r, N: maxDecompressedSize + 1}
+	buf, err := io.ReadAll(lr)
+	if err != nil {
 		return nil, err
 	}
-	return buf.Bytes(), nil
+	if int64(len(buf)) > maxDecompressedSize {
+		return nil, fmt.Errorf("zlib: 解压数据超出上限 %d 字节", maxDecompressedSize)
+	}
+	return buf, nil
 }
 
 // DeltaZlibCompressor delta 编码 + zlib 压缩器实现

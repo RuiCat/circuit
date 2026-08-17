@@ -22,7 +22,10 @@ type bitmapImpl struct {
 
 // NewBitmap 创建新的位图实例
 func NewBitmap(size int) Bitmap {
-	bitCount := (size + 63) / 64 // 计算需要的uint64数量
+	if size < 0 {
+		size = 0
+	}
+	bitCount := int((uint64(size) + 63) / 64) // 用 uint64 计算，避免 size+63 溢出
 	return &bitmapImpl{
 		bits:   make([]uint64, bitCount),
 		length: size,
@@ -30,11 +33,12 @@ func NewBitmap(size int) Bitmap {
 }
 
 func (b *bitmapImpl) Set(bit BitmapFlag, flag bool) {
-	if int(bit) >= b.length {
+	// 用无符号比较，避免 bit>=2^63 时 int(bit) 变负数绕过上界检查。
+	if bit >= BitmapFlag(b.length) {
 		return
 	}
-	index := int(bit) >> 6
-	offset := uint(int(bit) & 63)
+	index := int(bit >> 6)
+	offset := uint(bit & 63)
 	if flag {
 		b.bits[index] |= (1 << offset)
 	} else {
@@ -43,11 +47,12 @@ func (b *bitmapImpl) Set(bit BitmapFlag, flag bool) {
 }
 
 func (b *bitmapImpl) Get(bit BitmapFlag) bool {
-	if int(bit) >= b.length {
+	// 用无符号比较，避免 bit>=2^63 时 int(bit) 变负数绕过上界检查。
+	if bit >= BitmapFlag(b.length) {
 		return false
 	}
-	index := int(bit) >> 6
-	offset := uint(int(bit) & 63)
+	index := int(bit >> 6)
+	offset := uint(bit & 63)
 	return (b.bits[index] & (1 << offset)) != 0
 }
 

@@ -287,18 +287,23 @@ func (s *Server) listenLoop() {
 		data []byte
 		err  error
 	}, 1)
-	for {
-		// 在独立 goroutine 中异步执行 UART 读取，通过非阻塞 select 等待结果或 stopChan 信号，避免阻塞事件循环。
-		go func() {
+
+	// 单个常驻读 goroutine：避免原来每轮循环派生 goroutine 导致 Stop 后大量 goroutine 泄漏。
+	go func() {
+		for {
 			data, err := s.uart.Read(256)
 			select {
 			case readChan <- struct {
 				data []byte
 				err  error
 			}{data, err}:
-			default:
+			case <-s.stopChan:
+				return
 			}
-		}()
+		}
+	}()
+
+	for {
 		select {
 		case <-s.stopChan:
 			return
@@ -576,7 +581,16 @@ func (s *Server) handleWriteSingleCoil(pdu []byte) []byte {
 	}
 
 	address := uint16(pdu[1])<<8 | uint16(pdu[2])
-	value := pdu[3] == 0xFF && pdu[4] == 0x00
+	// 校验线圈值：Modbus 规范规定 0xFF00=ON，0x0000=OFF，其余为非法值。
+	var value bool
+	switch {
+	case pdu[3] == 0xFF && pdu[4] == 0x00:
+		value = true
+	case pdu[3] == 0x00 && pdu[4] == 0x00:
+		value = false
+	default:
+		return []byte{pdu[0] | 0x80, ExceptionIllegalDataValue}
+	}
 
 	s.mu.RLock()
 	handler := s.handler

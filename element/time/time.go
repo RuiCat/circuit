@@ -61,8 +61,8 @@ type TimeMNA struct {
 	goodStepCount int // 已成功完成的时间步数
 
 	// 收敛状态管理
-	residualConverged bool // 残差收敛标记
-	elementConverged  bool // 元件收敛标记（用于单个元件迭代）
+	residualConverged bool        // 残差收敛标记（仅主 goroutine 串行读写）
+	elementConverged  atomic.Bool // 元件收敛标记：并行 DoStep 中多个 worker 通过 NoConverged 并发写，需原子
 
 	// 误差控制参数（外部可配置）
 	absTol float64 // 绝对误差容差
@@ -352,12 +352,12 @@ func (t *TimeMNA) ResidualNorm() float64 {
 
 // IsConverged 获取全局收敛状态（残差收敛+无未收敛元件）
 func (t *TimeMNA) IsConverged() bool {
-	return t.elementConverged && t.residualConverged
+	return t.elementConverged.Load() && t.residualConverged
 }
 
 // NoConverged 标记元件没有收敛
 func (t *TimeMNA) NoConverged() {
-	t.elementConverged = false
+	t.elementConverged.Store(false)
 }
 
 // IsSimulationFinished 检查仿真是否完成（达到目标时间或连续模式控制）
@@ -806,13 +806,13 @@ func (t *TimeMNA) AdjustStepSize() error {
 // ResetNonlinearIter 重置非线性迭代状态（每时间步开始时调用）
 func (t *TimeMNA) ResetNonlinearIter() {
 	t.currNonlinIter = 0
-	t.elementConverged = true
+	t.elementConverged.Store(true)
 }
 
 // NextNonlinearIter 推进非线性迭代计数，返回是否未超限
 func (t *TimeMNA) NextNonlinearIter() bool {
 	t.currNonlinIter++
-	t.elementConverged = true
+	t.elementConverged.Store(true)
 	return t.currNonlinIter < t.maxNonlinIter
 }
 
@@ -824,7 +824,7 @@ func (t *TimeMNA) ResetElemIter() {
 // NextElemIter 推进单个元件迭代计数，返回是否未超限
 func (t *TimeMNA) NextElemIter() bool {
 	t.currElemIter++
-	t.elementConverged = true
+	t.elementConverged.Store(true)
 	return t.currElemIter < t.maxElemIter
 }
 

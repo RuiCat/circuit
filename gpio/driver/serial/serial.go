@@ -254,6 +254,10 @@ func (u *uartDriver) Read(length int) ([]byte, error) {
 	if u.port == nil {
 		return nil, errors.New("serial: port closed")
 	}
+	// 校验长度，防止负数/超大长度触发 makeslice panic 或 OOM。
+	if length < 0 || length > 1<<20 {
+		return nil, errors.New("serial: invalid read length")
+	}
 	buf := make([]byte, length)
 	n, err := u.port.Read(buf)
 	if err != nil {

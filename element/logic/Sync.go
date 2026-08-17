@@ -19,6 +19,12 @@ const (
 // SyncType 同步元件类型标识。
 var SyncType element.NodeType
 
+// 真值表模式的输入/输出引脚数上限，防止 2^N 指数级分配导致 OOM。
+const (
+	maxSyncInputs  = 16 // 2^16 = 65536 个真值表项
+	maxSyncOutputs = 16
+)
+
 // Sync 同步元件，实现事件驱动的同步逻辑。
 // 模拟同步芯片行为：引脚根据当前时间和其它引脚状态更新。
 // 输入引脚读取节点电压，经内部逻辑/状态机评估后，输出电压通过电压源驱动到输出引脚。
@@ -45,11 +51,17 @@ func (s *Sync) Base(elem ast.ElementNode) *element.Config {
 		if nInputs < 1 {
 			nInputs = 1
 		}
+		if nInputs > maxSyncInputs {
+			return nil // 输入数过大，防止 2^N 真值表 OOM
+		}
 	}
 	if len(elem.Values) > 2 {
 		nOutputs = parseSyncInt(elem.Values[2])
 		if nOutputs < 1 {
 			nOutputs = 1
+		}
+		if nOutputs > maxSyncOutputs {
+			return nil // 输出数过大
 		}
 	}
 	if len(elem.Values) > 3 {

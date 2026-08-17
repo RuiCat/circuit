@@ -115,6 +115,11 @@ func getVoltage(value element.NodeFace, time mna.Time) float64 {
 		return maxVoltage + bias
 	}
 
+	// 非直流波形需要有效频率；频率非法（0/NaN/Inf）时回退到直流，避免 NaN 电压源被静默丢弃。
+	if frequency <= 0 || math.IsNaN(frequency) || math.IsInf(frequency, 0) {
+		return maxVoltage + bias
+	}
+
 	// 计算角度
 	t := time.Time()
 	// 使用模运算将时间限制在周期内，防止长时间仿真精度损失

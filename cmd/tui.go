@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -139,7 +140,7 @@ type tuiModel struct {
 	vpHeight       int
 	focusViewport  bool // 焦点在 viewport 时为 true，在输入框时为 false
 	lastOutLen     int
-	droppedUpdates int
+	droppedUpdates atomic.Int64
 }
 
 // newTUIModel 创建并初始化 tuiModel，设置输入框、视口和帮助组件。
@@ -352,7 +353,7 @@ func (m *tuiModel) View() string {
 	s := m.steps
 	cs := m.currentStep
 	v := m.voltages
-	du := m.droppedUpdates
+	du := int(m.droppedUpdates.Load())
 	m.mu.RUnlock()
 
 	focusStr := "[输入]"
@@ -936,7 +937,7 @@ func runTUI(con *element.Context, cfg config) error {
 			case ch <- simUpdate{voltages: cp, time: con.CurrentTime(), steps: stepCnt, currentStep: con.CurrentStep()}:
 			default:
 				// channel 满时静默丢弃更新，计数器用于 UI 显示
-				m.droppedUpdates++
+				m.droppedUpdates.Add(1)
 			}
 			// 与 cmdCurve 的 RLock 对称，防止双缓冲并发读写撕裂
 			row := make([]float64, 1+len(v))

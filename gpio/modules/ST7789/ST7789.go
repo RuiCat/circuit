@@ -419,10 +419,14 @@ var driverType = map[DriverType]*driverTypes{
 // NewDriver 创建新的LCD驱动实例
 // spi和gpio是SPI和GPIO操作的驱动接口
 func NewDriver(spi driver.SPI, gpio driver.GPIO, dtype DriverType) *Driver {
+	dt, ok := driverType[dtype]
+	if !ok {
+		panic(fmt.Sprintf("ST7789: 不支持的屏幕类型 %d", dtype))
+	}
 	return &Driver{
 		spi:         spi,
 		gpio:        gpio,
-		driverTypes: driverType[dtype],
+		driverTypes: dt,
 	}
 }
 
@@ -664,6 +668,10 @@ func (lcd *Driver) ShowImage(img image.Image) error {
 		lcd.SetWindow(0, 0, lcd.Width, lcd.Height, horizontal)
 	}
 	// 将图像转换为RGB565数据
+	// 校验尺寸，防止宽高乘积溢出导致负分配/OOM/越界写。
+	if width <= 0 || height <= 0 || width > 16384 || height > 16384 {
+		return fmt.Errorf("图像尺寸非法: %dx%d", width, height)
+	}
 	totalPixels := width * height
 	pixelData := make([]byte, totalPixels*2)
 	idx := 0

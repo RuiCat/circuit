@@ -411,14 +411,21 @@ func handleOpImm(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, V
 	case FUNCT3_AND: // ANDI
 		rval = rs1 & uint32(imm)
 	case FUNCT3_SLL: // SLLI
+		// 校验 funct7 必须为 0（RV32 下 shamt[5]=0），否则为保留编码
+		if (ir>>25)&0x7f != 0x00 {
+			return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
+		}
 		shamt := (ir >> 20) & 0x1f
 		rval = rs1 << shamt
 	case FUNCT3_SRL_SRA: // SRLI / SRAI
 		shamt := (ir >> 20) & 0x1f
-		if (ir & 0x40000000) != 0 { // SRAI (funct7 的一部分)
-			rval = uint32(int32(rs1) >> shamt)
-		} else { // SRLI
+		switch funct7 := (ir >> 25) & 0x7f; funct7 {
+		case 0x00: // SRLI
 			rval = rs1 >> shamt
+		case 0x20: // SRAI
+			rval = uint32(int32(rs1) >> shamt)
+		default:
+			return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 		}
 	default:
 		return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
@@ -542,6 +549,10 @@ func handleSystem(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, 
 		case 1: // EBREAK
 			return 0, 0, 0, CAUSE_BREAKPOINT
 		case FUNCT12_MRET:
+			// MRET 仅能在 M-mode 执行
+			if vmst.Core.Privilege != PRIV_MACHINE {
+				return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
+			}
 			// 从 M-mode 陷阱返回
 			// 1. 恢复特权级别
 			prev_priv := (vmst.Core.Mstatus & MSTATUS_MPP) >> 11
@@ -557,6 +568,10 @@ func handleSystem(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, 
 			newPC := vmst.Core.Mepc
 			return 0, 0, newPC, CAUSE_TRAP_CODE_OK
 		case FUNCT12_SRET:
+			// SRET 需在 S-mode 及以上执行
+			if vmst.Core.Privilege < PRIV_SUPERVISOR {
+				return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
+			}
 			// 从 S-mode 陷阱返回
 			// 1. 恢复特权级别
 			prev_priv := (vmst.Core.Sstatus & SSTATUS_SPP) >> 8
@@ -576,14 +591,31 @@ func handleSystem(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, 
 			return 0, 0, pc + 4, CAUSE_TRAP_CODE_OK // 当前实现为 NOP
 		}
 	case FUNCT3_CSRRW, FUNCT3_CSRRS, FUNCT3_CSRRC, FUNCT3_CSRRWI, FUNCT3_CSRRSI, FUNCT3_CSRRCI:
+		// 规范语义：
+		// - CSRRW: rd==x0 时只写不读（避免读副作用）
+		// - CSRRS/CSRRC: rs1==x0 时只读不写
+		// - CSRRSI/CSRRCI: zimm==0 时只读不写
+		if funct3 == FUNCT3_CSRRW && rdid == 0 {
+			if !vmst.CsrWrite(csr, vmst.Core.Regs[rs1id]) {
+				return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
+			}
+			return 0, 0, pc + 4, CAUSE_TRAP_CODE_OK
+		}
+
 		csr_val, ok := vmst.CsrRead(csr)
 		if !ok {
 			return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION
 		}
 
 		rval := csr_val // CSR 指令总是先将旧值读入 rd
-		var new_csr_val uint32
 
+		// 只读情形：rs1==x0（CSRRS/CSRRC）或 zimm==0（CSRRSI/CSRRCI）
+		if rs1id == 0 && (funct3 == FUNCT3_CSRRS || funct3 == FUNCT3_CSRRC ||
+			funct3 == FUNCT3_CSRRSI || funct3 == FUNCT3_CSRRCI) {
+			return rdid, rval, pc + 4, CAUSE_TRAP_CODE_OK
+		}
+
+		var new_csr_val uint32
 		switch funct3 {
 		case FUNCT3_CSRRW: // CSRRW (Atomic Read/Write CSR)
 			new_csr_val = vmst.Core.Regs[rs1id]
@@ -592,14 +624,11 @@ func handleSystem(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, 
 		case FUNCT3_CSRRC: // CSRRC (Atomic Read and Clear Bits in CSR)
 			new_csr_val = csr_val &^ vmst.Core.Regs[rs1id]
 		case FUNCT3_CSRRWI: // CSRRWI (立即数版本)
-			zimm := rs1id
-			new_csr_val = uint32(zimm)
+			new_csr_val = uint32(rs1id)
 		case FUNCT3_CSRRSI: // CSRRSI
-			zimm := rs1id
-			new_csr_val = csr_val | uint32(zimm)
+			new_csr_val = csr_val | uint32(rs1id)
 		case FUNCT3_CSRRCI: // CSRRCI
-			zimm := rs1id
-			new_csr_val = csr_val &^ uint32(zimm)
+			new_csr_val = csr_val &^ uint32(rs1id)
 		}
 		if !vmst.CsrWrite(csr, new_csr_val) {
 			return 0, 0, 0, CAUSE_ILLEGAL_INSTRUCTION

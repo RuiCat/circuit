@@ -98,7 +98,11 @@ func (ms *MomentarySwitch) DoStep(mna mna.Mna, time mna.Time, value element.Node
 		R = value.GetFloat64(4)
 	}
 
-	nPairs := value.Base().ConfigPtr.PinNum() / 2
+	cfg := value.Config()
+	if cfg == nil {
+		return
+	}
+	nPairs := cfg.PinNum() / 2
 	for i := 0; i < nPairs; i++ {
 		mna.StampImpedance(value.GetNodes(2*i), value.GetNodes(2*i+1), R)
 	}
@@ -119,7 +123,11 @@ func (ms *MomentarySwitch) CalculateCurrent(mna mna.Mna, time mna.Time, value el
 		R = value.GetFloat64(4)
 	}
 
-	nPairs := value.Base().ConfigPtr.PinNum() / 2
+	cfg := value.Config()
+	if cfg == nil {
+		return
+	}
+	nPairs := cfg.PinNum() / 2
 	for i := 0; i < nPairs; i++ {
 		v1 := mna.GetNodeVoltage(value.GetNodes(2 * i))
 		v2 := mna.GetNodeVoltage(value.GetNodes(2*i + 1))

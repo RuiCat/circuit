@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
-	"time"
 )
 
 // Context 上下文。
@@ -23,12 +22,22 @@ type Context struct {
 	HasReactive                 bool                         // 电路中包含储能元件（电容/电感）
 	// eventValues 并发安全的事件值映射
 	eventValues sync.Map
-	// eventTargets 事件名 → NodeValue 槽位指针列表（懒初始化一次）
+	// eventTargets 事件名 → 消费者写入槽位列表（懒初始化一次）。
+	// 保存 Node 指针 + 索引而非裸 *any 指针，写入前校验边界，避免 NodeValue 扩容后指针悬垂。
 	// 保护 eventTargets map 的并发读写（MarkReset 写 / PushEvents、PullEvents 读）
-	eventTargets map[string][]*any
+	eventTargets map[string][]eventTarget
 	eventMu      sync.RWMutex
 	resumeMu     sync.Mutex // 保护 resumeCond 的条件变量互斥锁
 	resumeCond   *sync.Cond // 仿真恢复条件变量，状态从 Paused 离开时广播
+	resumeOnce   sync.Once  // 保证 resumeCond 惰性初始化仅执行一次
+}
+
+// eventTarget 表示事件消费者的一个写入槽位。
+// 保存目标 Node 指针与 NodeValue 索引，写入前校验索引边界，
+// 避免直接保存 &NodeValue[i] 裸指针在 NodeValue 扩容后悬垂。
+type eventTarget struct {
+	node     *Node
+	valueIdx int
 }
 
 // ComputeStateDerivative 基于当前 MNA 解和元件状态计算状态导数向量 dx/dt。
@@ -186,11 +195,11 @@ func (con *Context) ResumeCond() *sync.Cond {
 	return con.resumeCond
 }
 
-// rebuildEventTargets 重建事件目标指针表。
-// 在 MarkReset / MarkUpdateElements / MarkRollbackElements 后调用，
-// 确保 eventTargets 中的指针指向最新的 NodeValue 内存地址。
+// rebuildEventTargets 重建事件目标槽位表。
+// 在 MarkReset 后调用，收集各元件的消费者槽位（Node 指针 + 索引）。
+// 通过索引定位，写入时再校验边界，NodeValue 扩容不会导致指针悬垂。
 func (con *Context) rebuildEventTargets() {
-	newTargets := make(map[string][]*any)
+	newTargets := make(map[string][]eventTarget)
 	for _, elem := range con.Nodelist {
 		cfg := elem.Config()
 		if cfg == nil || len(cfg.EventSlots) == 0 {
@@ -198,17 +207,21 @@ func (con *Context) rebuildEventTargets() {
 		}
 		node := elem.Base()
 		for nameIdx, valueIdx := range cfg.EventSlots {
+			// 只处理消费者（valueIdx >= 0）；生产者（负数）在 PullEvents 中按元件遍历处理。
+			if valueIdx < 0 || valueIdx >= len(node.NodeValue) {
+				continue
+			}
 			eventName := ""
-			if valueIdx >= 0 && valueIdx < len(node.NodeValue) && nameIdx >= 0 && nameIdx < len(node.NodeValue) {
+			if nameIdx >= 0 && nameIdx < len(node.NodeValue) {
 				if s, ok := node.NodeValue[nameIdx].(string); ok {
 					eventName = s
 				}
-				if eventName == "" {
-					continue
-				}
-				ptr := &node.NodeValue[valueIdx]
-				newTargets[eventName] = append(newTargets[eventName], ptr)
 			}
+			if eventName == "" {
+				continue
+			}
+			// 保存索引而非 &NodeValue[valueIdx] 裸指针，NodeValue 扩容后索引仍指向同一逻辑槽位。
+			newTargets[eventName] = append(newTargets[eventName], eventTarget{node: node, valueIdx: valueIdx})
 		}
 	}
 	con.eventMu.Lock()
@@ -229,11 +242,15 @@ func (con *Context) PushEvents() bool {
 		if vAny == nil {
 			continue
 		}
-		for _, ptr := range targets {
-			if *ptr != nil && reflect.TypeOf(*ptr) != reflect.TypeOf(vAny) {
+		for _, t := range targets {
+			if t.node == nil || t.valueIdx < 0 || t.valueIdx >= len(t.node.NodeValue) {
+				continue // 槽位失效，跳过
+			}
+			cur := t.node.NodeValue[t.valueIdx]
+			if cur != nil && reflect.TypeOf(cur) != reflect.TypeOf(vAny) {
 				continue
 			}
-			*ptr = vAny
+			t.node.NodeValue[t.valueIdx] = vAny
 		}
 		// 消费后设为 nil，防止下次重复推送
 		con.eventValues.Store(eventName, nil)
@@ -250,16 +267,13 @@ func (con *Context) PushEvents() bool {
 			return true
 		case mna.StatusPaused: // 暂停
 		}
-		// 使用 cond 等待状态变化，避免 busy-wait 轮询
-		if con.resumeCond != nil {
-			con.resumeMu.Lock()
-			for con.Time.Status() == mna.StatusPaused {
-				con.resumeCond.Wait()
-			}
-			con.resumeMu.Unlock()
-		} else {
-			time.Sleep(10 * time.Millisecond)
+		// 惰性初始化 resumeCond（sync.Once 保证仅一次），避免未调用 InitResumeCond 时退化到 sleep 轮询。
+		con.resumeOnce.Do(con.InitResumeCond)
+		con.resumeMu.Lock()
+		for con.Time.Status() == mna.StatusPaused {
+			con.resumeCond.Wait()
 		}
+		con.resumeMu.Unlock()
 	}
 }
 
@@ -304,14 +318,14 @@ func (con *Context) PullEvents() {
 				continue
 			}
 			if targets, ok := con.eventTargets[eventName]; ok {
-				for _, ptr := range targets {
-					if ptr == nil {
+				for _, t := range targets {
+					if t.node == nil || t.valueIdx < 0 || t.valueIdx >= len(t.node.NodeValue) {
 						continue
 					}
-					vt := reflect.TypeOf(*ptr)
+					vt := reflect.TypeOf(t.node.NodeValue[t.valueIdx])
 					nvt := reflect.TypeOf(newValue)
 					if vt == nvt {
-						*ptr = newValue
+						t.node.NodeValue[t.valueIdx] = newValue
 					}
 				}
 			}

@@ -150,16 +150,25 @@ func (dm *dataManager[T]) AppendInPlace(values ...T) {
 
 // InsertInPlace 在指定索引处插入一个或多个值。
 func (dm *dataManager[T]) InsertInPlace(index int, values ...T) {
+	if index < 0 || index > len(dm.data) {
+		panic(fmt.Sprintf("maths: InsertInPlace 索引越界 index=%d len=%d", index, len(dm.data)))
+	}
 	dm.data = append(dm.data[:index], append(values, dm.data[index:]...)...)
 }
 
 // RemoveInPlace 从指定索引处移除指定数量的元素。
 func (dm *dataManager[T]) RemoveInPlace(index int, count int) {
+	if index < 0 || count < 0 || index+count > len(dm.data) {
+		panic(fmt.Sprintf("maths: RemoveInPlace 越界 index=%d count=%d len=%d", index, count, len(dm.data)))
+	}
 	dm.data = append(dm.data[:index], dm.data[index+count:]...)
 }
 
 // ReplaceInPlace 从指定索引处开始替换元素。
 func (dm *dataManager[T]) ReplaceInPlace(index int, values ...T) {
+	if index < 0 || index+len(values) > len(dm.data) {
+		panic(fmt.Sprintf("maths: ReplaceInPlace 越界 index=%d n=%d len=%d", index, len(values), len(dm.data)))
+	}
 	copy(dm.data[index:], values)
 }
 

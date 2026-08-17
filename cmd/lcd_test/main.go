@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"io"
 	"log"
 	"os"
 	"time"
@@ -233,6 +234,20 @@ func loadImage(path string) (image.Image, error) {
 		return nil, fmt.Errorf("无法打开：%w", err)
 	}
 	defer f.Close()
+
+	// 先读取图像配置（尺寸），防止解码超大图片导致内存膨胀。
+	cfg, _, err := image.DecodeConfig(f)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > 8192 || cfg.Height > 8192 {
+		return nil, fmt.Errorf("图像尺寸过大: %dx%d", cfg.Width, cfg.Height)
+	}
+
+	// 重置文件指针后解码
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
 	img, _, err := image.Decode(f)
 	return img, err
 }

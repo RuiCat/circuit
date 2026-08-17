@@ -60,7 +60,7 @@ func (e *Exception) Error() string {
 type Master struct {
 	uart    driver.UART   // 底层的 UART 接口，用于串口通信
 	slaveID uint32         // 目标从站地址（1-247），使用 uint32 + atomic 操作确保 SetSlaveID 和 sendRequest 的并发安全
-	timeout time.Duration // 读写操作超时时间
+	timeout atomic.Int64   // 读写操作超时时间（纳秒），使用 atomic 避免与 SetTimeout 并发竞争
 }
 
 // NewMaster 创建一个新的 Modbus 主站
@@ -72,11 +72,12 @@ type Master struct {
 //
 // 注意: 默认从站地址为 1，超时时间为 100ms
 func NewMaster(uart driver.UART) *Master {
-	return &Master{
+	m := &Master{
 		uart:    uart,
 		slaveID: 1, // 默认从站地址
-		timeout: 100 * time.Millisecond,
 	}
+	m.timeout.Store(int64(100 * time.Millisecond))
+	return m
 }
 
 // SetSlaveID 设置 Modbus 从站地址
@@ -101,7 +102,7 @@ func (c *Master) SetSlaveID(id uint8) error {
 //
 // 注意: 超时时间用于控制 UART 读取操作的等待时间
 func (c *Master) SetTimeout(timeout time.Duration) {
-	c.timeout = timeout
+	c.timeout.Store(int64(timeout))
 }
 
 // 内部辅助函数
@@ -168,14 +169,16 @@ func (c *Master) sendRequest(pdu []byte) ([]byte, error) {
 		err  error
 	}
 	ch := make(chan readResult, 1)
+	// 注意：底层 UART.Read 必须配置非零 ByteTimeout（Init 时传入），否则 Read 会无限阻塞、
+	// 该 goroutine 将泄漏并长期持有底层锁，导致后续请求永久卡死。应用层超时无法取消底层阻塞读。
 	go func() {
 		data, err := c.uart.Read(256)
 		ch <- readResult{data, err}
 	}()
 	var readBuf []byte
 	select {
-	case <-time.After(c.timeout):
-		return nil, fmt.Errorf("modbus: 请求超时 (%v)", c.timeout)
+	case <-time.After(time.Duration(c.timeout.Load())):
+		return nil, fmt.Errorf("modbus: 请求超时 (%v)", time.Duration(c.timeout.Load()))
 	case result := <-ch:
 		if result.err != nil {
 			return nil, fmt.Errorf("modbus: 读取失败: %w", result.err)
@@ -198,6 +201,11 @@ func (c *Master) sendRequest(pdu []byte) ([]byte, error) {
 	expectedCRC := calculateCRC(readBuf[:len(readBuf)-2])
 	if receivedCRC != expectedCRC {
 		return nil, errors.New("modbus: CRC error")
+	}
+
+	// 校验响应功能码与请求一致（防止响应错位或恶意伪造）。
+	if readBuf[1]&0x7F != pdu[0] {
+		return nil, errors.New("modbus: response function code mismatch")
 	}
 
 	// 检查异常响应
@@ -261,7 +269,8 @@ func (c *Master) ReadCoils(address, quantity uint16) ([]bool, error) {
 		return nil, errors.New("modbus: invalid response length")
 	}
 	byteCount := int(response[1])
-	if len(response) != 2+byteCount {
+	// 校验 byteCount 与请求数量一致，防止恶意响应构造过短字节数导致越界读取。
+	if byteCount != (int(quantity)+7)/8 || len(response) != 2+byteCount {
 		return nil, errors.New("modbus: response data length mismatch")
 	}
 
@@ -309,7 +318,8 @@ func (c *Master) ReadDiscreteInputs(address, quantity uint16) ([]bool, error) {
 		return nil, errors.New("modbus: invalid response length")
 	}
 	byteCount := int(response[1])
-	if len(response) != 2+byteCount {
+	// 校验 byteCount 与请求数量一致，防止恶意响应构造过短字节数导致越界读取。
+	if byteCount != (int(quantity)+7)/8 || len(response) != 2+byteCount {
 		return nil, errors.New("modbus: response data length mismatch")
 	}
 
@@ -502,7 +512,8 @@ func (c *Master) WriteSingleRegister(address uint16, value uint16) error {
 
 // WriteMultipleCoils 写入多个线圈 (功能码 0x0F)
 func (c *Master) WriteMultipleCoils(address uint16, values []bool) error {
-	quantity := uint16(len(values))
+	// 用 int 参与校验，避免 len(values)>65535 时 uint16 截断绕过数量上限。
+	quantity := len(values)
 	if quantity < 1 || quantity > 1968 {
 		return errors.New("modbus: quantity must be between 1 and 1968")
 	}
@@ -512,13 +523,13 @@ func (c *Master) WriteMultipleCoils(address uint16, values []bool) error {
 	pdu[0] = FuncCodeWriteMultipleCoils
 	pdu[1] = byte(address >> 8)
 	pdu[2] = byte(address)
-	pdu[3] = byte(quantity >> 8)
-	pdu[4] = byte(quantity)
+	pdu[3] = byte(uint16(quantity) >> 8)
+	pdu[4] = byte(uint16(quantity))
 	pdu[5] = byte(byteCount)
 
 	// 打包线圈状态
-	for i := uint16(0); i < quantity; i++ {
-		byteIndex := 6 + int(i/8)
+	for i := 0; i < quantity; i++ {
+		byteIndex := 6 + i/8
 		bitIndex := i % 8
 		if values[i] {
 			pdu[byteIndex] |= 1 << bitIndex
@@ -544,18 +555,19 @@ func (c *Master) WriteMultipleCoils(address uint16, values []bool) error {
 
 // WriteMultipleRegisters 写入多个寄存器 (功能码 0x10)
 func (c *Master) WriteMultipleRegisters(address uint16, values []uint16) error {
-	quantity := uint16(len(values))
+	// 用 int 参与校验，避免 len(values)>65535 时 uint16 截断绕过上限导致 pdu 越界写。
+	quantity := len(values)
 	if quantity < 1 || quantity > 123 {
 		return errors.New("modbus: quantity must be between 1 and 123")
 	}
 
 	byteCount := quantity * 2
-	pdu := make([]byte, 6+int(byteCount))
+	pdu := make([]byte, 6+byteCount)
 	pdu[0] = FuncCodeWriteMultipleRegisters
 	pdu[1] = byte(address >> 8)
 	pdu[2] = byte(address)
-	pdu[3] = byte(quantity >> 8)
-	pdu[4] = byte(quantity)
+	pdu[3] = byte(uint16(quantity) >> 8)
+	pdu[4] = byte(uint16(quantity))
 	pdu[5] = byte(byteCount)
 
 	// 打包寄存器值

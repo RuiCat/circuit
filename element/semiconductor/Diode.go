@@ -90,7 +90,10 @@ func (Diode) Reset(base element.NodeFace) {
 	} else {
 		// 计算偏移量，使得在Vz时有-5mA电流
 		i := -0.005 // -5mA
-		zoffset = Vz - math.Log(-(1+i/Is))/base.GetFloat64(9)
+		// 对数参数 -(1+i/Is) 必须为正；Is 过大（>=5mA）时为非正，回退到 0 避免 NaN 污染矩阵。
+		if logArg := -(1 + i/Is); logArg > 0 {
+			zoffset = Vz - math.Log(logArg)/base.GetFloat64(9)
+		}
 
 		// 齐纳临界电压
 		vzcrit = Vt * math.Log(Vt/(math.Sqrt(2)*Is))

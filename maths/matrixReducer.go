@@ -256,10 +256,13 @@ func (p *sparseMatrixPruner[T]) RemoveZeroRows() Matrix[T] {
 	copy(colIndCopy, p.colIndBuf)
 	valuesCopy := make([]T, len(p.valuesBuf))
 	copy(valuesCopy, p.valuesBuf)
+	// rowPtr 也必须深拷贝，否则返回矩阵与 pruner 内部缓冲区别名，二次操作会破坏先前结果。
+	rowPtrCopy := make([]int, newRows+1)
+	copy(rowPtrCopy, newRowPtr[:newRows+1])
 	prunedMat := &sparseMatrix[T]{
 		rows:        newRows,
 		cols:        origCols,
-		rowPtr:      newRowPtr,
+		rowPtr:      rowPtrCopy,
 		colInd:      colIndCopy,
 		DataManager: NewDataManagerWithData(valuesCopy),
 	}
@@ -356,10 +359,13 @@ func (p *sparseMatrixPruner[T]) RemoveZeroCols() Matrix[T] {
 	copy(colIndCopy, newColInd[:newIdx])
 	valuesCopy := make([]T, newIdx)
 	copy(valuesCopy, newValues[:newIdx])
+	// rowPtr 也必须深拷贝，避免返回矩阵与 pruner 内部缓冲区别名。
+	rowPtrCopy := make([]int, origRows+1)
+	copy(rowPtrCopy, newRowPtr[:origRows+1])
 	prunedMat := &sparseMatrix[T]{
 		rows:        origRows,
 		cols:        newCols,
-		rowPtr:      newRowPtr,
+		rowPtr:      rowPtrCopy,
 		colInd:      colIndCopy,
 		DataManager: NewDataManagerWithData(valuesCopy),
 	}

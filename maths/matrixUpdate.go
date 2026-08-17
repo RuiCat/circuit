@@ -238,8 +238,12 @@ func (um *updateMatrix[T]) GetRow(row int) ([]int, Vector[T]) {
 		// 优先从缓存读取
 		if um.isBitSet(row, j) {
 			blockIdx, pos := um.getBlockIndexAndPosition(row, j)
-			// A block should exist if the bit is set
-			val = um.cache[blockIdx][pos]
+			// 位图标记与缓存不一致时回退到底层矩阵，避免静默读取零值。
+			if block, exists := um.cache[blockIdx]; exists {
+				val = block[pos]
+			} else {
+				val = um.Matrix.Get(row, j)
+			}
 		} else {
 			// 缓存未命中，从底层矩阵读取
 			val = um.Matrix.Get(row, j)

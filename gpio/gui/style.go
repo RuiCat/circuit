@@ -331,12 +331,13 @@ func (a *Animator) Resolve(id string, current any) any {
 	}
 
 	if entry.done {
+		delete(a.entries, id)
 		return entry.to
 	}
 
 	elapsed := time.Since(entry.start)
 	if elapsed >= entry.dur {
-		entry.done = true
+		delete(a.entries, id)
 		return entry.to
 	}
 
@@ -355,10 +356,11 @@ func (a *Animator) IsDone(id string) bool {
 		return true
 	}
 	if entry.done {
+		delete(a.entries, id)
 		return true
 	}
 	if time.Since(entry.start) >= entry.dur {
-		entry.done = true
+		delete(a.entries, id)
 		return true
 	}
 	return false

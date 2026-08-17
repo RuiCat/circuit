@@ -17,6 +17,9 @@ func (v *denseVector[T]) Base() Vector[T] {
 
 // NewDenseVector 创建指定长度的空稠密向量
 func NewDenseVector[T Number](length int) Vector[T] {
+	if length < 0 {
+		panic(fmt.Sprintf("maths: NewDenseVector 负长度 %d", length))
+	}
 	return &denseVector[T]{
 		dataManager: &dataManager[T]{
 			data: make([]T, length),

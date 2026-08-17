@@ -34,6 +34,10 @@ func (bw *BlockWriter) WriteBlock(dt, x int, rawData []byte) error {
 		return fmt.Errorf("压缩数据失败: %w", err)
 	}
 
+	// 写入前校验字段可被 uint32 表示，防止截断写入不一致的头部。
+	if dt < 0 || x < 0 || uint64(dt) > 0xFFFFFFFF || uint64(x) > 0xFFFFFFFF || uint64(len(compressed)) > 0xFFFFFFFF {
+		return fmt.Errorf("doublebuffer: 块字段超出 uint32 范围 dt=%d x=%d len=%d", dt, x, len(compressed))
+	}
 	// 写入头部
 	header := make([]byte, 16)
 	binary.LittleEndian.PutUint32(header[0:4], blockMagic)

@@ -15,6 +15,12 @@ type MatrixDataManager[T Number] struct {
 // NewMatrixDataManager 创建并初始化一个新的 MatrixDataManager。
 // 参数 rows 和 cols 指定了矩阵的维度。
 func NewMatrixDataManager[T Number](rows, cols int) *MatrixDataManager[T] {
+	if rows < 0 || cols < 0 {
+		panic(fmt.Sprintf("maths: NewMatrixDataManager 负维度 rows=%d cols=%d", rows, cols))
+	}
+	if uint64(rows)*uint64(cols) > uint64(^uint(0)>>1) {
+		panic(fmt.Sprintf("maths: NewMatrixDataManager 尺寸溢出 rows=%d cols=%d", rows, cols))
+	}
 	return &MatrixDataManager[T]{
 		DataManager: NewDataManager[T](rows * cols), // 初始化一维数据切片
 		rows:        rows,
@@ -51,18 +57,27 @@ func (mdm *MatrixDataManager[T]) IsSquare() bool {
 // GetMatrix 获取指定行列位置的元素值。
 // 它将二维索引（row, col）转换为一维索引。
 func (mdm *MatrixDataManager[T]) GetMatrix(row, col int) T {
+	if row < 0 || row >= mdm.rows || col < 0 || col >= mdm.cols {
+		panic(fmt.Sprintf("maths: GetMatrix 越界 row=%d col=%d (rows=%d cols=%d)", row, col, mdm.rows, mdm.cols))
+	}
 	return mdm.Get(row*mdm.cols + col)
 }
 
 // SetMatrix 设置指定行列位置的元素值。
 // 它将二维索引（row, col）转换为一维索引。
 func (mdm *MatrixDataManager[T]) SetMatrix(row, col int, value T) {
+	if row < 0 || row >= mdm.rows || col < 0 || col >= mdm.cols {
+		panic(fmt.Sprintf("maths: SetMatrix 越界 row=%d col=%d (rows=%d cols=%d)", row, col, mdm.rows, mdm.cols))
+	}
 	mdm.Set(row*mdm.cols+col, value)
 }
 
 // IncrementMatrix 原子性地增加指定行列位置的元素值。
 // 它将二维索引（row, col）转换为一维索引。
 func (mdm *MatrixDataManager[T]) IncrementMatrix(row, col int, value T) {
+	if row < 0 || row >= mdm.rows || col < 0 || col >= mdm.cols {
+		panic(fmt.Sprintf("maths: IncrementMatrix 越界 row=%d col=%d (rows=%d cols=%d)", row, col, mdm.rows, mdm.cols))
+	}
 	mdm.Increment(row*mdm.cols+col, value)
 }
 

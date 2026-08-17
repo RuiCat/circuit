@@ -145,6 +145,10 @@ func (r *Renderer3D) project(v Vec3) (int, int) {
 	// 归一化设备坐标到屏幕坐标
 	screenX := (projPos.X + 1) * float64(r.screenW) / 2
 	screenY := (1 - projPos.Y) * float64(r.screenH) / 2 // Y轴翻转
+	// 防止 NaN/Inf 经 int() 转换为实现定义值（amd64 得 MinInt64），导致扫描线近无限循环。
+	if math.IsNaN(screenX) || math.IsInf(screenX, 0) || math.IsNaN(screenY) || math.IsInf(screenY, 0) {
+		return 0, 0
+	}
 	return int(screenX + 0.5), int(screenY + 0.5)
 }
 
@@ -227,6 +231,10 @@ func (r *Renderer3D) DrawCube(center Vec3, size float64, color Color, wireframe 
 func (r *Renderer3D) DrawSphere(center Vec3, radius float64, color Color, segments int, wireframe bool, lineWidth DotPixel) {
 	if segments < 4 {
 		segments = 4
+	}
+	// 限制上限，防止 (segments+1)² 个顶点导致 OOM。
+	if segments > 256 {
+		segments = 256
 	}
 	// 生成球体顶点
 	var vertices [][]Vec3

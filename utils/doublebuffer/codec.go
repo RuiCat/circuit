@@ -48,6 +48,9 @@ func (fc *FlatCodec[T]) Decode(encoded []byte) ([][]T, error) {
 	}
 	dt := int(binary.LittleEndian.Uint32(encoded[0:4]))
 	x := int(binary.LittleEndian.Uint32(encoded[4:8]))
+	if elemSize := int(encoded[8]); elemSize != sizeOf[T]() {
+		return nil, fmt.Errorf("FlatCodec: 元素大小 %d 与类型不符", elemSize)
+	}
 	raw, err := fc.compressor.Decompress(encoded[9:])
 	if err != nil {
 		return nil, err
@@ -134,6 +137,17 @@ func (rc *RLECompressor[T]) Decode(encoded []byte) ([][]T, error) {
 	elemSize := int(encoded[8])
 	payload := encoded[9:]
 
+	// 校验头部字段，防止恶意数据触发越界/OOM。
+	if err := validateDecodeDims(dt, x, elemSize); err != nil {
+		return nil, err
+	}
+	if elemSize != sizeOf[T]() {
+		return nil, fmt.Errorf("RLE: 元素大小 %d 与类型不符", elemSize)
+	}
+	if dt == 0 || x == 0 {
+		return [][]T{}, nil
+	}
+
 	result := make([][]T, dt)
 	for row := 0; row < dt; row++ {
 		result[row] = make([]T, x)
@@ -151,7 +165,10 @@ func (rc *RLECompressor[T]) Decode(encoded []byte) ([][]T, error) {
 		prev := base
 		row := 1
 
-		for row < dt && offset < len(payload) {
+		for row < dt {
+			if offset >= len(payload) {
+				return nil, fmt.Errorf("RLE: 数据截断，第 %d 列第 %d 行", col, row)
+			}
 			tag := payload[offset]
 			offset++
 			switch tag {
@@ -184,18 +201,16 @@ func (rc *RLECompressor[T]) Decode(encoded []byte) ([][]T, error) {
 					row++
 				}
 			case rleTagEndCol:
-				goto nextColDone
+				// 行未填满就遇到列结束标签，说明数据损坏
+				return nil, fmt.Errorf("RLE: 第 %d 列在第 %d 行提前结束", col, row)
+			default:
+				return nil, fmt.Errorf("RLE: 未知标签 0x%02X", tag)
 			}
 		}
-		for row < dt {
-			result[row][col] = prev
-			row++
-		}
-		// 如果循环因 row == dt 退出，跳过尚未消费的 END_COL 标签
+		// 消费本列的 END_COL 标签
 		if offset < len(payload) && payload[offset] == rleTagEndCol {
 			offset++
 		}
-	nextColDone:
 	}
 	return result, nil
 }

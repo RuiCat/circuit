@@ -1,6 +1,8 @@
 // Package vm 提供基于 RISC-V RV32IMAFDC 指令集的虚拟机实现。支持整数(I)、乘除(M)、原子(A)、单精度(F)、双精度(D)、压缩(C)扩展和向量(V)扩展草案，包含 Sv32 MMU 虚拟内存管理和设备映射机制。
 package vm
 
+import "fmt"
+
 // VmErr 定义了虚拟机可能出现的错误类型
 type VmErr int
 
@@ -54,6 +56,10 @@ type VmState struct {
 
 // NewVmState 创建并初始化一个新的虚拟机状态实例。
 func NewVmState(VmMemorySize uint32) *VmState {
+	// 校验内存尺寸：过小会导致栈指针下溢出 RAM，过大会导致 base+size 溢出 uint32 或分配失败。
+	if VmMemorySize < 16 || VmMemorySize > 0x7FFFFFF0 {
+		panic(fmt.Sprintf("vm: 非法内存尺寸 %d（需在 16 ~ 0x7FFFFFF0 之间）", VmMemorySize))
+	}
 	vmst := &VmState{
 		Memory: Memory{
 			Data:           make([]byte, int(VmMemorySize)),

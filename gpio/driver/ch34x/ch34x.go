@@ -1307,9 +1307,10 @@ func (lib *library) UartGetCfg(fd int) (baudRate uint32, byteSize, parity, stopB
 // findLibPath 定位 CH34x 动态库文件 (.so / .dll)。
 // 查找优先级：
 //  1. 环境变量 CH34X_LIB_PATH（推荐生产部署使用绝对路径）
-//  2. 相对于工作目录的 lib/<arch>/libch347.so
-//  3. 系统库路径 /usr/lib/ 和 /usr/local/lib/
-//  4. 从二进制内嵌库中提取到临时目录（通过 go:embed 编译时嵌入）
+//  2. 系统库路径 /usr/lib/ 和 /usr/local/lib/
+//  3. 从二进制内嵌库中提取到临时目录（通过 go:embed 编译时嵌入）
+//
+// 注意：不再搜索工作目录相对路径，避免从攻击者可控目录加载恶意库（DLL/so 劫持）。
 func findLibPath() string {
 
 	// 1. 环境变量优先
@@ -1319,12 +1320,10 @@ func findLibPath() string {
 		}
 	}
 
-	baseDir := archDirName()
 	libName := libFileName()
 
-	// 2-3. 工作目录相对路径 及 系统路径
+	// 2. 系统路径
 	candidates := []string{
-		filepath.Join(baseDir, libName),
 		filepath.Join("/usr/lib", libName),
 		filepath.Join("/usr/local/lib", libName),
 	}
@@ -1335,20 +1334,21 @@ func findLibPath() string {
 		}
 	}
 
-	// 4. 从二进制内嵌库中提取（跨平台自动选择对应架构的 .so）
+	// 3. 从二进制内嵌库中提取（跨平台自动选择对应架构的 .so）
 	if libPath := extractEmbeddedLib(); libPath != "" {
 		return libPath
 	}
 
-	// 均失败：返回默认路径（让 dlopen 报清晰错误）
-	return filepath.Join(baseDir, libName)
+	// 均失败：返回空路径（让 dlopen 报清晰错误）
+	return ""
 }
 
 // extractEmbeddedLib 将编译时内嵌的动态库提取到临时目录并返回路径。
 // 若当前平台无内嵌库则返回空字符串。
 func extractEmbeddedLib() string {
-	tmpDir := filepath.Join(os.TempDir(), "circuit_ch34x")
-	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+	// 使用 0700 的私有临时目录，避免 /tmp 下被预创建目录或符号链接劫持后覆盖任意文件。
+	tmpDir, err := os.MkdirTemp("", "circuit_ch34x-*")
+	if err != nil {
 		return ""
 	}
 	p, err := lib.Extract(tmpDir)

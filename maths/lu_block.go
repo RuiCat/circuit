@@ -111,6 +111,10 @@ func (lu *luBlock[T]) baseCaseLU(A Matrix[T]) error {
 				maxRow = i
 			}
 		}
+		// 防止 NaN/Inf 主元绕过奇异检测（NaN 与任何值比较均为 false）。
+		if !IsValidFloat64(maxAbs) {
+			return errors.New("matrix contains NaN/Inf pivot")
+		}
 		if maxAbs < Epsilon {
 			return errors.New("matrix is singular or nearly singular")
 		}

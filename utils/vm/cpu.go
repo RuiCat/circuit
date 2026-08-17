@@ -319,9 +319,13 @@ func (vmst *VmState) TranslateAddress(vaddr uint32, accessType int) (uint32, VmM
 	vpn0 := (vaddr >> 12) & 0x3FF
 	offset := vaddr & 0xFFF
 
-	ptbr := uint32(uint64(vmst.Core.Satp & 0x3FFFFF) * 4096)
-	pte1_addr := ptbr + vpn1*4
-	pte1, ok := vmst.LoadUint32(pte1_addr)
+	// 用 uint64 计算物理地址，保留 Sv32 的 34 位物理地址空间，避免 uint32 截断导致页别名。
+	ptbr := uint64(vmst.Core.Satp&0x3FFFFF) * 4096
+	pte1Addr := ptbr + uint64(vpn1)*4
+	if pte1Addr > math.MaxUint32 {
+		return 0, pageFault(accessType)
+	}
+	pte1, ok := vmst.LoadUint32(uint32(pte1Addr))
 	if !ok {
 		return 0, pageFault(accessType)
 	}
@@ -337,16 +341,19 @@ func (vmst *VmState) TranslateAddress(vaddr uint32, accessType int) (uint32, VmM
 			return 0, pageFault(accessType)
 		}
 		ppn1 := (pte1 >> 20) & 0xFFF
-		paddr := (ppn1 << 22) | (vaddr & 0x3FFFFF)
-		return paddr, CAUSE_TRAP_CODE_OK
+		paddr := uint64(ppn1)<<22 | uint64(vaddr&0x3FFFFF)
+		if paddr < uint64(vmst.RamImageOffSet) || paddr >= uint64(vmst.RamImageOffSet)+uint64(vmst.VmMemorySize) {
+			return 0, pageFault(accessType)
+		}
+		return uint32(paddr), CAUSE_TRAP_CODE_OK
 	}
 
 	ppn0 := (pte1 >> 10) & 0x3FFFFF
-	pte0_addr := (ppn0 * 4096) + vpn0*4
-
-	// 不再对 pte0_addr 进行 VmMemorySize 边界检查：LoadUint32 内部已包含完整的地址验证，
-	// 额外的硬编码检查会错误拒绝合法的页表物理地址。
-	pte0, ok := vmst.LoadUint32(pte0_addr)
+	pte0Addr := uint64(ppn0)*4096 + uint64(vpn0)*4
+	if pte0Addr > math.MaxUint32 {
+		return 0, pageFault(accessType)
+	}
+	pte0, ok := vmst.LoadUint32(uint32(pte0Addr))
 	if !ok {
 		return 0, pageFault(accessType)
 	}
@@ -358,9 +365,12 @@ func (vmst *VmState) TranslateAddress(vaddr uint32, accessType int) (uint32, VmM
 		return 0, pageFault(accessType)
 	}
 
-	final_paddr := ((pte0>>10)&0x3FFFFF)*4096 + offset
-	// 【修改】：删除 final_paddr >= vmst.VmMemorySize 检查
-	return final_paddr, CAUSE_TRAP_CODE_OK
+	finalPaddr := uint64((pte0>>10)&0x3FFFFF)*4096 + uint64(offset)
+	// 恢复物理地址边界检查：超出 RAM 范围按页错误处理，防止页别名/越界。
+	if finalPaddr < uint64(vmst.RamImageOffSet) || finalPaddr >= uint64(vmst.RamImageOffSet)+uint64(vmst.VmMemorySize) {
+		return 0, pageFault(accessType)
+	}
+	return uint32(finalPaddr), CAUSE_TRAP_CODE_OK
 }
 
 // pageFault 根据访问类型返回相应的页错误代码。

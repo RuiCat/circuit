@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"image/color"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,7 +38,11 @@ func (m *tuiModel) cmdPlot(args []string) {
 
 	filename := "plot.png"
 	if len(args) >= 2 {
-		filename = args[1]
+		// 只取 basename，防止路径遍历写任意位置。
+		base := filepath.Base(args[1])
+		if base != "." && base != string(filepath.Separator) && base != "" {
+			filename = base
+		}
 		if !strings.HasSuffix(filename, ".png") {
 			filename += ".png"
 		}

@@ -71,7 +71,13 @@ func (Transistor) Reset(base element.NodeFace) {
 	// 计算临界电压
 	thermalVoltage := base.GetFloat64(13) // 电子热电压 (27°C = 300.15K)
 	csat := base.GetFloat64(14)
-	vcrit := thermalVoltage * math.Log(thermalVoltage/(math.Sqrt(2)*csat))
+	vcrit := 0.7 // 默认值
+	// 对数参数必须为正；thermalVoltage/csat 非法（<=0）时回退到默认值避免 NaN/Inf。
+	if thermalVoltage > 0 && csat > 0 {
+		if arg := thermalVoltage / (math.Sqrt(2) * csat); arg > 0 {
+			vcrit = thermalVoltage * math.Log(arg)
+		}
+	}
 	base.SetFloat64(5, vcrit)
 	// 设置最小电导
 	base.SetFloat64(9, 1e-12)

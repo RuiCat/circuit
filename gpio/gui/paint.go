@@ -442,7 +442,8 @@ func (p *Paint) DrawImage(x, y int, image []Color, imgWidth, imgHeight int) {
 	if x < 0 || x >= p.Width || y < 0 || y >= p.Height {
 		return
 	}
-	if len(image) < imgWidth*imgHeight {
+	// 用 int64 校验，防止 imgWidth*imgHeight 溢出后绕过长度检查导致负索引。
+	if imgWidth <= 0 || imgHeight <= 0 || int64(imgWidth)*int64(imgHeight) > int64(len(image)) {
 		return
 	}
 	for j := range imgHeight {
@@ -485,6 +486,9 @@ func (p *Paint) DrawTime(x, y int, pt *PaintTime, face font.Face, bgColor, fgCol
 		return
 	}
 	// 输入验证：防止越界
+	if pt == nil {
+		return
+	}
 	// 防止 Hour>=100 时 digits[Hour/10] 索引越界 panic
 	if pt.Hour > 99 || pt.Min > 59 || pt.Sec > 59 {
 		return
@@ -880,6 +884,11 @@ func (p *Paint) fillPolygon(points [][2]int, color Color) {
 		if pt[1] > maxY {
 			maxY = pt[1]
 		}
+	}
+	// 防止异常顶点导致边表无限分配：限制 y 跨度为画布高度的合理倍数。
+	// maxY-minY<0 同时捕获整数减法溢出（maxY 与 minY 分居极值时回绕为负）。
+	if maxY-minY < 0 || maxY-minY > p.Height*4 {
+		return
 	}
 	// 边表（ET）：按边的较小y坐标索引
 	et := make([][]edge, maxY-minY+1)

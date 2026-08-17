@@ -265,10 +265,12 @@ func NewParseTreeDirect(r io.Reader) (parseTree *ParseTree, err error) {
 // parseValueListFromScanner 从 scanner 解析值列表
 func parseValueListFromScanner(scanner *bufio.Scanner, lineNum int) ([]Value, error) {
 	var values []Value
+	closed := false
 	for scanner.Scan() {
 		token := scanner.Text()
 		// 如果遇到 ]，表示列表结束
 		if token == tokenRBracket {
+			closed = true
 			break
 		}
 		// 跳过逗号分隔符、空格和制表符
@@ -290,6 +292,10 @@ func parseValueListFromScanner(scanner *bufio.Scanner, lineNum int) ([]Value, er
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("读取值列表时出错: %w", err)
+	}
+	// 到 EOF 仍未遇 ]，说明列表未闭合，报错而不是静默吞掉后续网表。
+	if !closed {
+		return nil, fmt.Errorf("第 %d 行: 值列表缺少结束标记 ]", lineNum)
 	}
 	return values, nil
 }

@@ -37,8 +37,7 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 		return nil, fmt.Errorf("总线展开失败: %w", err)
 	}
 
-	// 防止展开后文本过大
-	const maxExpandedSize = 200 * 1024 * 1024 // 200MB
+	// 防止展开后文本过大（ExpandBusNotation 内部已做增量检查，此处为双保险）
 	if len(expandedText) > maxExpandedSize {
 		return nil, fmt.Errorf("展开后网表过大: %d 字节（最大 %d 字节）", len(expandedText), maxExpandedSize)
 	}
@@ -67,8 +66,13 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 	maxExternalNodeID := mna.NodeID(0)
 	for _, elem := range parseTree.ElementNodes {
 		for _, pin := range elem.Pins {
-			if id, err := strconv.Atoi(pin.Value); err == nil && mna.NodeID(id) > maxExternalNodeID {
-				maxExternalNodeID = mna.NodeID(id)
+			if id, err := strconv.Atoi(pin.Value); err == nil {
+				if id < -1 || id > maxRawNodeID {
+					return nil, fmt.Errorf("第 %d 行: 节点号 %d 超出合法范围（-1 ~ %d）", elem.Line, id, maxRawNodeID)
+				}
+				if mna.NodeID(id) > maxExternalNodeID {
+					maxExternalNodeID = mna.NodeID(id)
+				}
 			}
 		}
 	}
@@ -162,6 +166,9 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 			if err != nil {
 				return nil, fmt.Errorf("第 %d 行: 引脚 %d 的节点ID无效 '%s'", elemNode.Line, i, elemNode.Pins[i].Value)
 			}
+			if nodeID < -1 || nodeID > maxRawNodeID {
+				return nil, fmt.Errorf("第 %d 行: 引脚 %d 的节点号 %d 超出合法范围（-1 ~ %d）", elemNode.Line, i, nodeID, maxRawNodeID)
+			}
 			instance.SetNodePin(i, mna.NodeID(nodeID))
 			if mna.NodeID(nodeID) > maxNodeID {
 				maxNodeID = mna.NodeID(nodeID)
@@ -240,6 +247,11 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 
 	nodesNum := int(currentInternalNodeID)
 	voltageSourcesNum := int(currentVoltageID)
+
+	// 校验矩阵总维度，防止 O(n²) 稠密分配耗尽内存。
+	if totalDim := nodesNum + voltageSourcesNum; totalDim > maxNodeCount {
+		return nil, fmt.Errorf("电路规模过大: %d 个节点/电压源（上限 %d）", totalDim, maxNodeCount)
+	}
 
 	// === 第五阶段：创建上下文 ===
 	con = &element.Context{}
@@ -420,6 +432,14 @@ func setElementValues(element element.NodeFace, values []ast.Value, parseTree *a
 // maxSubCircuitDepth 是子电路嵌套展开的最大允许深度，
 // 用于防止无限递归或过深的嵌套导致栈溢出。
 const maxSubCircuitDepth = 100
+
+// maxNodeCount MNA 稠密矩阵总维度（节点数+电压源数）上限。
+// 该实现使用稠密矩阵，分配规模为 O(n²)，需限制 n 防止恶意网表耗尽内存。
+const maxNodeCount = 5000
+
+// maxRawNodeID 网表原始节点号的上限（防止 nextNodeID 整数回绕为负）。
+// 原始节点号经压缩后映射为 0..N-1，此上限仅用于防回绕，设置得足够宽裕。
+const maxRawNodeID = 1 << 31
 
 // buildSubcircuitMap 递归收集所有 SubCircuitDefs 到 flat lookup map（大小写不敏感）
 func buildSubcircuitMap(defs []*ast.SubCircuitDef) map[string]*ast.SubCircuitDef {

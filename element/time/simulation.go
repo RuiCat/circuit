@@ -324,8 +324,14 @@ func extractAndValidateVoltages(mnaSolver mna.Mna, nodesNum int, voltageSourcesN
 	if len(voltages) < totalVars {
 		return false
 	}
-	for i := mna.NodeID(0); i < mna.NodeID(totalVars); i++ {
-		voltages[i] = mnaSolver.GetNodeVoltage(i)
+	for i := 0; i < totalVars; i++ {
+		if i < nodesNum {
+			voltages[i] = mnaSolver.GetNodeVoltage(mna.NodeID(i))
+		} else {
+			// 电压源电流分量：GetNodeVoltage 只覆盖节点区（对 i>=NodesNum 恒返回 0），
+			// 需改用 GetVoltageSourceCurrent 读取真实电流并检测 NaN/Inf。
+			voltages[i] = mnaSolver.GetVoltageSourceCurrent(mna.VoltageID(i - nodesNum))
+		}
 		if math.IsNaN(voltages[i]) || math.IsInf(voltages[i], 0) {
 			allValid = false
 			break

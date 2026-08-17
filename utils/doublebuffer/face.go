@@ -1,7 +1,10 @@
 // Package doublebuffer 提供泛型双缓冲存储机制，用于仿真数据的采集与持久化。两个缓冲区交替工作，支持 Zlib/DeltaZlib/Noop/RLE 四种压缩编码器，提供 BlockWriter/BlockReader 二进制块文件读写和环形缓冲示波器功能。
 package doublebuffer
 
-import "io"
+import (
+	"fmt"
+	"io"
+)
 
 // Number 电压值类型约束，只支持浮点类型
 type Number interface {
@@ -88,4 +91,35 @@ type BlockCodec[T Number] interface {
 	Encode(data [][]T) ([]byte, error)
 	// Decode 将编码字节流解码为二维数据
 	Decode(encoded []byte) ([][]T, error)
+}
+
+// 解码安全上限：文件头部字段（dt/x/elemSize）来自不可信数据，必须在分配前校验，
+// 否则恶意/损坏的波形文件可触发越界访问或进程级 OOM。
+const (
+	// maxDecodeRows 允许的最大块行数，防止 make([][]T, dt) 切片头分配 OOM。
+	maxDecodeRows = 1 << 20 // 1,048,576
+	// maxDecodeCols 允许的最大块列数，防止 make([]T, x) 分配 OOM。
+	maxDecodeCols = 1 << 20 // 1,048,576
+	// maxDecodeElements 允许的最大元素总数 (dt*x)，约 256MB (float64)。
+	maxDecodeElements = 1 << 25 // 33,554,432
+	// maxDecompressedSize zlib 解压输出上限，防止解压炸弹。
+	maxDecompressedSize = 512 << 20 // 512 MB
+)
+
+// validateDecodeDims 校验解码头部中的 dt/x/elemSize。
+// 防止负维度、非法元素大小与无界分配（越界访问 / OOM）。
+func validateDecodeDims(dt, x, elemSize int) error {
+	if dt < 0 || x < 0 {
+		return fmt.Errorf("doublebuffer: 非法维度 dt=%d x=%d", dt, x)
+	}
+	if elemSize != 4 && elemSize != 8 {
+		return fmt.Errorf("doublebuffer: 非法元素大小 %d", elemSize)
+	}
+	if dt > maxDecodeRows || x > maxDecodeCols {
+		return fmt.Errorf("doublebuffer: 维度超出上限 dt=%d x=%d", dt, x)
+	}
+	if uint64(dt)*uint64(x) > maxDecodeElements {
+		return fmt.Errorf("doublebuffer: 元素总数超出上限 dt=%d x=%d", dt, x)
+	}
+	return nil
 }

@@ -197,6 +197,8 @@ func (sc *StampCollector) Flush(target Stamp[float64]) {
 			target.IncrementVoltageSource(r.ID1, r.Value)
 		}
 	}
+	// 清空记录，防止同一收集器被重复 Flush 时二次盖章导致矩阵错误。
+	sc.Records = sc.Records[:0]
 }
 
 // FlushToMNA 将收集的盖章操作应用到MNA求解器

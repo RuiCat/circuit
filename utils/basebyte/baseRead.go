@@ -130,6 +130,10 @@ func baseRead(r *Read, v reflect.Value) error {
 		if r.Error != nil {
 			return r.Error
 		}
+		// 校验条目数非负且不超过剩余可读字节，防止异常数据导致死循环/越界。
+		if count < 0 || count > len(r.Byte)-r.Offset {
+			return ErrInvalidData
+		}
 
 		key := reflect.New(t.Key()).Elem()
 		value := reflect.New(t.Elem()).Elem()
@@ -160,6 +164,10 @@ func baseRead(r *Read, v reflect.Value) error {
 		n := r.Int()
 		if r.Error != nil {
 			return r.Error
+		}
+		// 分配前校验长度非负且不超过剩余可读字节，防止 makeslice panic / OOM。
+		if n < 0 || n > len(r.Byte)-r.Offset {
+			return ErrInvalidData
 		}
 		v.Set(reflect.MakeSlice(v.Type(), n, n))
 		for i := range n {

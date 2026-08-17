@@ -91,10 +91,10 @@ func (f *flagImpl) ReleaseEvent(flag FlagValue) bool {
 	}
 	// 标记为已释放
 	f.released[flag] = true
-	// Signal() 替代 Broadcast() 避免惊群效应，TODO: 为每个标记使用独立条件变量
-	// 通知单个等待的 goroutine，避免惊群效应
-	// TODO: 为每个标记使用独立的条件变量，完全消除惊群效应
-	f.cond.Signal()
+	// 多个不同 flag 共享同一条件变量，Signal 只唤醒一个等待者，可能唤醒到等待
+	// 其他 flag 的 goroutine，导致被释放 flag 的等待者永久阻塞（信号丢失）。改用
+	// Broadcast 唤醒全部等待者，各自检查自己的 flag；不匹配者重新 Wait。
+	f.cond.Broadcast()
 	return true
 }
 

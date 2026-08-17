@@ -44,6 +44,13 @@ type doubleBuffer[T Number] struct {
 // n: 每个缓冲区的最大行数
 // x: 每行的节点数量（电压值数量）
 func NewBuffer[T Number](n, x int) Buffer[T] {
+	// 校验参数，防止 n/x 为负、为零或乘积过大导致构造期 panic/OOM。
+	if n < 1 || x < 1 {
+		panic(fmt.Sprintf("doublebuffer: NewBuffer 需要 n>=1 且 x>=1, 收到 n=%d x=%d", n, x))
+	}
+	if uint64(n)*uint64(x) > maxDecodeElements {
+		panic(fmt.Sprintf("doublebuffer: NewBuffer 尺寸过大 n=%d x=%d", n, x))
+	}
 	db := &doubleBuffer[T]{
 		n:          n,
 		x:          x,
@@ -185,24 +192,29 @@ func (db *doubleBuffer[T]) BlockCount() int {
 
 // TotalRows 返回当前存储的总数据行数（包括活跃缓冲和已保存块）
 func (db *doubleBuffer[T]) TotalRows() int {
-	total := db.dt
+	// 用 uint64 累加，防止极端块数×行数导致 int 溢出回绕为负。
+	total := uint64(db.dt)
 
 	if db.maxBlocks <= 0 || len(db.savedBlocks) == 0 {
-		return total
+		return int(total)
 	}
 
 	if len(db.savedBlocks) < db.maxBlocks {
 		for _, block := range db.savedBlocks {
-			total += len(block)
+			total += uint64(len(block))
 		}
 	} else {
 		for i := 0; i < db.maxBlocks; i++ {
 			idx := (db.blockRing + i) % db.maxBlocks
-			total += len(db.savedBlocks[idx])
+			total += uint64(len(db.savedBlocks[idx]))
 		}
 	}
 
-	return total
+	// 饱和到 int 上限，避免回绕。
+	if total > uint64(^uint(0)>>1) {
+		return int(^uint(0) >> 1)
+	}
+	return int(total)
 }
 
 // LastRows 返回最近 n 行数据（跨块查询），用于交互式查询最新电压
@@ -484,8 +496,11 @@ func flatten[T Number](data [][]T) ([]byte, error) {
 		}
 	}
 	elemSize := sizeOf[T]()
-	total := rows * cols * elemSize
-	buf := make([]byte, total)
+	total := uint64(rows) * uint64(cols) * uint64(elemSize)
+	if total > uint64(^uint(0)>>1) {
+		return nil, fmt.Errorf("doublebuffer: 展平数据过大 rows=%d cols=%d", rows, cols)
+	}
+	buf := make([]byte, int(total))
 	offset := 0
 	for i := 0; i < rows; i++ {
 		for j := 0; j < cols; j++ {
@@ -513,8 +528,13 @@ func flatten[T Number](data [][]T) ([]byte, error) {
 // unflatten 将 []byte 按行优先还原为 [][]T
 func unflatten[T Number](raw []byte, dt, x int) ([][]T, error) {
 	elemSize := sizeOf[T]()
-	expectedLen := dt * x * elemSize
-	if len(raw) != expectedLen {
+	// 先校验维度，防止负值/超大维度绕过长度校验触发 OOM。
+	if err := validateDecodeDims(dt, x, elemSize); err != nil {
+		return nil, err
+	}
+	// 用 uint64 计算期望长度，避免 int 乘法溢出后与 len(raw) 误匹配。
+	expectedLen := uint64(dt) * uint64(x) * uint64(elemSize)
+	if uint64(len(raw)) != expectedLen {
 		return nil, fmt.Errorf("doublebuffer: 数据长度不匹配: 期望 %d 字节，实际 %d 字节", expectedLen, len(raw))
 	}
 	result := make([][]T, dt)
