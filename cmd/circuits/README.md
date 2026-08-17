@@ -111,7 +111,7 @@ circuit interactive cmd/circuits/10_latch_self_hold.net
 | **R** 电阻 | `R<id> [v+,v-] [阻值Ω]` | `R1 [1,-1] [1000]` |
 | **C** 电容 | `C<id> [v+,v-] [容值F]` | `C1 [2,-1] [1e-6]` |
 | **L** 电感 | `L<id> [v+,v-] [感值H]` | `L1 [1,2] [1e-3]` |
-| **D** 二极管 | `D<id> [v+,v-] [正向偏置bool]` | `D1 [1,2] [true]` |
+| **D** 二极管 | `D<id> [anode,cathode] [Is,Vz,N,Rs,T]`（方向由引脚顺序决定：anode→cathode 正向） | `D1 [1,2] [1e-14,0]` |
 | **Q** NPN三极管 | `Q<id> [base,collector,emitter] [is_PNP,betβ]` | `Q1 [2,3,-1] [false,100]` |
 | **V** 电压源 | `V<id> [v+,v-] [波形,bias,频率,相位,Vmax,duty]` | 见下方 |
 | **I** 电流源 | `I<id> [v+,v-] [电流A]` | `I1 [1,-1] [0.01]` |

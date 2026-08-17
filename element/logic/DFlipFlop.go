@@ -5,10 +5,11 @@ import (
 	"circuit/mna"
 )
 
-// DFlipFlopType 原生 D 触发器元件类型标识
+// DFlipFlopType 原生 D 触发器元件类型标识，网表"DFF<name> <clk,d,q,nq> [V_high]"。
+// 注意：不能用 "F"——与 SPICE 流控电流源 CCCS("f") 归一化后同为 "F"，会互相覆盖。
 var DFlipFlopType element.NodeType = element.AddElement(20, &DFlipFlop{
 	&element.Config{
-		Name: "F",
+		Name: "DFF",
 		Pin:  element.SetPin(element.PinBoolean, "clk", "d", "q", "nq"),
 		ValueInit: []any{
 			float64(5.0), // 0: 高电平电压 (V)

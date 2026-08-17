@@ -228,8 +228,8 @@ func parseSyncBool(v ast.Value) bool {
 
 // init 注册同步元件到全局元件列表。
 func init() {
-	if _, ok := element.ElementListName["S"]; ok {
-		SyncType = element.ElementListName["S"]
+	if _, ok := element.ElementListName["s"]; ok {
+		SyncType = element.ElementListName["s"]
 		return
 	}
 	SyncType = element.AddElement(element.NodeType(18), &Sync{
@@ -253,5 +253,5 @@ func init() {
 			Flags:     element.FlagNonlinear,
 		},
 	})
-	element.ElementListName["S"] = SyncType
+	element.ElementListName["s"] = SyncType
 }

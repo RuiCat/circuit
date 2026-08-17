@@ -7,6 +7,7 @@ import (
 	"circuit/mna"
 	"fmt"
 	"io"
+	"log"
 	"sort"
 	"strconv"
 	"strings"
@@ -282,8 +283,8 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 
 // createElementFromAST 根据AST元素节点创建元件实例
 func createElementFromAST(elemNode *ast.ElementNode) (element.NodeFace, error) {
-	// 根据类型名称查找元件类型
-	nodeType, ok := element.ElementListName[strings.ToUpper(elemNode.Type)]
+	// 根据类型名称查找元件类型（大小写不敏感，统一小写）
+	nodeType, ok := element.ElementListName[strings.ToLower(elemNode.Type)]
 	if !ok {
 		return nil, fmt.Errorf("未知的元件类型 '%s'", elemNode.Type)
 	}
@@ -345,7 +346,7 @@ func createWrapperInstance(elemNode *ast.ElementNode) (element.NodeFace, error) 
 
 	// 查找 Wrapper 的 NodeType
 	nodeType := hierarchical.DefaultWrapperNodeType
-	if nt, ok := element.ElementListName["X"]; ok {
+	if nt, ok := element.ElementListName["x"]; ok {
 		nodeType = nt
 	}
 
@@ -384,6 +385,8 @@ func setElementValues(element element.NodeFace, values []ast.Value, parseTree *a
 				val.Value = v
 			}
 		}
+		// 检测参数值能否解析为目标类型，不能则输出警告（避免 [true] 等被静默回退默认值）
+		warnIfUnparseable(val, valueInit[i])
 		// 使用 StringToAny 根据参数初始值的类型来解析值
 		parsedValue := ast.StringToAny(val, valueInit[i])
 		// 根据类型设置值
@@ -427,6 +430,30 @@ func setElementValues(element element.NodeFace, values []ast.Value, parseTree *a
 	// 元件初始化
 	config.Reset(element)
 	return nil
+}
+
+// warnIfUnparseable 检测网表参数值能否解析为目标类型，不能则输出警告到 stderr。
+// 用于暴露 [true] 这类被 StringToAny 静默回退默认值的参数书写错误。
+func warnIfUnparseable(val ast.Value, target any) {
+	if val.IsVar || val.Value == "" {
+		return
+	}
+	var err error
+	switch target.(type) {
+	case bool:
+		_, err = strconv.ParseBool(val.Value)
+	case int, int8, int16, int32, int64:
+		_, err = strconv.ParseInt(val.Value, 10, 64)
+	case uint, uint8, uint16, uint32, uint64:
+		_, err = strconv.ParseUint(val.Value, 10, 64)
+	case float32, float64:
+		_, err = strconv.ParseFloat(val.Value, 64)
+	default:
+		return // 字符串等类型总能解析，不检测
+	}
+	if err != nil {
+		log.Printf("警告: 网表参数值 '%s' 无法解析为 %T，已忽略并使用默认值", val.Value, target)
+	}
 }
 
 // maxSubCircuitDepth 是子电路嵌套展开的最大允许深度，

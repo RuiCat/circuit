@@ -3,7 +3,6 @@ package element
 import (
 	"circuit/load/ast"
 	"circuit/mna"
-	"strings"
 )
 
 // Pin 引脚。
@@ -40,9 +39,9 @@ type Config struct {
 // Base 默认配置信息。
 func (config *Config) Base(ele ast.ElementNode) *Config { return config }
 
-// GetName 元件名称。
+// GetName 返回元件原始名称（不转换大小写；小写归一化在注册/查找时进行）。
 func (config *Config) GetName() string {
-	return strings.ToUpper(config.Name)
+	return config.Name
 }
 
 // IsFlag 检查 Flags 中是否设置了指定的特性位。

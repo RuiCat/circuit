@@ -4,6 +4,8 @@ package element
 import (
 	"circuit/load/ast"
 	"circuit/mna"
+	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -43,18 +45,36 @@ var (
 // 参数eleType: 元件类型标识，必须是唯一的。
 // 参数face: 元件接口实现，包含配置和行为的完整实现。
 // 返回：注册成功的元件类型标识。
-// 注意：如果元件类型已注册，静默返回已有类型标识，不重复注册。
+//
+// 冲突检测：NodeType 或归一化后的名称（GetName 返回大写）冲突时 panic，
+// 在 init 阶段立即暴露，避免静默覆盖导致元件被错误解析（如 CCCS "f" 与
+// DFlipFlop "F" 都归一化为 "F" 互相覆盖）。
 func AddElement(eleType NodeType, face ElementFaceList) NodeType {
 	if face == nil {
-		return eleType
+		panic("element: 注册 nil 元件")
 	}
 	elementMu.Lock()
 	defer elementMu.Unlock()
-	if _, exists := ElementList[eleType]; exists {
+
+	// 注册时统一归一化为小写，实现大小写不敏感
+	name := strings.ToLower(face.GetName())
+
+	// NodeType 冲突检查
+	if existing, exists := ElementList[eleType]; exists {
+		// 同一元件重复注册（幂等）允许；不同元件占用同一 NodeType 则报错。
+		if strings.ToLower(existing.GetName()) != name {
+			panic(fmt.Sprintf("element: NodeType %d 冲突（已注册 %q，新注册 %q）", eleType, existing.GetName(), name))
+		}
 		return eleType
 	}
+
+	// 名称冲突检查（归一化为小写后相同）
+	if existingType, exists := ElementListName[name]; exists {
+		panic(fmt.Sprintf("element: 元件名称 %q 冲突（NodeType %d 与 %d 归一化后同名），请修改其中一个元件的 Name", name, existingType, eleType))
+	}
+
 	ElementList[eleType] = face
-	ElementListName[face.GetName()] = eleType
+	ElementListName[name] = eleType
 	return eleType
 }
 

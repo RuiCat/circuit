@@ -27,7 +27,7 @@ func NewWrapperConfig(ports []string, name string) *element.Config {
 		pins[i] = element.Pin{Name: p, Type: element.PinBoolean}
 	}
 	return &element.Config{
-		Name: strings.ToUpper(name),
+		Name: strings.ToLower(name),
 		Pin:  pins,
 		ValueInit: []any{
 			"", // 0: 子电路名称
@@ -39,15 +39,15 @@ func NewWrapperConfig(ports []string, name string) *element.Config {
 // NewWrapperElement 注册层级封装元件到全局元件列表。
 // subcktName: 用于注册表中的唯一标识名，建议使用子电路原名
 func NewWrapperElement(subcktName string) element.NodeType {
-	typeName := strings.ToUpper(subcktName)
-	upper := "X_" + typeName
-	if _, exists := element.ElementListName[upper]; exists {
-		return element.ElementListName[upper]
+	typeName := strings.ToLower(subcktName)
+	lower := "x_" + typeName
+	if _, exists := element.ElementListName[lower]; exists {
+		return element.ElementListName[lower]
 	}
 	wt := element.AddElement(element.NodeType(19), &Wrapper{
 		NewWrapperConfig(nil, subcktName),
 	})
-	element.ElementListName[upper] = wt
+	element.ElementListName[lower] = wt
 	return wt
 }
 
@@ -80,7 +80,7 @@ func (w *Wrapper) DoStep(m mna.Mna, t mna.Time, value element.NodeFace) {}
 
 // init 确保 Wrapper 元件在包初始化时注册。
 func init() {
-	if _, ok := element.ElementListName["X"]; !ok {
+	if _, ok := element.ElementListName["x"]; !ok {
 		WrapperType = element.AddElement(DefaultWrapperNodeType, &Wrapper{
 			&element.Config{
 				Name: "X",
@@ -91,8 +91,8 @@ func init() {
 				ValueName: []string{"subckt"},
 			},
 		})
-		element.ElementListName["X"] = WrapperType
+		element.ElementListName["x"] = WrapperType
 	} else {
-		WrapperType = element.ElementListName["X"]
+		WrapperType = element.ElementListName["x"]
 	}
 }
