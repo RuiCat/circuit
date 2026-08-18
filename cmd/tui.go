@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"sort"
 	"math"
+	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/term"
 
 	"circuit/element"
 	etime "circuit/element/time"
@@ -407,7 +409,13 @@ func (m *tuiModel) View() string {
 	side.WriteString(fmt.Sprintf(" 步数  %d\n", s))
 	side.WriteString(fmt.Sprintf(" 节点  %d\n", len(m.con.CompactNodeID)))
 	side.WriteString(fmt.Sprintf(" 元件  %d\n", len(m.con.Nodelist)))
-	side.WriteString(fmt.Sprintf(" 缓冲  %d行 %d/%d块\n", m.bufCfg.TotalRows(), m.bufCfg.BlockCount(), m.bufCfg.MaxBlocks()))
+	// doublebuffer 非并发安全，与仿真 goroutine 的 buf.Append 用同一把锁串行化
+	m.mu.RLock()
+	totalRows := m.bufCfg.TotalRows()
+	blockCount := m.bufCfg.BlockCount()
+	maxBlocks := m.bufCfg.MaxBlocks()
+	m.mu.RUnlock()
+	side.WriteString(fmt.Sprintf(" 缓冲  %d行 %d/%d块\n", totalRows, blockCount, maxBlocks))
 	if du > 0 {
 		side.WriteString(fmt.Sprintf(" 丢弃: %d\n", du))
 	}
@@ -465,8 +473,9 @@ func (m *tuiModel) View() string {
 		m.input.Focus()
 	}
 	bottom := inputStyle.Width(mw - 2).Render(m.input.View())
+	helpLine := m.help.View(keys)
 
-	return title + "\n" + middle + "\n" + bottom
+	return title + "\n" + middle + "\n" + bottom + "\n" + helpLine
 }
 
 // ===== Tab 补全 =====
@@ -497,10 +506,25 @@ func (m *tuiModel) handleTabComplete() {
 		if prefix != val {
 			m.input.SetValue(prefix)
 		} else {
-			m.output = append(m.output, strings.Join(matches, " | "))
+			m.appendOutput(strings.Join(matches, " | "))
 		}
 	}
 	m.input.CursorEnd()
+}
+
+// ===== 输出辅助（并发安全） =====
+// appendOutput 以加锁方式向输出日志追加行，供 UI goroutine 与仿真 goroutine 并发安全调用。
+func (m *tuiModel) appendOutput(lines ...string) {
+	m.mu.Lock()
+	m.output = append(m.output, lines...)
+	m.mu.Unlock()
+}
+
+// appendTableOutput 以加锁方式追加格式化表格到输出日志。
+func (m *tuiModel) appendTableOutput(headers []string, rows [][]string, width int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.output = appendTable(m.output, headers, rows, width)
 }
 
 // ===== 命令执行 =====
@@ -515,8 +539,8 @@ func (m *tuiModel) executeCommand(line string) {
 	if sepW < 20 {
 		sepW = 20
 	}
-	m.output = append(m.output, "  "+strings.Repeat("·", sepW))
-	m.output = append(m.output, "  > "+line)
+	m.appendOutput("  " + strings.Repeat("·", sepW))
+	m.appendOutput("  > " + line)
 	switch strings.ToLower(parts[0]) {
 	case "v":
 		m.cmdVoltage(parts[1:])
@@ -524,12 +548,12 @@ func (m *tuiModel) executeCommand(line string) {
 		m.mu.RLock()
 		tt := m.simTime
 		m.mu.RUnlock()
-		m.output = append(m.output, fmt.Sprintf("  当前时间: %.4e s", tt))
+		m.appendOutput(fmt.Sprintf("  当前时间: %.4e s", tt))
 	case "run":
 		m.cmdRun(parts[1:])
 	case "step":
 		m.timeMNA.StepOnce()
-		m.output = append(m.output, "  单步执行...")
+		m.appendOutput("  单步执行...")
 	case "curve":
 		m.cmdCurve(parts[1:])
 	case "plot":
@@ -540,10 +564,10 @@ func (m *tuiModel) executeCommand(line string) {
 		m.cmdSetEvent(parts[1:])
 	case "pause":
 		m.timeMNA.Pause()
-		m.output = append(m.output, "  仿真已暂停")
+		m.appendOutput("  仿真已暂停")
 	case "resume":
 		m.timeMNA.Resume()
-		m.output = append(m.output, "  仿真已恢复")
+		m.appendOutput("  仿真已恢复")
 	case "stop", "quit":
 		m.timeMNA.Stop()
 		m.quitting = true
@@ -570,14 +594,16 @@ func (m *tuiModel) executeCommand(line string) {
 		if w < 40 {
 			w = 40
 		}
-		m.output = appendTable(m.output, helpHeaders, helpRows, w)
-		m.output = append(m.output, "  ↑↓ 历史  │  Tab 补全  │  Esc 切换焦点  │  PgUp/PgDn 滚动  │  鼠标滚轮")
+		m.appendTableOutput(helpHeaders, helpRows, w)
+		m.appendOutput("  ↑↓ 历史  │  Tab 补全  │  Esc 切换焦点  │  PgUp/PgDn 滚动  │  鼠标滚轮")
 	default:
-		m.output = append(m.output, fmt.Sprintf("  未知命令: %s (输入 help 查看帮助)", parts[0]))
+		m.appendOutput(fmt.Sprintf("  未知命令: %s (输入 help 查看帮助)", parts[0]))
 	}
+	m.mu.Lock()
 	if len(m.output) > 1000 {
 		m.output = m.output[len(m.output)-1000:]
 	}
+	m.mu.Unlock()
 }
 
 // cmdVoltage 执行 v 命令：查询指定节点或全部节点的当前电压值并以表格展示。
@@ -586,7 +612,7 @@ func (m *tuiModel) cmdVoltage(args []string) {
 	v := m.voltages
 	m.mu.RUnlock()
 	if v == nil {
-		m.output = append(m.output, "  仿真尚未开始，请先 resume 或 run")
+		m.appendOutput("  仿真尚未开始，请先 resume 或 run")
 		return
 	}
 
@@ -613,7 +639,7 @@ func (m *tuiModel) cmdVoltage(args []string) {
 				}
 				n, err := strconv.Atoi(ns)
 				if err != nil {
-					m.output = append(m.output, fmt.Sprintf("  无效节点: %s", ns))
+					m.appendOutput(fmt.Sprintf("  无效节点: %s", ns))
 					continue
 				}
 				if seen[n] {
@@ -621,7 +647,7 @@ func (m *tuiModel) cmdVoltage(args []string) {
 				}
 				ci, ok := m.con.CompactNodeID[mna.NodeID(n)]
 				if !ok || ci >= len(v) {
-					m.output = append(m.output, fmt.Sprintf("  节点 %d 不存在", n))
+					m.appendOutput(fmt.Sprintf("  节点 %d 不存在", n))
 				} else {
 					nodes = append(nodes, ni{n, v[ci]})
 					seen[n] = true
@@ -631,7 +657,7 @@ func (m *tuiModel) cmdVoltage(args []string) {
 	}
 
 	if len(nodes) == 0 {
-		m.output = append(m.output, "  无节点数据")
+		m.appendOutput("  无节点数据")
 		return
 	}
 
@@ -647,34 +673,34 @@ func (m *tuiModel) cmdVoltage(args []string) {
 	if w < 40 {
 		w = 40
 	}
-	m.output = appendTable(m.output, headers, rows, w)
+	m.appendTableOutput(headers, rows, w)
 }
 
 // cmdRun 执行 run 命令：让仿真以连续模式前进指定秒数后自动暂停。
 func (m *tuiModel) cmdRun(args []string) {
 	if len(args) == 0 {
-		m.output = append(m.output, "  用法: run <秒数>")
+		m.appendOutput("  用法: run <秒数>")
 		return
 	}
 	d, err := strconv.ParseFloat(args[0], 64)
 	if err != nil || d <= 0 {
-		m.output = append(m.output, "  错误: 无效的时间值")
+		m.appendOutput("  错误: 无效的时间值")
 		return
 	}
 	m.timeMNA.AdvanceFor(d)
-	m.output = append(m.output, fmt.Sprintf("  前进 %.3e s...", d))
+	m.appendOutput(fmt.Sprintf("  前进 %.3e s...", d))
 }
 
 // cmdCurve 执行 curve 命令：查询指定节点在指定时间范围内的历史电压曲线（支持采样点数控制）。
 func (m *tuiModel) cmdCurve(args []string) {
 	if len(args) < 2 {
-		m.output = append(m.output, "  用法: curve <节点|all> <秒数> [点数]")
+		m.appendOutput("  用法: curve <节点|all> <秒数> [点数]")
 		return
 	}
 	nodeStr := args[0]
 	sec, err := strconv.ParseFloat(args[1], 64)
 	if err != nil || sec <= 0 {
-		m.output = append(m.output, "  错误: 无效的秒数值")
+		m.appendOutput("  错误: 无效的秒数值")
 		return
 	}
 	pts := 0
@@ -707,7 +733,7 @@ func (m *tuiModel) cmdCurve(args []string) {
 		}
 	}
 	if len(qn) == 0 {
-		m.output = append(m.output, "  无有效节点")
+		m.appendOutput("  无有效节点")
 		return
 	}
 
@@ -716,7 +742,7 @@ func (m *tuiModel) cmdCurve(args []string) {
 	rows := m.bufCfg.LastRows(total)
 	m.mu.RUnlock()
 	if len(rows) == 0 {
-		m.output = append(m.output, "  暂无历史数据")
+		m.appendOutput("  暂无历史数据")
 		return
 	}
 
@@ -724,7 +750,7 @@ func (m *tuiModel) cmdCurve(args []string) {
 	startT := curT - sec
 	bufSpan := curT - rows[0][0]
 	if sec > bufSpan {
-		m.output = append(m.output, fmt.Sprintf("  ⚠ 请求 %.3e s 但缓冲区仅保留 %.3e s，已截断", sec, bufSpan))
+		m.appendOutput(fmt.Sprintf("  ⚠ 请求 %.3e s 但缓冲区仅保留 %.3e s，已截断", sec, bufSpan))
 		startT = rows[0][0]
 	}
 
@@ -777,58 +803,69 @@ func (m *tuiModel) cmdCurve(args []string) {
 	if w < 40 {
 		w = 40
 	}
-	m.output = appendTable(m.output, headers, tRows, w)
-	m.output = append(m.output, fmt.Sprintf("(%d 点, 跨度 %.3e s)", len(disp), curT-startT))
+	m.appendTableOutput(headers, tRows, w)
+	m.appendOutput(fmt.Sprintf("(%d 点, 跨度 %.3e s)", len(disp), curT-startT))
 }
 
 // cmdTrigger 执行 trigger 命令：设置或清除电压触发条件，当节点电压满足条件时自动暂停仿真。
 func (m *tuiModel) cmdTrigger(args []string) {
 	if len(args) == 0 || args[0] == "off" {
+		m.mu.Lock()
 		m.triggerEnabled = false
 		m.triggerNode = -1
-		m.output = append(m.output, "  触发条件已清除")
+		m.mu.Unlock()
+		m.appendOutput("  触发条件已清除")
 		return
 	}
 	if len(args) < 3 {
-		m.output = append(m.output, "  用法: trigger <节点> <op> <值>  或  trigger off")
+		m.appendOutput("  用法: trigger <节点> <op> <值>  或  trigger off")
 		return
 	}
 	n, err := strconv.Atoi(args[0])
 	if err != nil {
-		m.output = append(m.output, "  错误: 无效的节点ID")
+		m.appendOutput("  错误: 无效的节点ID")
 		return
 	}
+	// 校验节点是否存在
+	if _, ok := m.con.CompactNodeID[mna.NodeID(n)]; !ok {
+		m.appendOutput(fmt.Sprintf("  错误: 节点 %d 不存在", n))
+		return
+	}
+	var op string
 	switch args[1] {
 	case ">=", "<=", ">", "<", "==":
-		m.triggerOp = args[1]
+		op = args[1]
 	default:
-		m.output = append(m.output, "  错误: 无效操作符 (支持 >= <= > < ==)")
+		m.appendOutput("  错误: 无效操作符 (支持 >= <= > < ==)")
 		return
 	}
 	v, err := strconv.ParseFloat(args[2], 64)
 	if err != nil {
-		m.output = append(m.output, "  错误: 无效的阈值")
+		m.appendOutput("  错误: 无效的阈值")
 		return
 	}
+	m.mu.Lock()
 	m.triggerNode = n
+	m.triggerOp = op
 	m.triggerValue = v
 	m.triggerEnabled = true
-	m.output = append(m.output, fmt.Sprintf("  ⚡ 触发条件: node_%d %s %v", n, args[1], v))
+	m.mu.Unlock()
+	m.appendOutput(fmt.Sprintf("  ⚡ 触发条件: node_%d %s %v", n, op, v))
 }
 
 // cmdSetEvent 执行 set 命令：设置仿真电路中的事件值。
 func (m *tuiModel) cmdSetEvent(args []string) {
 	if len(args) < 2 {
-		m.output = append(m.output, "  用法: set <事件名> <值>")
+		m.appendOutput("  用法: set <事件名> <值>")
 		return
 	}
 	v, err := strconv.ParseFloat(args[1], 64)
 	if err != nil {
-		m.output = append(m.output, "  错误: 无效的值")
+		m.appendOutput("  错误: 无效的值")
 		return
 	}
 	m.con.SetEvent(args[0], v)
-	m.output = append(m.output, fmt.Sprintf("  %s = %v", args[0], v))
+	m.appendOutput(fmt.Sprintf("  %s = %v", args[0], v))
 }
 
 // cmdStatus 执行 status 命令：显示当前仿真状态、步数和时间。
@@ -847,48 +884,62 @@ func (m *tuiModel) cmdStatus() {
 	s := m.steps
 	tt := m.simTime
 	m.mu.RUnlock()
-	m.output = append(m.output, fmt.Sprintf("  %s | %d 步 | t = %.4e s", ss, s, tt))
+	m.appendOutput(fmt.Sprintf("  %s | %d 步 | t = %.4e s", ss, s, tt))
 }
 
 // checkTrigger 由仿真 goroutine 每步调用，检查触发条件并在满足时暂停仿真。
 func (m *tuiModel) checkTrigger(v []float64) {
-	// 仿真 goroutine 并发调用，所有共享字段读写需加锁保护
+	// 读取触发条件（加锁后拷贝为局部变量，避免长持锁）
 	m.mu.Lock()
-	// 仿真 goroutine 并发调用，所有共享字段读写需加锁保护
-	defer m.mu.Unlock()
-
 	if !m.triggerEnabled || m.triggerNode < 0 {
+		m.mu.Unlock()
 		return
 	}
-	ci, ok := m.con.CompactNodeID[mna.NodeID(m.triggerNode)]
+	triggerNode := m.triggerNode
+	triggerOp := m.triggerOp
+	triggerValue := m.triggerValue
+	m.mu.Unlock()
+
+	// CompactNodeID 为只读映射，无需加锁
+	ci, ok := m.con.CompactNodeID[mna.NodeID(triggerNode)]
 	if !ok || ci >= len(v) {
 		return
 	}
 	nv := v[ci]
 	var trig bool
-	switch m.triggerOp {
+	switch triggerOp {
 	case ">=":
-		trig = nv >= m.triggerValue
+		trig = nv >= triggerValue
 	case "<=":
-		trig = nv <= m.triggerValue
+		trig = nv <= triggerValue
 	case ">":
-		trig = nv > m.triggerValue
+		trig = nv > triggerValue
 	case "<":
-		trig = nv < m.triggerValue
+		trig = nv < triggerValue
 	case "==":
-		trig = nv-m.triggerValue < 1e-9 && m.triggerValue-nv < 1e-9
+		trig = nv-triggerValue < 1e-9 && triggerValue-nv < 1e-9
 	}
 	if trig {
 		m.timeMNA.Pause()
+		// 清除触发条件（加锁）
+		m.mu.Lock()
 		m.triggerEnabled = false
-		m.output = append(m.output, fmt.Sprintf("  ⚡ 已触发! node_%d %s %v (=%e)",
-			m.triggerNode, m.triggerOp, m.triggerValue, nv))
+		m.mu.Unlock()
+		m.appendOutput(fmt.Sprintf("  ⚡ 已触发! node_%d %s %v (=%e)",
+			triggerNode, triggerOp, triggerValue, nv))
 	}
 }
 
 // ===== runTUI =====
 // runTUI 启动连续仿真 TUI 模式：初始化时间控制器、双缓冲区和 bubbletea 程序，运行后台仿真 goroutine。
 func runTUI(con *element.Context, cfg config) error {
+	// 交互式 TUI 依赖真实终端（TTY）进入 raw mode / AltScreen。
+	// 非 TTY 环境（IDE 输出面板、重定向、无 PTY 的 SSH 等）下 bubbletea 无法正常渲染，
+	// 提前用 ioctl 检测并给出明确错误，避免出现"输入回显但无界面"的困惑现象。
+	if !term.IsTerminal(os.Stdin.Fd()) || !term.IsTerminal(os.Stdout.Fd()) {
+		return fmt.Errorf("交互模式需要真实终端(TTY)。请在真实终端中运行，或改用批处理模式（不带 interactive）")
+	}
+
 	tm, err := etime.NewTimeMNA(1.0)
 	if err != nil {
 		return fmt.Errorf("TimeMNA: %w", err)
@@ -910,7 +961,6 @@ func runTUI(con *element.Context, cfg config) error {
 	if cfg.parallel > 0 {
 		con.ParallelOpts = &element.ParallelOptions{StampWorkers: cfg.parallel}
 	}
-	// 缓冲列数 = 节点电压 + 电压源电流 + 时间戳，与 simulation.go 中 voltages 切片大小保持一致
 
 	// 缓冲列数 = 节点电压 + 电压源电流 + 时间戳，与 simulation.go 中 voltages 切片大小保持一致
 	totalCols := con.GetNodeNum() + con.GetVoltageSourcesNum() + 1
@@ -923,7 +973,7 @@ func runTUI(con *element.Context, cfg config) error {
 	ch := make(chan simUpdate, 200)
 	done := make(chan error, 1)
 	m := newTUIModel(con, tm, buf, ch, done)
-	m.output = append(m.output, "  连续仿真已就绪（暂停中）。输入 help 查看命令。")
+	m.appendOutput("  连续仿真已就绪（暂停中）。输入 help 查看命令。")
 
 	go func() {
 		stepCnt := 0
@@ -957,10 +1007,13 @@ func runTUI(con *element.Context, cfg config) error {
 	}()
 
 	p := tea.NewProgram(&m, tea.WithAltScreen(), tea.WithMouseCellMotion())
-	if _, err := p.Run(); err != nil {
-		return err
-	}
+	_, runErr := p.Run()
+	// 无论 p.Run() 正常返回还是出错，都要停止仿真并等待后台 goroutine 退出，
+	// 避免连续模式下仿真 goroutine 泄漏。
 	tm.Stop()
 	<-done
+	if runErr != nil {
+		return runErr
+	}
 	return nil
 }

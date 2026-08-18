@@ -9,6 +9,22 @@ import (
 	"sync/atomic"
 )
 
+// atomicFloat64 基于 atomic.Uint64 的 float64 原子类型。
+// 当前工具链未提供 atomic.Float64，用 IEEE754 位模式转换实现等价原子读写。
+type atomicFloat64 struct {
+	bits atomic.Uint64
+}
+
+// Load 原子读取 float64 值。
+func (a *atomicFloat64) Load() float64 {
+	return math.Float64frombits(a.bits.Load())
+}
+
+// Store 原子写入 float64 值。
+func (a *atomicFloat64) Store(v float64) {
+	a.bits.Store(math.Float64bits(v))
+}
+
 // 常量定义（通用配置阈值）
 const (
 	minValidStep   = 1e-12 // 最小有效步长（避免数值下溢）
@@ -49,9 +65,9 @@ const (
 // 支持多变量电路状态、MNA残差计算、自适应步长、3阶预测-校正积分
 type TimeMNA struct {
 	// 时间核心参数
-	currentTime float64 // 当前仿真时间（累积值）
-	targetTime  float64 // 仿真目标总时间
-	currentStep float64 // 当前自适应步长
+	currentTime atomicFloat64 // 当前仿真时间（累积值）；跨 goroutine（AdvanceFor 读取）故原子化
+	targetTime  atomicFloat64 // 仿真目标总时间；跨 goroutine（AdvanceFor 写入）故原子化
+	currentStep float64       // 当前自适应步长
 	minStep     float64 // 最小允许步长
 	maxStep     float64 // 最大允许步长
 
@@ -98,7 +114,7 @@ type TimeMNA struct {
 	// 触发点管理
 	triggers   []mna.Trigger // 仿真触发点列表
 	continuous bool          // 连续模式标志，为 true 时 IsSimulationFinished 始终返回 false
-	tempTarget bool          // 是否为临时目标（AdvanceFor 设置）
+	tempTarget atomic.Bool   // 是否为临时目标（AdvanceFor 设置）；跨 goroutine 故原子化
 	status     atomic.Int32  // 运行状态（SimStatus），并发安全
 	notifier   func()        // 状态改变通知回调，当状态从 Paused 离开时调用
 }
@@ -112,9 +128,7 @@ func NewTimeMNA(targetTime float64) (*TimeMNA, error) {
 	}
 
 	// 初始化默认参数（兼顾精度与效率）
-	return &TimeMNA{
-		currentTime:       0.0,
-		targetTime:        targetTime,
+	tm := &TimeMNA{
 		currentStep:       1e-6,
 		minStep:           1e-9,
 		maxStep:           5e-4,
@@ -136,7 +150,10 @@ func NewTimeMNA(targetTime float64) (*TimeMNA, error) {
 		currElemIter:      0,
 		localTruncError:   0.0,
 		triggers:          nil,
-	}, nil
+	}
+	tm.currentTime.Store(0.0)
+	tm.targetTime.Store(targetTime)
+	return tm, nil
 }
 
 // ------------------------------
@@ -208,7 +225,7 @@ func (t *TimeMNA) IsElemIterExhausted() bool {
 
 // SetTime 设置当前仿真时间
 func (t *TimeMNA) SetTime(time float64) {
-	t.currentTime = time
+	t.currentTime.Store(time)
 }
 
 // SetTimeStep 设置当前步长
@@ -283,7 +300,7 @@ func (t *TimeMNA) IsTimeStepLimitExceeded() bool {
 
 // CurrentTime 获取当前仿真时间
 func (t *TimeMNA) CurrentTime() float64 {
-	return t.currentTime
+	return t.currentTime.Load()
 }
 
 // CurrentStep 获取当前自适应步长
@@ -293,12 +310,12 @@ func (t *TimeMNA) CurrentStep() float64 {
 
 // TargetTime 获取仿真目标总时间
 func (t *TimeMNA) TargetTime() float64 {
-	return t.targetTime
+	return t.targetTime.Load()
 }
 
 // Time 获取当前仿真时间
 func (t *TimeMNA) Time() float64 {
-	return t.currentTime
+	return t.currentTime.Load()
 }
 
 // TimeStep 获取当前时间步长
@@ -366,14 +383,14 @@ func (t *TimeMNA) NoConverged() {
 func (t *TimeMNA) IsSimulationFinished() bool {
 	if t.continuous {
 		// 连续模式：检查临时目标（AdvanceFor 设置）
-		if t.tempTarget && t.currentTime >= t.targetTime {
-			t.tempTarget = false
+		if t.tempTarget.Load() && t.currentTime.Load() >= t.targetTime.Load() {
+			t.tempTarget.Store(false)
 			t.status.Store(mna.StatusPaused)
 		}
 		// 连续模式下从不因时间到达而结束，由外部 Stop 控制
 		return false
 	}
-	return t.currentTime >= t.targetTime
+	return t.currentTime.Load() >= t.targetTime.Load()
 }
 
 // ------------------------------
@@ -449,9 +466,9 @@ func (t *TimeMNA) AdvanceFor(duration float64) error {
 	if duration <= 0 {
 		return errors.New("前进时间必须大于0")
 	}
-	t.targetTime = t.currentTime + duration
+	t.targetTime.Store(t.currentTime.Load() + duration)
 	if t.continuous {
-		t.tempTarget = true
+		t.tempTarget.Store(true)
 	}
 	old := t.Status()
 	if t.status.CompareAndSwap(mna.StatusPaused, mna.StatusRunning) {
@@ -940,7 +957,7 @@ func (t *TimeMNA) AdvanceTimeStep(mnaSolver mna.Mna, derFunc mna.DerivativeFunc)
 	var nearestTriggerTime float64
 	var hasNearestTrigger bool
 	for i := range t.triggers {
-		if !t.triggers[i].Triggered && t.triggers[i].Time > t.currentTime {
+		if !t.triggers[i].Triggered && t.triggers[i].Time > t.currentTime.Load() {
 			if !hasNearestTrigger || t.triggers[i].Time < nearestTriggerTime {
 				nearestTriggerTime = t.triggers[i].Time
 				hasNearestTrigger = true
@@ -948,9 +965,9 @@ func (t *TimeMNA) AdvanceTimeStep(mnaSolver mna.Mna, derFunc mna.DerivativeFunc)
 		}
 	}
 	if hasNearestTrigger {
-		nextIfFullStep := t.currentTime + t.currentStep
+		nextIfFullStep := t.currentTime.Load() + t.currentStep
 		if nextIfFullStep > nearestTriggerTime {
-			t.currentStep = nearestTriggerTime - t.currentTime
+			t.currentStep = nearestTriggerTime - t.currentTime.Load()
 		}
 	}
 	// 执行预测-校正步骤
@@ -982,23 +999,24 @@ func (t *TimeMNA) AdvanceTimeSimple() error {
 // advanceTimeAndTriggers 计算 nextTime、截断触发点和目标时间、推进 currentTime 并标记触发点。
 // adjustStep 为 true 时，在到达目标时间时同步调整步长（AdvanceTimeStep 路径需要）。
 func (t *TimeMNA) advanceTimeAndTriggers(adjustStep bool) {
-	nextTime := t.currentTime + t.currentStep
+	curTime := t.currentTime.Load()
+	nextTime := curTime + t.currentStep
 	// 触发点截断：确保不会越过未触发的触发点
 	for i := range t.triggers {
-		if !t.triggers[i].Triggered && t.triggers[i].Time > t.currentTime && nextTime > t.triggers[i].Time {
+		if !t.triggers[i].Triggered && t.triggers[i].Time > curTime && nextTime > t.triggers[i].Time {
 			nextTime = t.triggers[i].Time
 		}
 	}
 	// 不超过目标时间（纯连续模式跳过目标时间截断，仅临时目标模式需要）
-	if !t.continuous || t.tempTarget {
-		if nextTime > t.targetTime {
-			nextTime = t.targetTime
+	if !t.continuous || t.tempTarget.Load() {
+		if nextTime > t.targetTime.Load() {
+			nextTime = t.targetTime.Load()
 			if adjustStep {
-				t.currentStep = nextTime - t.currentTime
+				t.currentStep = nextTime - curTime
 			}
 		}
 	}
-	t.currentTime = nextTime
+	t.currentTime.Store(nextTime)
 	// 标记所有已到达的触发点
 	for i := range t.triggers {
 		if !t.triggers[i].Triggered && nextTime >= t.triggers[i].Time {
