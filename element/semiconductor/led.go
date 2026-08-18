@@ -31,9 +31,10 @@ var LEDType element.NodeType = element.AddElement(35, &LED{
 			float64(0),        // 13: 漏电流 leakage (A)
 			float64(0),        // 14: 最小电导 Gmin (S)
 			float64(2.0),      // 15: 典型正向压降 Vf (V) (仅作参考/显示)
+			float64(0),        // 16: 电流 I (A)（CalculateCurrent 写入）
 		},
-		ValueName: []string{"Is", "Vz", "N", "Rs", "T", "V_old", "NVt", "invNVt", "Vt", "invVt", "zoffset", "vcrit", "vzcrit", "leakage", "Gmin", "Vf"},
-		Current:   []int{0},
+		ValueName: []string{"Is", "Vz", "N", "Rs", "T", "V_old", "NVt", "invNVt", "Vt", "invVt", "zoffset", "vcrit", "vzcrit", "leakage", "Gmin", "Vf", "I"},
+		Current:   []int{16},
 		OrigValue: []int{5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
 		Flags:     element.FlagNonlinear | element.FlagCacheStamp,
 	},
@@ -124,8 +125,7 @@ func (LED) CalculateCurrent(mna mna.Mna, time mna.Time, value element.NodeFace) 
 	voltdiff := vint - v2
 	current := ledCalculateCurrent(voltdiff, value)
 	mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), -current)
-
-	// 发光强度作为电流的线性函数（可通过Is参数读取）
+	value.SetFloat64(16, current) // 记录支路电流供输出
 }
 
 func ledSafeExp(x float64) float64 {

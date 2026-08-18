@@ -116,6 +116,13 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 		allElementNodes = append(allElementNodes, wrapperNode)
 	}
 
+	// 为顶层元件填充实例名（子电路内元件已在展开时填充为 "X1.R1" 形式）
+	for _, elemNode := range allElementNodes {
+		if elemNode.InstanceName == "" {
+			elemNode.InstanceName = strings.ToUpper(elemNode.Type) + elemNode.ID
+		}
+	}
+
 	// 解析顶层元件中的命名引脚（非数字节点名如 s0n, t0n, nop0 等）
 	for _, elemNode := range allElementNodes {
 		for i := range elemNode.Pins {
@@ -143,6 +150,11 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 	usedNodes := make(map[mna.NodeID]struct{})
 	astToInstance := make(map[*ast.ElementNode]element.NodeFace)
 
+	// 节点物理域表：记录每个节点已被哪个域（电气/气路/液压）的引脚占用。
+	// 气/油/电是三套独立系统，同一节点只允许连接同一域的引脚；
+	// 全局地节点 -1 是共享参考点（电气地=0V、气路地=大气压、油路地=油箱），各域共用，豁免检查。
+	nodeSystem := make(map[mna.NodeID]int)
+
 	for _, elemNode := range allElementNodes {
 		var instance element.NodeFace
 		var err error
@@ -162,6 +174,10 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 			return nil, fmt.Errorf("第 %d 行: 元件 '%s' 引脚数量不足。需要 %d，得到 %d", elemNode.Line, elemNode.Type, pinNum, len(elemNode.Pins))
 		}
 
+		// 层级封装 X 的引脚类型是 PinBoolean 占位（子电路端口物理域未知），
+		// 其展开的子元件已单独参与本校验，故跳过 X 实例本身，避免误判。
+		skipDomainCheck := strings.EqualFold(elemNode.Type, "X")
+
 		for i := 0; i < pinNum; i++ {
 			nodeID, err := strconv.Atoi(elemNode.Pins[i].Value)
 			if err != nil {
@@ -170,6 +186,18 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 			if nodeID < -1 || nodeID > maxRawNodeID {
 				return nil, fmt.Errorf("第 %d 行: 引脚 %d 的节点号 %d 超出合法范围（-1 ~ %d）", elemNode.Line, i, nodeID, maxRawNodeID)
 			}
+
+			// 物理域校验：气/油/电为独立系统，同一节点禁止混接不同域引脚。
+			if nodeID >= 0 && !skipDomainCheck {
+				sys := pinDomain(config.Pin[i].Type)
+				if prev, ok := nodeSystem[mna.NodeID(nodeID)]; ok && prev != sys {
+					return nil, fmt.Errorf(
+						"第 %d 行: 元件 '%s' 的%s引脚(%s)连接到节点 %d，但该节点已连接%s引脚（气/油/电为独立系统，禁止跨域混接）",
+						elemNode.Line, elemNode.InstanceName, domainName(sys), config.Pin[i].Name, nodeID, domainName(prev))
+				}
+				nodeSystem[mna.NodeID(nodeID)] = sys
+			}
+
 			instance.SetNodePin(i, mna.NodeID(nodeID))
 			if mna.NodeID(nodeID) > maxNodeID {
 				maxNodeID = mna.NodeID(nodeID)
@@ -303,11 +331,16 @@ func createElementFromAST(elemNode *ast.ElementNode) (element.NodeFace, error) {
 	node := &element.Node{
 		ConfigPtr:    config,
 		NodeType:     nodeType,
+		InstanceName: elemNode.InstanceName,
 		NodeValue:    make([]any, config.ValueNum()),
 		OrigValue:    make(map[int]any),
 		Nodes:        make([]mna.NodeID, config.PinNum()),
 		VoltSource:   make([]mna.VoltageID, config.VoltageNum()),
 		NodeInternal: make([]mna.NodeID, config.InternalNum()),
+	}
+	if node.InstanceName == "" {
+		// 兜底：无实例名时用 类型+ID 拼装
+		node.InstanceName = strings.ToUpper(elemNode.Type) + elemNode.ID
 	}
 
 	// 初始化参数
@@ -353,6 +386,7 @@ func createWrapperInstance(elemNode *ast.ElementNode) (element.NodeFace, error) 
 	node := &element.Node{
 		ConfigPtr:    config,
 		NodeType:     nodeType,
+		InstanceName: elemNode.InstanceName,
 		NodeValue:    make([]any, config.ValueNum()),
 		OrigValue:    make(map[int]any),
 		Nodes:        make([]mna.NodeID, config.PinNum()),
@@ -565,6 +599,7 @@ func expandSubCircuitInstance(
 	for _, elem := range subckt.Elements {
 		newElem := cloneElementNode(elem)
 		newElem.ID = instanceName + "." + elem.ID
+		newElem.InstanceName = instanceName + "." + strings.ToUpper(elem.Type) + elem.ID
 
 		for i, pin := range elem.Pins {
 			newElem.Pins[i].Value = resolveSubcircuitPin(
@@ -595,6 +630,29 @@ func expandSubCircuitInstance(
 	}
 
 	return flatElements, nil
+}
+
+// pinDomain 返回引脚所属的物理域编号：0=电气（弱电/强电/布尔），1=气路，2=液压。
+// 气/油/电是三套独立系统，同一节点只允许连接同一域的引脚。
+func pinDomain(t element.PinType) int {
+	switch t {
+	case element.PinPneumatic:
+		return 1
+	case element.PinHydraulic:
+		return 2
+	}
+	return 0
+}
+
+// domainName 返回物理域的中文名称，用于错误信息。
+func domainName(d int) string {
+	switch d {
+	case 1:
+		return "气路"
+	case 2:
+		return "液压"
+	}
+	return "电气"
 }
 
 // resolveSubcircuitPin 解析子电路中的引脚值：端口名替换 / 数字保留 / 内部节点分配唯一ID

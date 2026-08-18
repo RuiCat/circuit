@@ -13,7 +13,7 @@ var PLType element.NodeType = element.AddElement(26, &PL{
 		Pin:       element.SetPin(element.PinPneumatic, "pl1", "pl2"),
 		ValueInit: []any{float64(1e6), 0.0, 0.0, 0.0},
 		ValueName: []string{"L", "I_init", "G_eq", "I_hist"},
-		Current:   []int{0},
+		Current:   []int{1},
 		OrigValue: []int{2, 3},
 		Flags:     element.FlagReactive,
 	},

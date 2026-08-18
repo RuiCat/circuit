@@ -21,8 +21,11 @@ var TransformerType element.NodeType = element.AddElement(8, &Transformer{
 			float64(0),     // 6: G22 (a4)
 			float64(0),     // 7: I_hist1
 			float64(0),     // 8: I_hist2
+			float64(0),     // 9: I1 一次侧电流（CalculateCurrent 写入）
+			float64(0),     // 10: I2 二次侧电流（CalculateCurrent 写入）
 		},
-		ValueName: []string{"L1", "Ratio", "k", "G11", "G12", "G21", "G22", "I_hist1", "I_hist2"},
+		ValueName: []string{"L1", "Ratio", "k", "G11", "G12", "G21", "G22", "I_hist1", "I_hist2", "I1", "I2"},
+		Current:   []int{9, 10},
 	},
 })
 
@@ -101,6 +104,18 @@ func (t Transformer) StartIteration(mna mna.Mna, time mna.Time, value element.No
 	// 更新下一时刻的历史电流源 (梯形法: I_hist_next = I_current + G*V_current)
 	value.SetFloat64(7, i1+g11*v1+g12*v2)
 	value.SetFloat64(8, i2+g21*v1+g22*v2)
+}
+
+// CalculateCurrent 计算一次/二次侧实时支路电流：i = G·v + I_hist。
+func (Transformer) CalculateCurrent(mna mna.Mna, time mna.Time, value element.NodeFace) {
+	v1 := mna.GetNodeVoltage(value.GetNodes(0)) - mna.GetNodeVoltage(value.GetNodes(1))
+	v2 := mna.GetNodeVoltage(value.GetNodes(2)) - mna.GetNodeVoltage(value.GetNodes(3))
+	g11 := value.GetFloat64(3)
+	g12 := value.GetFloat64(4)
+	g21 := value.GetFloat64(5)
+	g22 := value.GetFloat64(6)
+	value.SetFloat64(9, g11*v1+g12*v2+value.GetFloat64(7)) // 一次侧电流
+	value.SetFloat64(10, g21*v1+g22*v2+value.GetFloat64(8)) // 二次侧电流
 }
 
 // DoStep 将历史电流项加盖到 RHS 向量中，完成 Norton 等效电流源注入。

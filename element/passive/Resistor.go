@@ -13,8 +13,9 @@ var ResistorType element.NodeType = element.AddElement(6, &Resistor{
 	&element.Config{
 		Name:      "r",                                               // 元件名称，网表文件中使用的标识符
 		Pin:       element.SetPin(element.PinLowVoltage, "r1", "r2"), // 引脚名称，电阻有两个引脚
-		ValueInit: []any{float64(10000)},                             // 初始化数据：默认电阻值为10kΩ
-		ValueName: []string{"R"},
+		ValueInit: []any{float64(10000), 0.0},                        // 初始化数据：默认电阻值为10kΩ；索引1为电流槽
+		ValueName: []string{"R", "I"},
+		Current:   []int{1},
 	},
 })
 
@@ -33,4 +34,16 @@ func (Resistor) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 		log.Printf("Resistor: 阻值 %.3e 近似为零，将被视为 1nΩ 短路路径", r)
 	}
 	mna.StampImpedance(value.GetNodes(0), value.GetNodes(1), r)
+}
+
+// CalculateCurrent 按欧姆定律 I=(V1-V2)/R 计算流经电阻的电流（正方向为引脚0→引脚1）。
+func (Resistor) CalculateCurrent(mna mna.Mna, time mna.Time, value element.NodeFace) {
+	r := value.GetFloat64(0)
+	if math.Abs(r) <= 1e-9 {
+		value.SetFloat64(1, 0)
+		return
+	}
+	v1 := mna.GetNodeVoltage(value.GetNodes(0))
+	v2 := mna.GetNodeVoltage(value.GetNodes(1))
+	value.SetFloat64(1, (v1-v2)/r)
 }

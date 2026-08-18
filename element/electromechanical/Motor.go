@@ -26,7 +26,7 @@ var MotorType element.NodeType = element.AddElement(4, &Motor{
 			float64(0),     // 11: 电感电流源值
 		},
 		ValueName: []string{"V_rated", "RPM_rated", "Ra", "La", "Kt", "J", "B", "speed", "current", "torque", "comp_R", "comp_I"},
-		Current:   []int{0},
+		Current:   []int{8},
 		OrigValue: []int{7, 8, 9, 10, 11},
 	},
 })

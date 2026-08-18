@@ -39,6 +39,7 @@ func init() {
 			},
 			ValueName: []string{"event", "R_coil", "L_coil", "I_pullin", "I_hold",
 				"G_eq", "I_hist", "V_diff", "I_coil", "state"},
+			Current:   []int{8}, // 模板: I_coil 在 paramBase+7（单通道时=8）
 			OrigValue:  []int{5, 6, 7, 8},
 			EventSlots: map[int]int{0: -9}, // 模板: nameIdx(0) → -stateIdx(9)
 		},
@@ -119,6 +120,7 @@ func (c *Coil) Base(elem ast.ElementNode) *element.Config {
 		Pin:        element.SetPin(element.PinLowVoltage, "c1", "c2"),
 		ValueInit:  valueInit,
 		ValueName:  valueNames,
+		Current:    []int{paramBase + 7}, // I_coil（随事件通道数动态偏移）
 		OrigValue:  []int{paramBase + 4, paramBase + 5, paramBase + 6, paramBase + 7}, // G_eq, I_hist, V_diff, I_coil
 		EventSlots: eventSlots,
 	}

@@ -30,12 +30,13 @@ const (
 
 // ElementNode 表示元件定义节点
 type ElementNode struct {
-	Type     string         // 元件类型，如 "v", "r", "c"
-	ID       string         // 元件ID，如 "1"
-	Pins     []Value        // 引脚列表
-	Values   []Value        // 值列表
-	Line     int            // 行号
-	Children []*ElementNode // 子元件（用于层级封装元件 X）
+	Type         string         // 元件类型，如 "v", "r", "c"
+	ID           string         // 元件ID，如 "1"
+	InstanceName string         // 完整实例名（如 "R1"、"X1.R1"）；顶层由加载器填充，子电路展开时带上实例前缀。
+	Pins         []Value        // 引脚列表
+	Values       []Value        // 值列表
+	Line         int            // 行号
+	Children     []*ElementNode // 子元件（用于层级封装元件 X）
 }
 
 // ValueNode 表示值设置节点

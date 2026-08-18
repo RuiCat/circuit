@@ -30,9 +30,10 @@ var ZenerType element.NodeType = element.AddElement(34, &Zener{
 			float64(0),        // 12: 齐纳临界电压 vzcrit (V)
 			float64(0),        // 13: 漏电流 leakage (A)
 			float64(0),        // 14: 最小电导 Gmin (S)
+			float64(0),        // 15: 电流 I (A)（CalculateCurrent 写入）
 		},
-		ValueName: []string{"Is", "Vz", "N", "Rs", "T", "V_old", "NVt", "invNVt", "Vt", "invVt", "zoffset", "vcrit", "vzcrit", "leakage", "Gmin"},
-		Current:   []int{0},
+		ValueName: []string{"Is", "Vz", "N", "Rs", "T", "V_old", "NVt", "invNVt", "Vt", "invVt", "zoffset", "vcrit", "vzcrit", "leakage", "Gmin", "I"},
+		Current:   []int{15},
 		OrigValue: []int{5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
 		Flags:     element.FlagNonlinear | element.FlagCacheStamp,
 	},
@@ -167,6 +168,7 @@ func (Zener) CalculateCurrent(mna mna.Mna, time mna.Time, value element.NodeFace
 	voltdiff := vint - v2
 	current := zenerCalculateCurrent(voltdiff, value)
 	mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), -current)
+	value.SetFloat64(15, current) // 记录支路电流供输出
 }
 
 func zenerSafeExp(x float64) float64 {

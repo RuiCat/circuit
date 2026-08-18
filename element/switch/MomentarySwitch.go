@@ -31,10 +31,12 @@ var MomentarySwitchType element.NodeType = element.AddElement(16, &MomentarySwit
 			float64(0),    // 8: eventValue
 			nil,           // 9: autoResetValue (nil=跳过, float64(0)=复位)
 			"MB1",         // 10: resetEventName
+			float64(0),    // 11: 总电流 I (A)（CalculateCurrent 写入，各触点对之和）
 		},
 		ValueName: []string{"eventName", "threshold", "normallyOpen",
 			"R_on", "R_off", "holdSteps", "lastState", "stepCounter",
-			"eventValue", "autoResetValue", "resetName"},
+			"eventValue", "autoResetValue", "resetName", "I"},
+		Current:    []int{11},
 		OrigValue:  []int{6, 7},
 		EventSlots: map[int]int{0: 8, 10: -9},
 	},
@@ -73,6 +75,7 @@ func (ms *MomentarySwitch) Base(elem ast.ElementNode) *element.Config {
 		Pin:        element.SetPin(element.PinLowVoltage, pinNames...),
 		ValueInit:  valInit,
 		ValueName:  cfg.ValueName,
+		Current:    cfg.Current,
 		OrigValue:  cfg.OrigValue,
 		EventSlots: cfg.EventSlots,
 	}
@@ -127,15 +130,18 @@ func (ms *MomentarySwitch) CalculateCurrent(mna mna.Mna, time mna.Time, value el
 	if cfg == nil {
 		return
 	}
+	var total float64
 	nPairs := cfg.PinNum() / 2
 	for i := 0; i < nPairs; i++ {
 		v1 := mna.GetNodeVoltage(value.GetNodes(2 * i))
 		v2 := mna.GetNodeVoltage(value.GetNodes(2*i + 1))
 		if R > 0 {
 			current := (v1 - v2) / R
+			total += current
 			mna.StampCurrentSource(value.GetNodes(2*i), value.GetNodes(2*i+1), -current)
 		}
 	}
+	value.SetFloat64(11, total) // 记录总电流供输出
 }
 
 func (ms *MomentarySwitch) StepFinished(mna mna.Mna, time mna.Time, value element.NodeFace) {

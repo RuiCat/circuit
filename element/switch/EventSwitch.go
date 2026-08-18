@@ -23,8 +23,10 @@ var EventSwitchType element.NodeType = element.AddElement(13, &EventSwitch{
 			float64(1e12), // 4: R_off — 断开时关断电阻
 			int(0),        // 5: lastState — 内部追踪
 			float64(0),    // 6: eventValue — 事件值 (由 PushEvents 更新)
+			float64(0),    // 7: 总电流 I (A)（CalculateCurrent 写入，各触点对之和）
 		},
-		ValueName:  []string{"eventName", "threshold", "normallyOpen", "R_on", "R_off", "lastState", "eventValue"},
+		ValueName:  []string{"eventName", "threshold", "normallyOpen", "R_on", "R_off", "lastState", "eventValue", "I"},
+		Current:    []int{7},
 		OrigValue:  []int{5},
 		EventSlots: map[int]int{0: 6}, // nameIndex(0) → valueIndex(6): 事件名"SB1"→值写入索引6
 	},
@@ -58,6 +60,7 @@ func (es *EventSwitch) Base(elem ast.ElementNode) *element.Config {
 		Pin:        element.SetPin(element.PinLowVoltage, pinNames...),
 		ValueInit:  cfg.ValueInit,
 		ValueName:  cfg.ValueName,
+		Current:    cfg.Current,
 		OrigValue:  cfg.OrigValue,
 		EventSlots: cfg.EventSlots,
 	}
@@ -127,13 +130,16 @@ func (es *EventSwitch) CalculateCurrent(mna mna.Mna, time mna.Time, value elemen
 	if cfg == nil {
 		return
 	}
+	var total float64
 	nPairs := cfg.PinNum() / 2
 	for i := 0; i < nPairs; i++ {
 		v1 := mna.GetNodeVoltage(value.GetNodes(2 * i))
 		v2 := mna.GetNodeVoltage(value.GetNodes(2*i + 1))
 		if R > 0 {
 			current := (v1 - v2) / R
+			total += current
 			mna.StampCurrentSource(value.GetNodes(2*i), value.GetNodes(2*i+1), -current)
 		}
 	}
+	value.SetFloat64(7, total) // 记录总电流供输出
 }

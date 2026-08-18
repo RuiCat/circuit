@@ -10,6 +10,7 @@ import (
 type Node struct {
 	ConfigPtr    *Config         // 配置项指针。
 	NodeType     NodeType        // 元件类型标识，对应ElementLitt中的注册类型。
+	InstanceName string          // 网表实例名（如 "R1"、"X1.R1"），由加载器在创建实例时填充。
 	NodeValue    []any           // 元件当前数据，存储仿真过程中变化的参数值。
 	OrigValue    map[int]any     // 元件数据备份，用于支持回滚操作。
 	VoltSource   []mna.VoltageID // 电压索引列表，存储元件内部电压源对应的MNA节点ID。

@@ -15,9 +15,10 @@ var SwitchType element.NodeType = element.AddElement(7, &Switch{
 			float64(1e-6), // 1: 导通电阻
 			float64(1e12), // 2: 关断电阻
 			int(0),        // 3: 上次盖印状态
+			float64(0),    // 4: 电流 I (A)（CalculateCurrent 写入）
 		},
-		ValueName: []string{"state", "R_on", "R_off", "last_state"},
-		Current:   []int{0},
+		ValueName: []string{"state", "R_on", "R_off", "last_state", "I"},
+		Current:   []int{4},
 		OrigValue: []int{3},
 	},
 })
@@ -66,5 +67,8 @@ func (Switch) CalculateCurrent(mna mna.Mna, time mna.Time, value element.NodeFac
 	if resistance > 0 {
 		current := (v1 - v2) / resistance
 		mna.StampCurrentSource(value.GetNodes(0), value.GetNodes(1), -current)
+		value.SetFloat64(4, current) // 记录电流供输出
+	} else {
+		value.SetFloat64(4, 0)
 	}
 }
