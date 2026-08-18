@@ -1,5 +1,19 @@
 # circuit
 Go实现的电气仿真,通过底层泛型与接口统一实现对 电子元件,气路元件,油路元件 综合综合仿真.通过事件同步实现 逻辑电路,潮汐计算 的联动仿真.
+
+## MCP 服务器
+提供 MCP (Model Context Protocol) 服务器，可通过 LLM 客户端（Claude Desktop / dsh / Cursor）直接进行电路仿真：
+网表加载与校验、元件/节点检视、参数修改、事件驱动、异步瞬态/DC 仿真、结果获取与 HTML 波形导出。
+共 22 个工具（会话 5 + 检视 6 + 修改 4 + 仿真 5 + 导出 2）。
+
+```bash
+# stdio（默认） / HTTP / SSE
+go run ./cmd mcpserver
+go run ./cmd mcpserver -transport http -addr :18080
+```
+
+详细工具列表与使用示例见 [docs/mcp.md](docs/mcp.md)。
+
 ## 当前Bug列表
   (暂无已知Bug)
 
@@ -260,6 +274,7 @@ Go实现的电气仿真,通过底层泛型与接口统一实现对 电子元件,
   4. [✔] 实现 加载与导出 
   5. [✔] 规划元件并行计算实现  
   6. [✔] 增加虚拟机,用于加载指令集  
+  7. [✔] 实现 MCP 服务器（22 工具 + stdio/HTTP/SSE 传输，见 docs/mcp.md）
 
 
 ## 实现过程

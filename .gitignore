@@ -33,3 +33,6 @@ utils/vm/testdata/linux_kernel
 test
 go.mod
 go.sum
+# Go 构建缓存（本地）
+.cache/
+PROJECT_MEMORY.md

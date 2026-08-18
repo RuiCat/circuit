@@ -1,23 +1,33 @@
-// Command circuit 是电路仿真命令行工具，支持批处理仿真和交互式 TUI 连续仿真两种模式。基于 bubbletea 的终端界面提供实时电压监控、事件设置和曲线绘制功能。
+// Command circuit 是电路仿真命令行工具，支持批处理仿真、交互式 TUI 连续仿真与 MCP 服务器三种模式。
+// 基于 bubbletea 的终端界面提供实时电压监控、事件设置和曲线绘制功能。
 package main
 
 import (
 	"bufio"
+	"context"
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"os"
+	"os/signal"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
-	_ "circuit/element/register"
 	"circuit/element"
-	"circuit/element/time"
+	_ "circuit/element/register"
+	etime "circuit/element/time"
 	"circuit/load"
+	"circuit/mcp"
 	"circuit/mna"
-)
+	"circuit/webout"
 
+	"github.com/mark3labs/mcp-go/server"
+)
 
 // errWriter 包装 io.Writer，记录首次写入错误。
 // 后续写入自动丢弃，避免静默数据丢失。
@@ -56,8 +66,13 @@ type config struct {
 }
 
 // main 程序入口：解析参数、加载网表、运行仿真、输出结果。
-// 支持批处理和交互式两种模式。
+// 支持批处理、交互式（interactive）与 MCP 服务器（mcpserver）三种模式。
 func main() {
+	// MCP 服务器子命令拥有独立的 flag 集，须在全局 flag 解析前拦截
+	if len(os.Args) > 1 && os.Args[1] == "mcpserver" {
+		os.Exit(runMCPServer(os.Args[2:]))
+	}
+
 	cfg := parseFlags()
 
 	if cfg.parallel < 0 {
@@ -73,8 +88,8 @@ func main() {
 		os.Exit(0)
 	}
 
-	if cfg.format != "csv" && cfg.format != "tsv" && cfg.format != "table" {
-		fmt.Fprintf(os.Stderr, "错误: 不支持的输出格式 '%s'，可选: csv, tsv, table\n", cfg.format)
+	if cfg.format != "csv" && cfg.format != "tsv" && cfg.format != "table" && cfg.format != "html" {
+		fmt.Fprintf(os.Stderr, "错误: 不支持的输出格式 '%s'，可选: csv, tsv, table, html\n", cfg.format)
 		os.Exit(1)
 	}
 
@@ -170,7 +185,7 @@ func parseFlags() config {
 	var nodeStr string
 	flag.StringVar(&nodeStr, "nodes", "", "逗号分隔的要输出的原始节点ID列表")
 
-	flag.StringVar(&cfg.format, "format", "csv", "输出格式: csv, tsv, table")
+	flag.StringVar(&cfg.format, "format", "csv", "输出格式: csv, tsv, table, html")
 
 	flag.BoolVar(&cfg.quiet, "quiet", false, "静默模式，不输出元信息到 stderr")
 
@@ -208,12 +223,104 @@ func parseFlags() config {
 	return cfg
 }
 
+// runMCPServer 运行 MCP(Model Context Protocol) 服务器子命令。
+// 通过 stdio 或 HTTP(SSE/streamable HTTP) 传输向 MCP 客户端提供电路仿真能力。
+//
+// 用法:
+//
+//	circuit mcpserver                          # stdio 模式（默认，供 Claude Desktop / dsh 等）
+//	circuit mcpserver -transport http -addr :18080   # streamable HTTP 模式
+//	circuit mcpserver -transport sse -addr :18080    # SSE 模式
+//	circuit mcpserver -session-ttl 30m               # 会话空闲 30 分钟自动清理
+func runMCPServer(args []string) int {
+	fs := flag.NewFlagSet("mcpserver", flag.ExitOnError)
+	var (
+		transport  = fs.String("transport", "stdio", "传输方式: stdio / http / sse")
+		addr       = fs.String("addr", ":18080", "HTTP 监听地址（http/sse 模式）")
+		sessionTTL = fs.Duration("session-ttl", time.Hour, "会话空闲自动清理 TTL（0=不清理）")
+		showHelp   = fs.Bool("h", false, "显示帮助")
+	)
+	fs.Usage = func() {
+		fmt.Fprint(fs.Output(), `circuit mcpserver - 电路仿真 MCP 服务器
+
+用法:
+  circuit mcpserver [选项]
+
+选项:
+  -transport string   传输方式: stdio / http / sse（默认: stdio）
+  -addr string        HTTP 监听地址（http/sse 模式，默认: :18080）
+  -session-ttl duration 会话空闲自动清理 TTL（默认: 1h，0=不清理）
+  -h                  显示帮助
+
+示例:
+  circuit mcpserver                              # stdio（Claude Desktop 配置用）
+  circuit mcpserver -transport http -addr :18080
+`)
+	}
+	fs.Parse(args)
+	if *showHelp {
+		fs.Usage()
+		return 0
+	}
+
+	store := mcp.NewSessionStore(*sessionTTL)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go store.CleanupLoop(ctx.Done())
+
+	mcpServer := mcp.NewMCPServer(store)
+	log.Printf("circuit MCP 服务器启动 (version %s, 传输: %s)", mcp.Version, *transport)
+
+	switch *transport {
+	case "stdio":
+		if err := server.ServeStdio(mcpServer); err != nil {
+			log.Fatalf("stdio 服务失败: %v", err)
+		}
+	case "http", "streamable-http":
+		httpServer := server.NewStreamableHTTPServer(mcpServer)
+		go func() {
+			<-ctx.Done()
+			shutdownCtx, scancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer scancel()
+			_ = httpServer.Shutdown(shutdownCtx)
+		}()
+		log.Printf("streamable HTTP 监听 %s (POST /mcp)", *addr)
+		if err := httpServer.Start(*addr); err != nil {
+			log.Fatalf("HTTP 服务失败: %v", err)
+		}
+	case "sse":
+		sseServer := server.NewSSEServer(mcpServer)
+		go func() {
+			<-ctx.Done()
+			shutdownCtx, scancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer scancel()
+			_ = sseServer.Shutdown(shutdownCtx)
+		}()
+		log.Printf("SSE 监听 %s (/sse)", *addr)
+		if err := sseServer.Start(*addr); err != nil {
+			log.Fatalf("SSE 服务失败: %v", err)
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "错误: 不支持的传输方式 %q（可选: stdio / http / sse）\n", *transport)
+		return 1
+	}
+
+	// 优雅退出
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	<-sig
+	cancel()
+	log.Printf("circuit MCP 服务器退出")
+	return 0
+}
+
 // printHelp 输出命令行帮助信息到 stderr。
 func printHelp() {
 	fmt.Fprint(os.Stderr, `circuit - 电路仿真命令行工具
 用法:
   circuit [选项] <网表文件>             批处理仿真
   circuit [选项] interactive <网表文件>  交互式连续仿真
+  circuit mcpserver [选项]              启动 MCP 服务器（电路仿真 MCP，详见 "circuit mcpserver -h"）
 
 选项:
   -t, --time float     仿真目标时间（秒）(默认: 0.1)
@@ -227,7 +334,7 @@ func printHelp() {
       --max-steps int  最大时间步数（默认: 10000）
       --nodes string   逗号分隔的要输出的原始节点ID列表，如 "1,2,5"（默认: 全部）
       --parallel int   并行 worker 数（0=串行模式，默认: 0）
-      --format string  输出格式: csv, tsv, table（默认: csv）
+      --format string  输出格式: csv, tsv, table, html（默认: csv）
       --quiet          静默模式，不输出元信息到 stderr
   -h, --help           显示帮助
 
@@ -235,6 +342,7 @@ func printHelp() {
   circuit circuit.net
   circuit -t 0.01 --nodes 1,2,5 -o result.csv circuit.net
   circuit --parallel 4 --format table circuit.net
+  circuit -t 0.05 --format html -o result.html circuit.net
 `)
 }
 
@@ -247,11 +355,44 @@ type tableRow struct {
 	vals []string
 }
 
+// htmlCol 描述 HTML 单网页输出的一个数据列（节点电压或元件电流）。
+// read 从当前步的求解状态读取该列的值。
+type htmlCol struct {
+	header string                    // 列名，如 "node_1"、"I(V1)"、"I(L1.Ie)"
+	unit   string                    // 单位："V"、"A"（气动/液压元件为流量单位）
+	kind   string                    // 曲线分组："voltage" 或 "current"
+	read   func(v []float64) float64 // 读取该列当前步的值
+}
+
+// unitOf 返回元件电流/流量列的单位：元件含气动引脚则为质量流量(kg/s)，
+// 含液压引脚则为体积流量(m³/s)，否则为安培(A)。
+// 覆盖普通元件与压力源/转换器内部的"电压源电流"（其电流实际是气/油流量）。
+func unitOf(cfg *element.Config) string {
+	for _, p := range cfg.Pin {
+		switch p.Type {
+		case element.PinPneumatic:
+			return "kg/s"
+		case element.PinHydraulic:
+			return "m³/s"
+		}
+	}
+	return "A"
+}
+
+// nodeUnitOf 返回某系统类型节点的"电压"列单位：气动/液压节点是压力(Pa)，其余为电压(V)。
+func nodeUnitOf(pinType element.PinType) string {
+	switch pinType {
+	case element.PinPneumatic, element.PinHydraulic:
+		return "Pa"
+	}
+	return "V"
+}
+
 // runSim 执行完整的批处理仿真流程，包括时间控制器设置、节点筛选、步进执行和结果输出。
 func runSim(w io.Writer, con *element.Context, cfg config) error {
 	ew := &errWriter{w: w}
 
-	timeMNA, err := time.NewTimeMNA(cfg.targetTime)
+	timeMNA, err := etime.NewTimeMNA(cfg.targetTime)
 	if err != nil {
 		return fmt.Errorf("创建时间控制器失败: %w", err)
 	}
@@ -259,7 +400,7 @@ func runSim(w io.Writer, con *element.Context, cfg config) error {
 
 	// 初始化恢复条件变量并连接到时间管理器
 	con.InitResumeCond()
-	if tm, ok := con.Time.(*time.TimeMNA); ok {
+	if tm, ok := con.Time.(*etime.TimeMNA); ok {
 		tm.SetNotifier(func() {
 			con.ResumeCond().Broadcast()
 		})
@@ -305,6 +446,100 @@ func runSim(w io.Writer, con *element.Context, cfg config) error {
 
 	headers := buildHeaders(outputNodes)
 
+	// 节点系统类型：通过连接元件的引脚类型推断（电气/气动/液压三套独立系统）。
+	// 同一节点仅允许同域引脚连接（加载时已校验跨域混接），此处按首个引脚类型推断单位；
+	// 转换器(EP/EH)两侧引脚分属不同系统但连接不同节点，不会冲突。
+	nodePinType := make(map[int]element.PinType)
+	for _, elem := range con.Nodelist {
+		cfg := elem.Config()
+		for i := range cfg.Pin {
+			compactIdx := int(elem.GetNodes(i))
+			if compactIdx < 0 {
+				continue
+			}
+			if _, ok := nodePinType[compactIdx]; !ok {
+				nodePinType[compactIdx] = cfg.Pin[i].Type
+			}
+		}
+	}
+
+	// html 模式的数据列：节点电压列 + 元件电流列（电压源电流 + Config.Current 声明索引）。
+	// 电流值直接记录元件/求解器当前值，不做写入一致性过滤。
+	var htmlCols []htmlCol
+	for _, rawID := range outputNodes {
+		rawID := rawID
+		compactIdx, ok := con.CompactNodeID[mna.NodeID(rawID)]
+		unit := "V"
+		if pinType, ok2 := nodePinType[compactIdx]; ok2 {
+			unit = nodeUnitOf(pinType)
+		}
+		htmlCols = append(htmlCols, htmlCol{
+			header: fmt.Sprintf("node_%d", rawID),
+			unit:   unit,
+			kind:   "voltage",
+			read: func(v []float64) float64 {
+				if ok && compactIdx < len(v) {
+					return v[compactIdx]
+				}
+				return 0
+			},
+		})
+	}
+	for _, elem := range con.Nodelist {
+		cfg := elem.Config()
+		inst := elem.Base().InstanceName
+		if inst == "" {
+			inst = cfg.GetName()
+		}
+		// 1) 电压源支路电流（mna 求解器直接给出）
+		for vs := 0; vs < cfg.VoltageNum(); vs++ {
+			vs := vs
+			vsID := elem.GetVoltSource(vs)
+			name := fmt.Sprintf("I(%s)", inst)
+			if cfg.VoltageNum() > 1 {
+				name = fmt.Sprintf("I(%s[%d])", inst, vs)
+			}
+			htmlCols = append(htmlCols, htmlCol{
+				header: name,
+				unit:   unitOf(cfg),
+				kind:   "current",
+				read: func(v []float64) float64 {
+					return con.GetVoltageSourceCurrent(vsID)
+				},
+			})
+		}
+		// 2) 元件声明的自身电流索引（Config.Current）
+		for _, idx := range cfg.Current {
+			idx := idx
+			if idx < 0 || idx >= cfg.ValueNum() {
+				continue
+			}
+			// 只记录数值槽位：int/bool/string 槽（如单向阀 state、开关状态）不是电流，
+			// 跳过以避免 GetFloat64 类型断言警告与错误数据。
+			switch cfg.ValueInit[idx].(type) {
+			case float64, nil:
+			default:
+				continue
+			}
+			name := fmt.Sprintf("I(%s)", inst)
+			if len(cfg.Current) > 1 {
+				suffix := cfg.ValueName[idx]
+				if suffix == "" {
+					suffix = fmt.Sprintf("i%d", idx)
+				}
+				name = fmt.Sprintf("I(%s.%s)", inst, suffix)
+			}
+			htmlCols = append(htmlCols, htmlCol{
+				header: name,
+				unit:   unitOf(cfg),
+				kind:   "current",
+				read: func(v []float64) float64 {
+					return elem.GetFloat64(idx)
+				},
+			})
+		}
+	}
+
 	if !cfg.quiet {
 		fmt.Fprintf(os.Stderr, "加载成功: %d 个元件, %d 个节点\n",
 			len(con.Nodelist), len(con.CompactNodeID))
@@ -312,6 +547,7 @@ func runSim(w io.Writer, con *element.Context, cfg config) error {
 	}
 
 	var tableRows []tableRow
+	var htmlRows [][]float64
 	stepCount := 0
 
 	call := func(v []float64) {
@@ -364,11 +600,21 @@ func runSim(w io.Writer, con *element.Context, cfg config) error {
 				}
 				tableRows = nil
 			}
+		case "html":
+			if ew.err != nil {
+				return
+			}
+			row := make([]float64, 1+len(htmlCols))
+			row[0] = t
+			for i, c := range htmlCols {
+				row[i+1] = c.read(v)
+			}
+			htmlRows = append(htmlRows, row)
 		}
 		stepCount++
 	}
 
-	if err := time.TransientSimulation(con, call); err != nil {
+	if err := etime.TransientSimulation(con, call); err != nil {
 		return fmt.Errorf("仿真失败: %w", err)
 	}
 
@@ -378,6 +624,28 @@ func runSim(w io.Writer, con *element.Context, cfg config) error {
 
 	if cfg.format == "table" {
 		writeTable(ew, headers, tableRows)
+	}
+
+	if cfg.format == "html" {
+		htmlHeaders := make([]string, 0, 1+len(htmlCols))
+		htmlHeaders = append(htmlHeaders, "time")
+		units := make([]string, len(htmlCols))
+		kinds := make([]string, len(htmlCols))
+		for i, c := range htmlCols {
+			htmlHeaders = append(htmlHeaders, c.header)
+			units[i] = c.unit
+			kinds[i] = c.kind
+		}
+		if err := webout.WriteHTML(ew, htmlHeaders, htmlRows, units, kinds, webout.Meta{
+			Title:      fmt.Sprintf("circuit 仿真结果 · %s", filepath.Base(cfg.netlistPath)),
+			Elements:   len(con.Nodelist),
+			Nodes:      len(con.CompactNodeID),
+			Steps:      stepCount,
+			TargetTime: cfg.targetTime,
+			FinalTime:  con.CurrentTime(),
+		}); err != nil {
+			return fmt.Errorf("写入 HTML 输出失败: %w", err)
+		}
 	}
 
 	if !cfg.quiet {
@@ -464,4 +732,3 @@ func writeRow(w io.Writer, cells []string, widths []int) {
 	}
 	fmt.Fprintln(w, sb.String())
 }
-
