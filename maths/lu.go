@@ -3,6 +3,8 @@ package maths
 import (
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 )
 
 // NewLU 创建一个稠密矩阵 LU 分解求解器。
@@ -30,8 +32,8 @@ func NewLUSparse[T Number](n int) (LU[T], error) {
 	return &luSparse[T]{
 		baseLU: baseLU[T]{
 			n:        n,
-			L:        NewSparseMatrix[T](n, n),
-			U:        NewSparseMatrix[T](n, n),
+			L:        newRowSparseMatrix[T](n, n),
+			U:        newRowSparseMatrix[T](n, n),
 			Y:        NewDenseVector[T](n),
 			P:        make([]int, n),
 			pinverse: make([]int, n),
@@ -189,9 +191,42 @@ func (lu *luDense[T]) SolveReuse(b, x Vector[T]) error {
 // luSparse 实现稀疏矩阵的 LU 分解。
 type luSparse[T Number] struct {
 	baseLU[T]
+	perm []int // 静态最小度重排序：U 的第 i 行 = 原矩阵 perm[i] 行（宽行排最后，抑制 fill-in）
+}
+
+// computeStaticPerm 计算静态最小度置换：按行非零数升序排列。
+// MNA 矩阵中电源/地等宽行（上千连接）若提前参与消元会使 fill-in 爆炸，
+// 把它们排到最后可大幅抑制非零元增长。稀疏度相同时保持原顺序（稳定）。
+func (lu *luSparse[T]) computeStaticPerm(matrix Matrix[T]) []int {
+	// 小矩阵（<500 节点）fill-in 温和，保持原顺序以维持既有数值路径
+	// （消元顺序改变会引入不同舍入误差，破坏边沿敏感的时序电路行为）。
+	if lu.n < 500 {
+		perm := make([]int, lu.n)
+		for i := range perm {
+			perm[i] = i
+		}
+		return perm
+	}
+	type rowDeg struct {
+		deg int
+		idx int
+	}
+	rows := make([]rowDeg, lu.n)
+	for i := 0; i < lu.n; i++ {
+		cols, _ := matrix.GetRow(i)
+		rows[i] = rowDeg{deg: len(cols), idx: i}
+	}
+	sort.SliceStable(rows, func(a, b int) bool { return rows[a].deg < rows[b].deg })
+	perm := make([]int, lu.n)
+	for i, r := range rows {
+		perm[i] = r.idx
+	}
+	return perm
 }
 
 // Decompose 对稀疏矩阵执行 LU 分解。
+// 先按静态最小度重排序（宽行排最后，抑制 fill-in）尝试；
+// 若该顺序触发数值奇异（近奇异矩阵对消元顺序敏感），回退原顺序重试一次。
 func (lu *luSparse[T]) Decompose(matrix Matrix[T]) error {
 	if !matrix.IsSquare() {
 		return errors.New("lu sparse decompose: input must be square matrix")
@@ -200,7 +235,43 @@ func (lu *luSparse[T]) Decompose(matrix Matrix[T]) error {
 		return errors.New("lu sparse decompose: matrix dimension mismatch")
 	}
 
-	lu.init(matrix)
+	// 静态最小度重排序：按行宽升序排列，宽行（电源/地）最后消元。
+	// 保持对称置换 U = P·A·Pᵀ，不改变数值解，仅改变消元顺序。
+	lu.perm = lu.computeStaticPerm(matrix)
+	if err := lu.decomposeWithPerm(matrix); err == nil {
+		return nil
+	} else if !strings.Contains(err.Error(), "singular") {
+		return err
+	}
+	// 奇异回退：原顺序（数值路径不同，可能避免假奇异）
+	lu.perm = make([]int, lu.n)
+	for i := range lu.perm {
+		lu.perm[i] = i
+	}
+	return lu.decomposeWithPerm(matrix)
+}
+
+// decomposeWithPerm 按当前 lu.perm 构建 U 并执行消元。
+func (lu *luSparse[T]) decomposeWithPerm(matrix Matrix[T]) error {
+	pinv := make([]int, lu.n)
+	for i, p := range lu.perm {
+		pinv[p] = i
+	}
+
+	// 自定义初始化：L 为单位阵，U = P·A·Pᵀ（行按 perm、列按 pinv 映射）
+	lu.L.Zero()
+	lu.U.Zero()
+	for i := 0; i < lu.n; i++ {
+		lu.P[i] = i
+		lu.pinverse[i] = i
+		lu.L.Set(i, i, T(1))
+	}
+	for i := 0; i < lu.n; i++ {
+		cols, vals := matrix.GetRow(lu.perm[i])
+		for idx, c := range cols {
+			lu.U.Set(i, pinv[c], vals.Get(idx))
+		}
+	}
 
 	for k := 0; k < lu.n; k++ {
 		// --- 部分主元选择 ---
@@ -219,7 +290,7 @@ func (lu *luSparse[T]) Decompose(matrix Matrix[T]) error {
 		}
 
 		if maxAbsVal < Epsilon {
-			return errors.New("lu sparse decompose: matrix is singular or nearly singular")
+			return fmt.Errorf("lu sparse decompose: matrix is singular or nearly singular (k=%d, maxAbs=%g)", k, maxAbsVal)
 		}
 
 		if maxRow != k {
@@ -276,9 +347,10 @@ func (lu *luSparse[T]) SolveReuse(b, x Vector[T]) error {
 
 	// --- 前向替换: Ly = Pb ---
 	// 利用 L 矩阵的稀疏性，只对非零元素进行计算
+	// 行序经静态重排序（perm）与部分主元（P）两级置换：原矩阵行 = perm[P[i]]
 	lu.Y.Zero()
 	for i := 0; i < lu.n; i++ {
-		sum := b.Get(lu.P[i])
+		sum := b.Get(lu.perm[lu.P[i]])
 		cols, vals := lu.L.GetRow(i)
 		for idx, j := range cols {
 			if j < i {
@@ -306,6 +378,16 @@ func (lu *luSparse[T]) SolveReuse(b, x Vector[T]) error {
 			}
 		}
 		x.Set(i, sum/diag)
+	}
+
+	// 静态重排序逆映射：x 按原矩阵列序输出（x[perm[i]] = x'[i]）
+	if lu.perm != nil {
+		for i := 0; i < lu.n; i++ {
+			lu.Y.Set(lu.perm[i], x.Get(i))
+		}
+		for i := 0; i < lu.n; i++ {
+			x.Set(i, lu.Y.Get(i))
+		}
 	}
 	return nil
 }

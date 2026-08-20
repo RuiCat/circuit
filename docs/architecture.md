@@ -118,7 +118,7 @@ $$
 
 支持泛型类型 `float32`、`float64`、`complex64`、`complex128`。并行版本使用递归分块 LU 分解。
 
-**稀疏 LU（CSR）**：`maths/lu.go` 提供 `luSparse`（CSR 稀疏存储的 Doolittle LU + 部分主元），消元不丢弃任何 fill-in，与稠密 LU 数值一致。引擎通过环境变量 `CIRCUIT_LUSPARSE=1` 切换到整条稀疏链路：`load.go` 用 `NewMnaUpdateSparse`（稀疏矩阵 A）+ `simulation.go` 用 `NewLUSparse` + `EquilibrateAndDecomposeSparse`。默认关闭（走稠密）；稀疏模式在大电路上显著提速（300 节点 RC 链约 17x）。注意稀疏 LU 与 `--parallel`（稠密并行 `ParallelLU`）是正交的两条路径，`CIRCUIT_LUSPARSE` 优先于 `--parallel`。
+**稀疏 LU**：`maths/lu.go` 提供 `luSparse`（Doolittle LU + 部分主元），消元不丢弃任何 fill-in，与稠密 LU 数值一致。其内部 L/U 用 `maths/rowSparse.go` 的 `rowSparseMatrix`（行切片稀疏矩阵：insert 用 append、delete 用末位交换+截断、SwapRows 交换切片引用，均 O(1)），避免 CSR 单数组 `insertElement`/`deleteElement` 每次 memmove 整列导致的 fill-in 插入 O(n^4) 退化。引擎通过环境变量 `CIRCUIT_LUSPARSE=1` 切换到整条稀疏链路：`load.go` 用 `NewMnaUpdateSparse`（矩阵 A 用 CSR 稀疏存储）+ `simulation.go` 用 `NewLUSparse` + `EquilibrateAndDecomposeSparse`。默认关闭（走稠密）；稀疏模式在大电路上显著提速（300 节点 RC 链约 17x，2210 节点局部 RTL 连接分解 <0.6s）。注意稀疏 LU 与 `--parallel`（稠密并行 `ParallelLU`）是正交的两条路径，`CIRCUIT_LUSPARSE` 优先于 `--parallel`。
 
 
 ---

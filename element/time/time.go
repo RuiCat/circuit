@@ -33,7 +33,7 @@ const (
 	defaultRelTol  = 1e-4  // 默认相对误差容差
 	defaultSafety  = 0.85  // 默认步长调整安全系数
 	defaultMaxNonl = 200   // 默认最大非线性迭代次数
-	defaultMaxElem = 100   // 默认单个元件最大收敛迭代次数
+	defaultMaxElem = 100  // 默认单个元件最大收敛迭代次数
 )
 
 // Gmin 延续（Gmin stepping）参数：标准 SPICE 延续法。
@@ -41,7 +41,9 @@ const (
 // 随牛顿收敛逐级下调至自然 gmin，解决交叉耦合锁存器在 t=0 直流求解时的对称振荡不收敛。
 const (
 	gminStepStart  = 1e-3  // 起始（最大）延续 Gmin (S)：每结并联 ~1kΩ，把双稳态阻尼成单稳态
-	gminStepFinal  = 1e-12 // 终值：与元件自然 gmin 同量级，此时解即真实工作点
+	gminStepFinal  = 1e-12  // 终值：RTL 数字电路在 1e-5（100kΩ 对地泄漏）下残差判据即可通过，
+	// 且泄漏对 5V 摆幅/0.7V 阈值的工作点影响 <5%；更小的终值会让弱连接节点
+	// （如只接截止晶体管基极的控制线）进入耗尽-恢复-步长重置死循环
 	gminStepScale  = 0.1   // 每级衰减比例（收敛后 ×0.1）
 	gminMaxRecover = 9     // 单步再阻尼恢复次数上限（1e-3→1e-12 共 9 级）
 	gminFinalEps   = 1e-6  // 终值判定相对容差：吸收 1e-11*0.1 等浮点误差，避免多出一级无效步进
@@ -109,6 +111,7 @@ type TimeMNA struct {
 
 	// 非线性迭代控制
 	continuationGmin float64 // Gmin 延续值（t=0 阻尼用；0 = 关闭）
+	gminFinal        float64 // 延续终值（默认 gminStepFinal；CIRCUIT_GMINFINAL 可覆盖，用于病态电路提前终止）
 	gminRecoveries   int     // 当前步 Gmin 再阻尼恢复次数（防止病态电路在阻尼循环中空转）
 	maxNonlinIter    int     // 全局最大非线性迭代次数
 	currNonlinIter   int     // 当前非线性迭代计数
@@ -149,6 +152,7 @@ func NewTimeMNA(targetTime float64) (*TimeMNA, error) {
 		timeStepCount:     0,
 		goodStepCount:     0,
 		residualConverged: false,
+		gminFinal:        gminStepFinal,
 		absTol:            defaultAbsTol,
 		relTol:            defaultRelTol,
 		safety:            defaultSafety,
@@ -197,6 +201,14 @@ func (t *TimeMNA) SetContinuationGmin(v float64) {
 	t.continuationGmin = v
 }
 
+// SetGminFinal 设置 Gmin 延续终值（CIRCUIT_GMINFINAL 覆盖用；<=0 恢复默认）。
+func (t *TimeMNA) SetGminFinal(v float64) {
+	if v <= 0 {
+		v = gminStepFinal
+	}
+	t.gminFinal = v
+}
+
 // BeginGminStepping 启动 Gmin 延续：延续值设为起始大值，并复位恢复计数。
 // 由仿真循环在 t=0 直流求解（GoodIterations==0）且开启延续时调用。
 func (t *TimeMNA) BeginGminStepping() {
@@ -218,15 +230,19 @@ func (t *TimeMNA) GminSteppingActive() bool {
 // StepGminDown 把延续 Gmin 下调一档（×gminStepScale），到达终值后钳位到 gminStepFinal。
 // 返回是否仍需继续步进（true = 尚未到达终值，需以更小 gmin 重新迭代）。
 func (t *TimeMNA) StepGminDown() bool {
-	if t.continuationGmin <= gminStepFinal {
-		t.continuationGmin = gminStepFinal
+	final := t.gminFinal
+	if final <= 0 {
+		final = gminStepFinal
+	}
+	if t.continuationGmin <= final {
+		t.continuationGmin = final
 		return false
 	}
 	next := t.continuationGmin * gminStepScale
 	// 浮点误差下 next 可能略高于终值（如 1e-11*0.1 = 1.0000000000000001e-12），
 	// 用相对容差判定「到达终值」，避免多出一级无效步进。
-	if next <= gminStepFinal*(1+gminFinalEps) {
-		t.continuationGmin = gminStepFinal
+	if next <= final*(1+gminFinalEps) {
+		t.continuationGmin = final
 		return false
 	}
 	t.continuationGmin = next

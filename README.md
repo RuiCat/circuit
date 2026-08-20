@@ -269,6 +269,9 @@ go run ./cmd mcpserver -transport http -addr :18080
     6. element/logic/: 比较器/施密特触发器/SR锁存器测试(3项)
     7. element/semiconductor/: 稳压管钳位/LED正向导通测试(2项)
     8. 测试发现并修正网表语法(GND为-1而非0)、参数顺序等6个问题
+  * [2026-6-3] 补全26个源文件Go文档注释
+    1. 统一注释规范: 文件头模块说明+变量(类型标识+网表格式)+类型(数学模型)+方法(参数/步骤)
+    2. 覆盖: controlled(3) pneumatic(5) hydraulic(5) semiconductor(4) sensor(4) logic(5) maths(1)
   * [2026-8] 实现稳态分析三层能力:AC 相量分析 / 小信号混合分析 / 潮流计算
     1. mna 复数实例化(NewMnaComplex)+ oneOf[T] 修复复数 Stamp 类型断言 panic
     2. analysis 包:AnalyzeAC/SweepAC(复数 MNA 一次求解,RC -3dB 验证)
@@ -288,9 +291,15 @@ go run ./cmd mcpserver -transport http -addr :18080
     3. cmd/powerflow.go: isPowerflowNetlist 检测(第二词元 slack/pv/pq,防误判 B 开关元件)
     4. 输出 csv/tsv/table/html 四种格式;TUI 模式遇潮流网表明确报错
     5. 实测 29 号 exit 0,01/10 号普通网表回归无误判
-  * [2026-6-3] 补全26个源文件Go文档注释
-    1. 统一注释规范: 文件头模块说明+变量(类型标识+网表格式)+类型(数学模型)+方法(参数/步骤)
-    2. 覆盖: controlled(3) pneumatic(5) hydraulic(5) semiconductor(4) sensor(4) logic(5) maths(1)
+  * [2026-8] 引擎标准 SPICE Gmin stepping (解决交叉耦合锁存器 t=0 对称振荡不收敛)
+    1. 延续法: 从大 Gmin(1e-3 S) 给每个 PN 结并联低阻把双稳态阻尼成单稳态,收敛后逐级 ×0.1 降至 1e-12 逼近真实工作点
+    2. 仅 t=0 直流求解步启用,后续步恢复自然 gmin;开关 CIRCUIT_GMCONT=1(默认关闭,不影响普通电路),调试 CIRCUIT_GMIN_DBG=1
+    3. element/time/time.go 状态机(Begin/StepGminDown/RecoverGmin/End) + simulation.go 每步调度/残差判据耦合 + PN 结元件 DoStep 读取延续值
+  * [2026-8] 稀疏 LU 接入与性能优化 (CIRCUIT_LUSPARSE=1 切换 CSR 稀疏链路)
+    1. 修复 luSparse 两处数值 bug: L 主元行交换只交换前 k 列;消元不再用绝对阈值丢弃 fill-in(避免近奇异矩阵误判奇异)
+    2. 新增 NewMnaUpdateSparse 工厂 + EquilibrateAndDecomposeSparse 稀疏均衡化,load/simulation 按开关联动
+    3. rowSparseMatrix 行切片存储替代 CSR 单数组,消除 fill-in 插入的 O(n^4) 退化(memmove 44.6%→append O(1))
+    4. 300 节点 RC 链 ~17.7x 加速;2210 节点局部 RTL 连接分解 78~547ms;稀疏/稠密输出逐位一致
 
 ## 开发任务规划
   1. [✔] 实现基于计算图构建矩阵方程求解器  
@@ -302,6 +311,8 @@ go run ./cmd mcpserver -transport http -addr :18080
   7. [✔] 实现 MCP 服务器（25 工具 + stdio/HTTP/SSE 传输，见 docs/mcp.md）
   8. [✔] 实现稳态分析三层:AC 相量 / 小信号混合 / 潮流计算（见 docs/powerflow.md）
   9. [✔] CLI 直接运行 B/BR 潮流网表（29 号算例可执行，见 docs/powerflow.md §3）
+  10. [✔] 引擎标准 SPICE Gmin stepping（CIRCUIT_GMCONT=1，解决交叉耦合锁存器 t=0 振荡不收敛）
+  11. [✔] 稀疏 LU 接入与性能优化（CIRCUIT_LUSPARSE=1，行切片存储消除 fill-in 插入 O(n^4) 退化）
 
 
 ## 实现过程

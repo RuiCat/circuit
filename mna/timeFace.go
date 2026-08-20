@@ -155,6 +155,8 @@ type Time interface {
 	GetContinuationGmin() float64
 	// SetContinuationGmin 设置 Gmin 延续值（仅 TimeMNA 实现使用）。
 	SetContinuationGmin(v float64)
+	// SetGminFinal 设置 Gmin 延续终值（仅 TimeMNA 实现使用）。
+	SetGminFinal(v float64)
 	// BeginGminStepping 启动 Gmin 延续（延续值设为起始大值，复位恢复计数）。
 	BeginGminStepping()
 	// EndGminStepping 结束 Gmin 延续（恢复自然 gmin）。
