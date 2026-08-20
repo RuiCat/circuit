@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// compKind 元件类别(AC 分析支持的子集)
+// compKind 元件类别(AC/小信号分析支持的子集)
 type compKind int
 
 const (
@@ -18,13 +18,16 @@ const (
 	kindInductor
 	kindVoltage
 	kindCurrent
+	kindDiode
+	kindGate
 )
 
 // parsedComp 解析后的元件
 type parsedComp struct {
 	kind   compKind
 	name   string // 实例名(如 "R1")
-	n1, n2 int    // 原始节点 ID(GND = -1)
+	pins   []int  // 全部引脚原始 ID(多引脚元件如逻辑门;GND = -1)
+	n1, n2 int    // 前两个引脚(双引脚元件的端口)
 	params []float64
 	line   int
 }
@@ -37,8 +40,7 @@ func (c *parsedComp) param(i int, def float64) float64 {
 	return c.params[i]
 }
 
-// parseNetlist 解析 AC/潮流分析支持的网表子集(R/C/L/V/I)。
-// 参数格式与 element 体系一致:
+// parseNetlist 解析网表(R/C/L/V/I/D/U),参数格式与 element 体系一致:
 //
 //	R1 [n1,n2] [R]           — 电阻
 //	C1 [n1,n2] [C]           — 电容(AC 导纳 jωC)
@@ -46,13 +48,15 @@ func (c *parsedComp) param(i int, def float64) float64 {
 //	V1 [n+,n-] [waveform,bias,frequency,phase,V_max] — 电压源
 //	  waveform=0(DC):相量 (V_max+bias)∠0°;waveform=1(AC):相量 V_max∠phase°
 //	I1 [n+,n-] [I]           — 电流源:相量 I∠0°
+//	D1 [a,k] [Is,Vz,N,Rs,T]  — 二极管(小信号分析线性化用)
+//	U1 [in1,...,out] [type,V_high] — 逻辑门(小信号:输出短路、输入高阻)
 func parseNetlist(netlist string) ([]parsedComp, error) {
 	tree, err := ast.NewParseTree(strings.NewReader(netlist))
 	if err != nil {
 		return nil, fmt.Errorf("网表解析失败: %w", err)
 	}
 	if len(tree.SubCircuitDefs) > 0 {
-		return nil, fmt.Errorf("AC 分析暂不支持子电路(.subckt)")
+		return nil, fmt.Errorf("分析暂不支持子电路(.subckt)")
 	}
 	comps := make([]parsedComp, 0, len(tree.ElementNodes))
 	for _, el := range tree.ElementNodes {
@@ -63,8 +67,11 @@ func parseNetlist(netlist string) ([]parsedComp, error) {
 		if len(el.Pins) < 2 {
 			return nil, fmt.Errorf("行 %d: 元件 %s 引脚不足 2 个", el.Line, comp.name)
 		}
-		comp.n1 = parseNodeID(el.Pins[0], el.Line, comp.name)
-		comp.n2 = parseNodeID(el.Pins[1], el.Line, comp.name)
+		for _, p := range el.Pins {
+			comp.pins = append(comp.pins, parseNodeID(p, el.Line, comp.name))
+		}
+		comp.n1 = comp.pins[0]
+		comp.n2 = comp.pins[1]
 		// 参数:全部按 float64 读取(缺失补 0)
 		for _, v := range el.Values {
 			comp.params = append(comp.params, v.ParseFloat64(0))
@@ -80,8 +87,12 @@ func parseNetlist(netlist string) ([]parsedComp, error) {
 			comp.kind = kindVoltage
 		case "i":
 			comp.kind = kindCurrent
+		case "d":
+			comp.kind = kindDiode
+		case "u":
+			comp.kind = kindGate
 		default:
-			return nil, fmt.Errorf("行 %d: AC 分析不支持的元件类型 %q(仅支持 R/C/L/V/I)", el.Line, el.Type)
+			return nil, fmt.Errorf("行 %d: 分析不支持的元件类型 %q(支持 R/C/L/V/I/D/U)", el.Line, el.Type)
 		}
 		comps = append(comps, comp)
 	}

@@ -41,7 +41,17 @@ func AnalyzeAC(netlist string, freq float64) (*ACResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	for _, c := range comps {
+		if c.kind == kindDiode || c.kind == kindGate {
+			return nil, fmt.Errorf("行 %d: 元件 %s 为非线性元件,请使用 AnalyzeSmallSignal 进行小信号分析", c.line, c.name)
+		}
+	}
+	return buildAndSolve(comps, freq, nil)
+}
 
+// buildAndSolve 构建复数 MNA 并求解(线性 AC 与工作点线性化共用)。
+// op: DC 工作点电压(原始节点 ID → V),非线性元件(D/U)线性化依赖;nil = 纯线性 AC。
+func buildAndSolve(comps []parsedComp, freq float64, op map[int]float64) (*ACResult, error) {
 	// 频率确定:参数优先,其次网表 V 源 frequency
 	if freq <= 0 {
 		for _, c := range comps {
@@ -63,16 +73,14 @@ func AnalyzeAC(netlist string, freq float64) (*ACResult, error) {
 	vsNum := 0
 	hasGnd := false
 	for _, c := range comps {
-		if c.n1 == -1 || c.n2 == -1 {
-			hasGnd = true
+		for _, p := range c.pins {
+			if p == -1 {
+				hasGnd = true
+			} else {
+				rawSet[p] = true
+			}
 		}
-		if c.n1 != -1 {
-			rawSet[c.n1] = true
-		}
-		if c.n2 != -1 {
-			rawSet[c.n2] = true
-		}
-		if c.kind == kindVoltage {
+		if c.kind == kindVoltage || c.kind == kindGate {
 			vsNum++
 		}
 	}
@@ -148,7 +156,10 @@ func AnalyzeAC(netlist string, freq float64) (*ACResult, error) {
 			bias := c.param(1, 0)
 			phaseDeg := c.param(3, 0)
 			var phasor complex128
-			if waveform == 0 { // DC:幅值 = V_max + bias,相位 0
+			if op != nil && waveform == 0 {
+				// 小信号分析:DC 源在工作点处短路(SPICE .AC 语义)
+				phasor = 0
+			} else if waveform == 0 { // 线性 AC:DC 源幅值 = V_max + bias,相位 0
 				phasor = complex(vmax+bias, 0)
 			} else { // AC:幅值 = V_max,相位 phase°
 				phase := phaseDeg * math.Pi / 180
@@ -159,8 +170,29 @@ func AnalyzeAC(netlist string, freq float64) (*ACResult, error) {
 			vsIdx++
 		case kindCurrent:
 			cur := c.param(0, 0)
+			if op != nil {
+				cur = 0 // 小信号分析:电流源开路(恒定 DC 电流无交流分量)
+			}
 			m.StampCurrentSource(cid(n1), cid(n2), complex(cur, 0))
 			adms[i] = branchAdm{y: 0} // 电流源:电流恒定
+		case kindDiode:
+			if op == nil {
+				return nil, fmt.Errorf("行 %d: 二极管 %s 需小信号分析(工作点线性化)", c.line, c.name)
+			}
+			g := diodeSmallSignalG(c, op)
+			m.StampAdmittance(cid(n1), cid(n2), complex(g, 0))
+			adms[i] = branchAdm{y: complex(g, 0)}
+		case kindGate:
+			// 逻辑门:输出引脚小信号 = 理想电压源短路(0V);输入引脚高阻到地防悬空
+			outPin := c.pins[len(c.pins)-1]
+			m.StampVoltageSource(cid(outPin), mna.Gnd, mna.VoltageID(vsIdx), 0)
+			adms[i] = branchAdm{phasor: true}
+			vsIdx++
+			for _, in := range c.pins[:len(c.pins)-1] {
+				if in != -1 {
+					m.StampAdmittance(cid(in), mna.Gnd, 1e-12) // 1e12Ω 输入阻抗
+				}
+			}
 		}
 	}
 
@@ -212,7 +244,7 @@ func AnalyzeAC(netlist string, freq float64) (*ACResult, error) {
 		v2 := voltageAt(nodeVolt, c.n2)
 		var cur complex128
 		switch {
-		case c.kind == kindVoltage:
+		case c.kind == kindVoltage || c.kind == kindGate:
 			cur = vsCurrent[vsIdx]
 			vsIdx++
 		case c.kind == kindCurrent:

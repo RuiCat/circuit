@@ -143,7 +143,8 @@ func (Diode) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 			value.SetFloat64(5, voltdiff)
 			// 加盖串联电阻（外部阳极到内部节点）
 			Rs := value.GetFloat64(3)
-			if Rs > 0 {
+			// Rs=0 时 StampImpedance 内部以 1e9 电导近似短路,避免内部节点悬空导致二极管开路
+			if Rs >= 0 {
 				mna.StampImpedance(value.GetNodes(0), value.GetNodesInternal(0), Rs)
 			}
 			return
@@ -170,7 +171,8 @@ func (Diode) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 
 			// 加盖串联电阻（外部阳极到内部节点）
 			Rs := value.GetFloat64(3)
-			if Rs > 0 {
+			// Rs=0 时 StampImpedance 内部以 1e9 电导近似短路,避免内部节点悬空导致二极管开路
+			if Rs >= 0 {
 				mna.StampImpedance(value.GetNodes(0), value.GetNodesInternal(0), Rs)
 			}
 			return
@@ -187,7 +189,8 @@ func (Diode) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 
 	// 加盖串联电阻（外部阳极到内部节点）
 	Rs := value.GetFloat64(3)
-	if Rs > 0 {
+	// Rs=0 时 StampImpedance 内部以 1e9 电导近似短路,避免内部节点悬空导致二极管开路
+	if Rs >= 0 {
 		mna.StampImpedance(value.GetNodes(0), value.GetNodesInternal(0), Rs)
 	}
 }
