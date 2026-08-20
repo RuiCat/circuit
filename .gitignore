@@ -28,7 +28,6 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
-docs
 utils/vm/testdata/linux_kernel
 test
 go.mod

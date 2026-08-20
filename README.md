@@ -276,6 +276,18 @@ go run ./cmd mcpserver -transport http -addr :18080
     4. 修复 element 二极管 Rs=0 内部节点悬空导致开路
     5. powerflow 包:牛顿-拉夫逊(H/N/J/L 雅可比,PV 无功越限转 PQ)
     6. MCP 新增 3 工具(22→25),集成测试全绿
+  * [2026-8] MCP 稳态分析工具落地 (工具总数 22→25)
+    1. circuit_run_ac: 线性 AC 相量分析(复数 MNA 一次求解,幅值/相位/复功率)
+    2. circuit_sweep_ac: 频率扫描(对数/线性,默认对数)
+    3. circuit_run_powerflow: 潮流计算(buses/branches 数组参数,标幺值,Theta 度)
+    4. 功率/复数统一输出 {p,q}/{mag,phaseDeg,real,imag} 结构
+    5. 验证电路 27_ac_filter / 28_small_signal / 29_powerflow_3bus
+  * [2026-8] CLI 直接运行 B/BR 潮流网表 (29 号算例可执行)
+    1. analysis/powerflow/netlist.go: ParseNetlist 解析 B<id> slack|pv|pq + BR<id> From-To
+    2. 键大小写不敏感,错误带行号,语义与 MCP circuit_run_powerflow 一致
+    3. cmd/powerflow.go: isPowerflowNetlist 检测(第二词元 slack/pv/pq,防误判 B 开关元件)
+    4. 输出 csv/tsv/table/html 四种格式;TUI 模式遇潮流网表明确报错
+    5. 实测 29 号 exit 0,01/10 号普通网表回归无误判
   * [2026-6-3] 补全26个源文件Go文档注释
     1. 统一注释规范: 文件头模块说明+变量(类型标识+网表格式)+类型(数学模型)+方法(参数/步骤)
     2. 覆盖: controlled(3) pneumatic(5) hydraulic(5) semiconductor(4) sensor(4) logic(5) maths(1)
@@ -289,6 +301,7 @@ go run ./cmd mcpserver -transport http -addr :18080
   6. [✔] 增加虚拟机,用于加载指令集  
   7. [✔] 实现 MCP 服务器（25 工具 + stdio/HTTP/SSE 传输，见 docs/mcp.md）
   8. [✔] 实现稳态分析三层:AC 相量 / 小信号混合 / 潮流计算（见 docs/powerflow.md）
+  9. [✔] CLI 直接运行 B/BR 潮流网表（29 号算例可执行，见 docs/powerflow.md §3）
 
 
 ## 实现过程
