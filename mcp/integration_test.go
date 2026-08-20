@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -113,13 +114,13 @@ func TestStdioEndToEnd(t *testing.T) {
 		t.Fatalf("服务器名称不符: %v", initRes.ServerInfo.Name)
 	}
 
-	// 工具列表：应包含全部 22 个工具
+	// 工具列表：应包含全部 25 个工具
 	toolsRes, err := c.ListTools(ctx, mcp.ListToolsRequest{})
 	if err != nil {
 		t.Fatalf("ListTools 失败: %v", err)
 	}
-	if len(toolsRes.Tools) != 22 {
-		t.Fatalf("工具数量应为 22，实际 %d", len(toolsRes.Tools))
+	if len(toolsRes.Tools) != 25 {
+		t.Fatalf("工具数量应为 25，实际 %d", len(toolsRes.Tools))
 	}
 	names := map[string]bool{}
 	for _, tool := range toolsRes.Tools {
@@ -136,6 +137,7 @@ func TestStdioEndToEnd(t *testing.T) {
 		"circuit_run_transient", "circuit_run_dc",
 		"circuit_job_status", "circuit_wait_job", "circuit_cancel_job",
 		"circuit_get_results", "circuit_export_plot",
+		"circuit_run_ac", "circuit_sweep_ac", "circuit_run_powerflow",
 	} {
 		if !names[want] {
 			t.Fatalf("缺少工具 %s", want)
@@ -218,5 +220,124 @@ func TestStdioToolErrorPropagation(t *testing.T) {
 	txt := extractText(t, res)
 	if !strings.Contains(txt, "不存在") {
 		t.Fatalf("错误信息不符: %s", txt)
+	}
+}
+
+// TestToolRunAC AC 相量分析工具:RC 低通 -3dB 点验证
+func TestToolRunAC(t *testing.T) {
+	if testing.Short() {
+		t.Skip("短模式跳过集成测试")
+	}
+	bin := buildServerBinary(t)
+	c, err := client.NewStdioMCPClient(bin, nil, "mcpserver")
+	if err != nil {
+		t.Fatalf("启动 stdio 客户端失败: %v", err)
+	}
+	defer c.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if _, err := c.Initialize(ctx, mcp.InitializeRequest{Params: mcp.InitializeParams{
+		ProtocolVersion: mcp.LATEST_PROTOCOL_VERSION,
+		ClientInfo:      mcp.Implementation{Name: "integration-test", Version: "1.0.0"},
+	}}); err != nil {
+		t.Fatalf("Initialize 失败: %v", err)
+	}
+	acNetlist := "v1 [1,-1] [1,0,0,0,1]\nr1 [1,2] [1000]\nc1 [2,-1] [100e-9]"
+	sess := toolCall(t, c, "circuit_new_session", map[string]any{"netlist": acNetlist})
+	sid := sess["sessionId"].(string)
+
+	// f0 = 1/(2π·1000·100n) ≈ 1591.55Hz,|H|=0.707,-45°
+	f0 := 1 / (2 * math.Pi * 1000 * 100e-9)
+	res := toolCall(t, c, "circuit_run_ac", map[string]any{
+		"sessionId": sid, "frequency": f0, "nodes": []any{2.0},
+	})
+	nvs := res["nodeVoltages"].([]any)
+	if len(nvs) != 1 {
+		t.Fatalf("nodeVoltages 应只含节点 2: %v", nvs)
+	}
+	nv := nvs[0].(map[string]any)
+	mag := nv["mag"].(float64)
+	phase := nv["phaseDeg"].(float64)
+	if math.Abs(mag-1/math.Sqrt2) > 1e-3 {
+		t.Fatalf("节点2幅值: 期望 0.7071, 实际 %g", mag)
+	}
+	if math.Abs(phase+45) > 0.1 {
+		t.Fatalf("节点2相位: 期望 -45°, 实际 %g", phase)
+	}
+
+	// 频率扫描
+	sweep := toolCall(t, c, "circuit_sweep_ac", map[string]any{
+		"sessionId": sid, "fMin": f0 / 10, "fMax": f0 * 10, "points": 50, "logScale": true,
+	})
+	freqs := sweep["frequencies"].([]any)
+	if len(freqs) != 50 {
+		t.Fatalf("扫描点数应 50, 实际 %d", len(freqs))
+	}
+	curves := sweep["curves"].([]any)
+	if len(curves) != 2 {
+		t.Fatalf("未过滤时应返回 2 条曲线(节点1,2), 实际 %d", len(curves))
+	}
+	// 过滤节点后只返回 node 2
+	sweep2 := toolCall(t, c, "circuit_sweep_ac", map[string]any{
+		"sessionId": sid, "fMin": f0 / 10, "fMax": f0 * 10, "points": 50, "logScale": true, "nodes": []any{2.0},
+	})
+	curves2 := sweep2["curves"].([]any)
+	if len(curves2) != 1 {
+		t.Fatalf("过滤后曲线数应 1, 实际 %d", len(curves2))
+	}
+	if n, _ := curves2[0].(map[string]any)["node"].(float64); n != 2 {
+		t.Fatalf("曲线节点应为 2, 实际 %v", n)
+	}
+}
+
+// TestToolRunPowerFlow 潮流计算工具:2 母线解析解验证
+func TestToolRunPowerFlow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("短模式跳过集成测试")
+	}
+	bin := buildServerBinary(t)
+	c, err := client.NewStdioMCPClient(bin, nil, "mcpserver")
+	if err != nil {
+		t.Fatalf("启动 stdio 客户端失败: %v", err)
+	}
+	defer c.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if _, err := c.Initialize(ctx, mcp.InitializeRequest{Params: mcp.InitializeParams{
+		ProtocolVersion: mcp.LATEST_PROTOCOL_VERSION,
+		ClientInfo:      mcp.Implementation{Name: "integration-test", Version: "1.0.0"},
+	}}); err != nil {
+		t.Fatalf("Initialize 失败: %v", err)
+	}
+	res := toolCall(t, c, "circuit_run_powerflow", map[string]any{
+		"buses": []any{
+			map[string]any{"id": 1.0, "type": "slack", "v": 1.0},
+			map[string]any{"id": 2.0, "type": "pq", "p": 0.5, "q": 0.2},
+		},
+		"branches": []any{
+			map[string]any{"from": 1.0, "to": 2.0, "r": 0.0, "x": 0.1},
+		},
+	})
+	if conv, _ := res["converged"].(bool); !conv {
+		t.Fatalf("潮流未收敛: %v", res["mismatchLog"])
+	}
+	bvs := res["busVoltages"].([]any)
+	if len(bvs) != 2 {
+		t.Fatalf("母线电压应 2 条: %v", bvs)
+	}
+	var v2 map[string]any
+	for _, bv := range bvs {
+		if bm := bv.(map[string]any); int(bm["bus"].(float64)) == 2 {
+			v2 = bm
+		}
+	}
+	if v2 == nil {
+		t.Fatalf("缺少母线 2: %v", bvs)
+	}
+	if math.Abs(v2["mag"].(float64)-1.018432) > 1e-4 {
+		t.Fatalf("|V2|: 期望 1.018432, 实际 %g", v2["mag"].(float64))
+	}
+	if math.Abs(v2["phaseDeg"].(float64)-2.814) > 0.1 {
+		t.Fatalf("θ2: 期望 2.814°, 实际 %g", v2["phaseDeg"].(float64))
 	}
 }

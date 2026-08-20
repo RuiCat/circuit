@@ -246,5 +246,44 @@ func NewMCPServer(store *SessionStore) *server.MCPServer {
 		h.handleExportPlot,
 	)
 
+	// ---------- F 组 · 稳态分析（AC 相量 / 频率扫描 / 潮流计算） ----------
+	register(
+		mcp.NewTool("circuit_run_ac",
+			mcp.WithDescription("AC 相量分析：对会话网表做线性频域稳态求解（复数 MNA 一次求解），返回节点电压幅值/相位、支路电流与复功率。"),
+			mcp.WithString("sessionId", mcp.Description("会话 ID"), mcp.Required()),
+			mcp.WithNumber("frequency", mcp.Description("分析频率 Hz（可选，默认取网表 V 源 frequency）")),
+			mcp.WithArray("nodes", mcp.Description("输出过滤：原始节点 ID 列表（可选，默认全部）"), mcp.Items(map[string]any{"type": "integer"})),
+		),
+		h.handleRunAC,
+	)
+	register(
+		mcp.NewTool("circuit_sweep_ac",
+			mcp.WithDescription("AC 频率扫描：对数或线性采样 fMin~fMax，返回各节点幅频/相频曲线数据（供 export_plot 复用）。"),
+			mcp.WithString("sessionId", mcp.Description("会话 ID"), mcp.Required()),
+			mcp.WithNumber("fMin", mcp.Description("起始频率 Hz（>0）"), mcp.Required()),
+			mcp.WithNumber("fMax", mcp.Description("终止频率 Hz（>fMin）"), mcp.Required()),
+			mcp.WithInteger("points", mcp.Description("采样点数（可选，默认 100，上限 10000）")),
+			mcp.WithBoolean("logScale", mcp.Description("对数采样（可选，默认 false=线性）")),
+			mcp.WithArray("nodes", mcp.Description("输出过滤：原始节点 ID 列表（可选，默认全部）"), mcp.Items(map[string]any{"type": "integer"})),
+		),
+		h.handleSweepAC,
+	)
+	register(
+		mcp.NewTool("circuit_run_powerflow",
+			mcp.WithDescription("潮流计算：Slack/PV/PQ 母线模型 + 极坐标牛顿-拉夫逊迭代，返回母线电压、发电机注入功率、线路潮流与网损（标幺值）。"),
+			mcp.WithArray("buses", mcp.Description("母线数组：[{id, type: slack|pv|pq, v?, theta?, p?, q?, qmin?, qmax?}]（theta 单位为度）"), mcp.Required(),
+				mcp.Items(map[string]any{"type": "object"})),
+			mcp.WithArray("branches", mcp.Description("支路数组：[{from, to, r, x, b?, tap?}]（标幺）"), mcp.Required(),
+				mcp.Items(map[string]any{"type": "object"})),
+			mcp.WithNumber("baseMva", mcp.Description("标幺基值（可选，默认 100）")),
+			mcp.WithNumber("frequency", mcp.Description("频率 Hz（可选，仅记录）")),
+			mcp.WithNumber("tol", mcp.Description("收敛阈值（可选，默认 1e-6）")),
+			mcp.WithInteger("maxIter", mcp.Description("最大迭代次数（可选，默认 50）")),
+			mcp.WithNumber("damping", mcp.Description("阻尼因子（可选，默认 1.0）")),
+			mcp.WithBoolean("flatStart", mcp.Description("平启动（可选，默认 true）")),
+		),
+		h.handleRunPowerFlow,
+	)
+
 	return srv
 }
