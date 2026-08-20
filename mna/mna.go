@@ -33,22 +33,7 @@ type MnaUpdateType[T maths.Number] struct {
 //	VoltageSourcesNum: 独立电压源和受控源的总数量。
 //	返回:一个新的 UpdateMNA 实例。
 func NewMnaUpdate(NodesNum, VoltageSourcesNum int) MnaUpdate {
-	n := NodesNum + VoltageSourcesNum // 总方程数量
-	// 创建可更新的矩阵和向量
-	mna := &MnaUpdateType[float64]{
-		MnaType: &MnaType[float64]{
-			NodesNum:          NodesNum,
-			VoltageSourcesNum: VoltageSourcesNum,
-		},
-		A:     maths.NewUpdateMatrixPtr(maths.NewDenseMatrix[float64](n, n)),
-		Z:     maths.NewUpdateVectorPtr(maths.NewDenseVector[float64](n)),
-		X:     maths.NewDenseVector[float64](n),
-		LastX: maths.NewDenseVector[float64](n),
-	}
-	mna.MnaType.A = mna.A
-	mna.MnaType.Z = mna.Z
-	mna.MnaType.X = mna.X
-	return mna
+	return NewMnaUpdateT[float64](NodesNum, VoltageSourcesNum)
 }
 
 // Update 将对矩阵A和向量Z的暂存修改应用到底层数据结构中。
@@ -106,14 +91,7 @@ type MnaType[T maths.Number] struct {
 //	vsNum: 独立电压源和受控源的总数量。
 //	返回:一个新的 MNA 实例。
 func NewMna(nodesNum, vsNum int) Mna {
-	n := nodesNum + vsNum // 总方程数量
-	return &MnaType[float64]{
-		A:                 maths.NewDenseMatrix[float64](n, n),
-		Z:                 maths.NewDenseVector[float64](n),
-		X:                 maths.NewDenseVector[float64](n),
-		NodesNum:          nodesNum,
-		VoltageSourcesNum: vsNum,
-	}
+	return NewMnaT[float64](nodesNum, vsNum)
 }
 
 // ------------------------------ 矩阵/向量访问 ------------------------------
@@ -310,7 +288,7 @@ func (m *MnaType[T]) StampVoltageSource(n1, n2 NodeID, vs VoltageID, v T) {
 		return
 	}
 	vsRow := NodeID(vs) + NodeID(m.NodesNum)
-	one := any(float64(1.0)).(T)
+	one := oneOf[T]()
 	// KCL方程: I(vs) 对 n1/n2 节点的贡献
 	m.StampMatrix(n1, vsRow, one)
 	m.StampMatrix(n2, vsRow, -one)
@@ -346,7 +324,7 @@ func (m *MnaType[T]) StampVCVS(on1, on2, cn1, cn2 NodeID, vs VoltageID, gain T) 
 		return
 	}
 	vsRow := NodeID(vs) + NodeID(m.NodesNum)
-	one := any(float64(1.0)).(T)
+	one := oneOf[T]()
 	// KCL: 电压源电流对输出节点的贡献
 	m.StampMatrix(on1, vsRow, one)
 	m.StampMatrix(on2, vsRow, -one)
@@ -371,7 +349,7 @@ func (m *MnaType[T]) StampCCVS(on1, on2 NodeID, cs, vs VoltageID, gain T) {
 	}
 	vsRow := NodeID(vs) + NodeID(m.NodesNum)
 	csCol := NodeID(cs) + NodeID(m.NodesNum)
-	one := any(float64(1.0)).(T)
+	one := oneOf[T]()
 	// KCL: 电压源电流对输出节点的贡献
 	m.StampMatrix(on1, vsRow, one)
 	m.StampMatrix(on2, vsRow, -one)
