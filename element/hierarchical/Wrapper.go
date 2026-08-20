@@ -20,7 +20,7 @@ type Wrapper struct{ *element.Config }
 
 // NewWrapperConfig 基于子电路定义动态创建层级封装元件的配置。
 // ports: 子电路端口名称
-// name:  元件标识名称，由 X 实例名决定
+// name:  元件标识名称，由子电路名称(subcktName)决定
 func NewWrapperConfig(ports []string, name string) *element.Config {
 	pins := make([]element.Pin, len(ports))
 	for i, p := range ports {

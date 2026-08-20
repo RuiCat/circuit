@@ -153,11 +153,13 @@ type stringWriter struct {
 	b []byte
 }
 
+// Write 实现 io.Writer:将数据追加到缓冲区。
 func (w *stringWriter) Write(p []byte) (int, error) {
 	w.b = append(w.b, p...)
 	return len(p), nil
 }
 
+// String 返回已写入的字符串。
 func (w *stringWriter) String() string {
 	return string(w.b)
 }

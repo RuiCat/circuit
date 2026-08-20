@@ -12,7 +12,7 @@ import (
 //
 // 自动复位机制:
 //   autoResetValue(NodeValue[9]) 初始 nil → PullEvents 跳过不传播
-//   用户 set 事件 → PushEvents 推送 → 按钮闭合 → StepFinished 计数
+//   用户设置事件 → PushEvents 推送 → 按钮闭合 → StepFinished 计数
 //   保持期内 autoResetValue 保持 nil（不干扰事件系统）
 //   holdSteps 到期 → autoResetValue=0 → PullEvents 写消费者 → eventValue=0 → 复位
 var MomentarySwitchType element.NodeType = element.AddElement(16, &MomentarySwitch{
@@ -144,6 +144,8 @@ func (ms *MomentarySwitch) CalculateCurrent(mna mna.Mna, time mna.Time, value el
 	value.SetFloat64(11, total) // 记录总电流供输出
 }
 
+// StepFinished 保持步数计数：持续触发 holdSteps 步后写入 autoResetValue=0，
+// 经 PullEvents 清零 eventValue 完成自动复位。
 func (ms *MomentarySwitch) StepFinished(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	holdSteps := value.GetInt(5)
 	stepCounter := value.GetInt(7)

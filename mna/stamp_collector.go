@@ -4,7 +4,7 @@ import (
 	"circuit/maths"
 )
 
-// StampOp 盖章操作类型枚举
+// StampOp 加盖操作类型枚举
 type StampOp uint8
 
 const (
@@ -24,7 +24,7 @@ const (
 	OpIncrementVoltageSource                // 增量更新电压源值操作
 )
 
-// RecordedStamp 记录的一次盖章操作，包含操作类型、节点索引和值
+// RecordedStamp 记录的一次加盖操作，包含操作类型、节点索引和值
 type RecordedStamp struct {
 	Op             StampOp
 	N1, N2, N3, N4 NodeID
@@ -32,7 +32,7 @@ type RecordedStamp struct {
 	Value          float64
 }
 
-// StampCollector 盖章记录器，收集元件在DoStep期间的盖章操作并延迟执行
+// StampCollector 加盖记录器，收集元件在DoStep期间的加盖操作并延迟执行
 type StampCollector struct {
 	Inner     MNAFace[float64]
 	Records   []RecordedStamp
@@ -40,7 +40,7 @@ type StampCollector struct {
 	ReadVsrcs map[VoltageID]struct{}
 }
 
-// NewStampCollector 创建一个新的盖章记录器
+// NewStampCollector 创建一个新的加盖记录器
 func NewStampCollector(inner MNAFace[float64]) *StampCollector {
 	return &StampCollector{
 		Inner:     inner,
@@ -159,7 +159,7 @@ func (sc *StampCollector) IncrementVoltageSource(id VoltageID, increment float64
 	sc.Records = append(sc.Records, RecordedStamp{Op: OpIncrementVoltageSource, ID1: id, Value: increment})
 }
 
-// Flush 将收集的所有盖章操作应用到目标对象。
+// Flush 将收集的所有加盖操作应用到目标对象。
 // 若 target 为 nil，则直接返回，避免空指针访问。
 func (sc *StampCollector) Flush(target Stamp[float64]) {
 	if target == nil {
@@ -197,16 +197,16 @@ func (sc *StampCollector) Flush(target Stamp[float64]) {
 			target.IncrementVoltageSource(r.ID1, r.Value)
 		}
 	}
-	// 清空记录，防止同一收集器被重复 Flush 时二次盖章导致矩阵错误。
+	// 清空记录，防止同一收集器被重复 Flush 时二次加盖导致矩阵错误。
 	sc.Records = sc.Records[:0]
 }
 
-// FlushToMNA 将收集的盖章操作应用到MNA求解器
+// FlushToMNA 将收集的加盖操作应用到MNA求解器
 func (sc *StampCollector) FlushToMNA(mna *MnaUpdateType[float64]) {
 	sc.Flush(mna)
 }
 
-// Reset 清空已记录的所有盖章操作
+// Reset 清空已记录的所有加盖操作
 func (sc *StampCollector) Reset() {
 	sc.Records = sc.Records[:0]
 	sc.ReadNodes = make(map[NodeID]struct{})

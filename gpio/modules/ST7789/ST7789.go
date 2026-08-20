@@ -433,7 +433,7 @@ func NewDriver(spi driver.SPI, gpio driver.GPIO, dtype DriverType) *Driver {
 // Close 关闭LCD驱动。
 func (lcd *Driver) Close() error {
 	lcd.Reset()
-	// 发送休眠指令
+	// 仅复位 LCD，未发送休眠指令（当前实现不发送 0x28 等关机命令）
 	return nil
 }
 

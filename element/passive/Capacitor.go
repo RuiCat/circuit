@@ -24,7 +24,7 @@ var CapacitorType element.NodeType = element.AddElement(0, &Capacitor{
 type Capacitor struct{ *element.Config }
 
 // StartIteration 电容的迭代初始化
-// 计算历史电流源 I_hist = (2C/dt) * v_prev + I_cap_prev，用于伴随模型的电流源贡献
+// 计算历史电流源 I_hist = (2C/dt) * v_diff + I_cap_prev，用于伴随模型的电流源贡献，其中 v_diff 为当前节点电压差
 func (Capacitor) StartIteration(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	dt := time.TimeStep()
 	if dt <= 0 {

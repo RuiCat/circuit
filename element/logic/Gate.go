@@ -16,7 +16,7 @@ const (
 	GateXnor            // 同或门
 )
 
-// GateType 定义了逻辑门
+// GateType 逻辑门元件类型标识（NodeType=12），网表 "U<name> <in1,in2,out> [type,V_high]"。
 var GateType element.NodeType = element.AddElement(12, &Gate{
 	&element.Config{
 		Name: "U",
@@ -54,7 +54,7 @@ func (g *Gate) Stamp(m mna.Mna, t mna.Time, value element.NodeFace) {
 }
 
 // DoStep 根据逻辑门类型和输入计算输出。
-// 使用 0.9 阻尼因子快速收敛交叉耦合锁存器，配合奇偶初始化打破对称性。
+// 使用 0.75 阻尼因子快速收敛交叉耦合锁存器，配合奇偶初始化打破对称性。
 func (g *Gate) DoStep(m mna.Mna, t mna.Time, value element.NodeFace) {
 	if g.PinNum() < 1 {
 		return

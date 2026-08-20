@@ -22,6 +22,8 @@ type ParallelMatrixVectorMul[T Number] struct {
 	numWorkers int
 }
 
+// NewParallelMatrixVectorMul 基于现有矩阵创建并行矩阵向量乘法包装器。
+// workers 为并行 worker 数，小于 1 时使用 GOMAXPROCS 作为默认值。
 func NewParallelMatrixVectorMul[T Number](base Matrix[T], workers int) Matrix[T] {
 	if workers < 1 {
 		workers = runtime.GOMAXPROCS(0)
@@ -81,6 +83,8 @@ type ParallelLU[T Number] struct {
 	numWorkers int
 }
 
+// NewParallelLU 创建并行 LU 分解求解器，内层行消元使用 goroutine 池并行。
+// workers 为并行 worker 数，小于 1 时使用 GOMAXPROCS 作为默认值。
 func NewParallelLU[T Number](n int, workers int) (LU[T], error) {
 	if n < 1 {
 		return nil, errLUZeroDim

@@ -126,6 +126,7 @@ type netlistNotLoadedError struct {
 	sessionID string
 }
 
+// Error 返回错误信息文本。
 func (e *netlistNotLoadedError) Error() string {
 	return "会话 " + e.sessionID + " 尚未加载网表（请先调用 circuit_load_netlist）"
 }

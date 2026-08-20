@@ -16,7 +16,7 @@ var HCVType element.NodeType = element.AddElement(32, &HCV{
 			float64(1e15), // 1: 反向关断液阻 R_off
 			float64(0),    // 2: 开启阈值压力 V_open
 			int(0),        // 3: 状态 (0=反向关断, 1=正向导通)
-			int(0),        // 4: 上次盖印状态 last_state
+			int(0),        // 4: 上次盖章状态 last_state
 		},
 		ValueName: []string{"R_on", "R_off", "V_open", "state", "last_state"},
 		Current:   []int{3},

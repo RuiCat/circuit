@@ -89,7 +89,7 @@ type Time interface {
 	ResidualNorm() float64
 	// Status 返回当前仿真运行状态
 	Status() SimStatus
-	// Status 设置运行状态
+	// SetStatus 设置运行状态
 	SetStatus(old, new SimStatus)
 
 	// ------------------------------

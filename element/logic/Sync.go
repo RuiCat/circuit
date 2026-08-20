@@ -108,7 +108,7 @@ func (s *Sync) Base(elem ast.ElementNode) *element.Config {
 	// 从 Values 填充真值表数据
 	if syncType == SyncTypeTruthTable {
 		for i := truthIdx; i < len(valueInit) && (i-truthIdx) < len(elem.Values); i++ {
-			vi := i - truthIdx + 4 // +4 for type, nInputs, nOutputs, Vhigh
+			vi := i - truthIdx + 4 // +4 跳过 type、nInputs、nOutputs、Vhigh
 			if vi < len(elem.Values) {
 				valueInit[i] = parseSyncBool(elem.Values[vi])
 			}
@@ -167,7 +167,7 @@ func (s *Sync) doTStepTruthTable(m mna.Mna, t mna.Time, value element.NodeFace,
 	}
 
 	// 真值表基准索引 (在 ValueInit 中的位置)
-	truthBase := 4 // type, nInputs, nOutputs, Vhigh
+	truthBase := 4 // type、nInputs、nOutputs、Vhigh 四项
 
 	// 查找真值表并驱动输出
 	for i := 0; i < nOutputs; i++ {
@@ -241,10 +241,10 @@ func init() {
 				2,                  // 1: 输入数 N
 				1,                  // 2: 输出数 M
 				float64(5.0),       // 3: 高电平电压
-				false,              // 4: tt0 (in=00 -> out=0)
-				false,              // 5: tt1 (in=01 -> out=0)
-				false,              // 6: tt2 (in=10 -> out=0)
-				true,               // 7: tt3 (in=11 -> out=1) - AND gate
+				false,              // 4: tt0（输入=00 → 输出=0）
+				false,              // 5: tt1（输入=01 → 输出=0）
+				false,              // 6: tt2（输入=10 → 输出=0）
+				true,               // 7: tt3（输入=11 → 输出=1）— 与门
 			},
 			ValueName: []string{"type", "n_inputs", "n_outputs", "V_high",
 				"tt0", "tt1", "tt2", "tt3"},

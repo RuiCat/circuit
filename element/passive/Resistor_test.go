@@ -10,7 +10,7 @@ import (
 
 // TestResistor 验证电阻分压电路：5V电压源经100Ω电阻到地，检查节点电压和电流是否符合欧姆定律。
 func TestResistor(t *testing.T) {
-	// 使用 LoadNetlistFromString 加载网表
+	// 使用 load.LoadString 加载网表
 	netlist := `
 	v1 [0,-1]
 	r1 [0,-1] [100]

@@ -59,7 +59,8 @@ func TestRunSimpleAddELF(t *testing.T) {
 	// 5. 设置 PC 到入口点并运行模拟器
 	v_m.SetProgramCounter(uint32(file.Entry))
 
-	// 运行足够多的周期以完成程序。由于程序以无限循环结束，因此预计会出现 UVM32_ERR_HUNG。
+	// 运行足够多的周期以完成程序。由于程序以无限循环结束，Run 会在耗尽指令预算后暂停返回；
+	// 此处只需确认执行过程中未发生错误。
 	_, evt := v_m.Run(100000)
 	if evt.Typ != vm.VmEvtTypErr || evt.Err.Errcode != vm.VmErrNone {
 		t.Fatalf("模拟器在意外的状态下停止: Evt=%v, Err=%v", evt.Typ, evt.Err.Errcode)

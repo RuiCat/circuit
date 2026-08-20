@@ -8,11 +8,11 @@ import (
 // FlagValue 用于标记数值
 type FlagValue uint64
 
-// Flag 通过进行事件管理
-// @ 使用方法通过锁定事件获取的标记值通过等待事件函数进行等待.
-// @ 如果释放事件被触发则继续指定标记位的等待事件.
-// @ 获取状态 用来获取当前事件是否存在等待内容.
-// @ 如果释放或等待没有锁定的事件返回为假.
+// Flag 基于条件变量实现的事件管理原语。
+// 使用流程：先通过 LockEvent 锁定并获取一个标记值，再调用 WaitEvent 等待该标记；
+// 当 ReleaseEvent 被触发后，等待该标记位的等待者继续执行。
+// GetStatus 用于查询当前是否存在等待该标记的内容；
+// 若等待或释放的标记未经 LockEvent 锁定，则对应操作返回 false。
 type Flag interface {
 	LockEvent() (flag FlagValue, ok bool) // 锁定事件
 	WaitEvent(flag FlagValue) bool        // 等待事件

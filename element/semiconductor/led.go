@@ -93,7 +93,7 @@ func (LED) Reset(base element.NodeFace) {
 
 	base.SetFloat64(5, 0)
 
-	// 发光强度初始化为0（与电流成正比）
+	// 无独立亮度状态：发光强度与正向电流成正比（见类型文档）
 }
 
 // DoStep LED每步仿真。限制正向电压步长后进行Newton线性化加盖。

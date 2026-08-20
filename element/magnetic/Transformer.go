@@ -6,7 +6,7 @@ import (
 	"math"
 )
 
-// TransformerType 定义
+// TransformerType 变压器类型标识(NodeType=8)，网表"XFMR<name> <p1,p2,s1,s2> [L1,Ratio,k]"；基于耦合电感对建模。
 var TransformerType element.NodeType = element.AddElement(8, &Transformer{
 	&element.Config{
 		Name: "xfmr",

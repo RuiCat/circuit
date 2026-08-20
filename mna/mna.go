@@ -16,7 +16,7 @@ type MnaUpdate = UpdateFace[float64]
 // 它通过一系列“加盖”(Stamp)操作来构建Mna矩阵，并最终求解得到节点电压和支路电流。
 type Mna = MNAFace[float64]
 
-// MnaUpdateType 实现了 UpdateMNA 接口，封装了一个标准的 MNA 求解器，
+// MnaUpdateType 实现了 MnaUpdate (即 UpdateFace) 接口，封装了一个标准的 MNA 求解器，
 // 并为其矩阵和向量提供了更新与回滚的功能。
 type MnaUpdateType[T maths.Number] struct {
 	*MnaType[T]                       // 嵌入MNA接口，继承所有MNA方法
@@ -31,7 +31,7 @@ type MnaUpdateType[T maths.Number] struct {
 //
 //	NodesNum: 电路节点数量（不含地节点）。
 //	VoltageSourcesNum: 独立电压源和受控源的总数量。
-//	返回:一个新的 UpdateMNA 实例。
+//	返回:一个新的 MnaUpdate 实例。
 func NewMnaUpdate(NodesNum, VoltageSourcesNum int) MnaUpdate {
 	return NewMnaUpdateT[float64](NodesNum, VoltageSourcesNum)
 }
@@ -132,7 +132,7 @@ func (m *MnaType[T]) GetVoltageSourceCurrent(i VoltageID) (zero T) {
 
 // isValidNodeID 检查节点ID是否有效：必须大于 Gnd（表示非地节点），
 // 且小于 NodesNum+VoltageSourcesNum（即不超出 MNA 增广矩阵的总维度）。
-// 该方法用于 StampMatrix 和 StampRightSide 内部进行索引安全性检查。
+// 该方法用于各 Stamp 矩阵/右侧向量方法内部进行索引安全性检查。
 func (m *MnaType[T]) isValidNodeID(id NodeID) bool {
 	return id > Gnd && int(id) < m.NodesNum+m.VoltageSourcesNum
 }

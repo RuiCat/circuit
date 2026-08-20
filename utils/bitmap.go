@@ -5,8 +5,8 @@ import "math/bits"
 // BitmapFlag 位图标记
 type BitmapFlag uint64
 
-// Bitmap 位图标记实现
-// @ 通过位图标记实现对状态的管理
+// Bitmap 位图标记接口
+// 通过位图标记实现对布尔状态集合的紧凑管理
 type Bitmap interface {
 	Set(bit BitmapFlag, flag bool)  // 设置标记
 	Get(bit BitmapFlag) (flag bool) // 获取标记

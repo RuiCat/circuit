@@ -21,8 +21,9 @@ const maxExpandedSize = 200 * 1024 * 1024 // 200MB
 
 // ExpandBusNotation 将网表文本中的总线表示法展开为独立信号线。
 // 支持两种模式：
-//   - name[msb:lsb] 范围总线 → name<msb> name<msb±1> ... name<lsb>（降序或升序）
-//   - name[index]   单索引总线 → name<index>
+//   - name[msb:lsb] 范围总线 → name+索引 序列（如 data[7:0] → data7 data6 ... data0，降序或升序）
+//   - name[index]   单索引总线 → name+索引（如 data[3] → data3）
+//
 // 返回展开后的网表文本。
 func ExpandBusNotation(text string) (string, error) {
 	// 统一行尾符（处理 \r\n 和 \r）

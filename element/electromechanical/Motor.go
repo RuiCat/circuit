@@ -6,7 +6,7 @@ import (
 	"math"
 )
 
-// MotorType 定义元件
+// MotorType 直流电机类型标识(NodeType=4)，网表"MOTOR<name> <m+,m-> [V_rated,RPM_rated,Ra,La,Kt,J,B]"；含电枢电阻、电感和反电动势。
 var MotorType element.NodeType = element.AddElement(4, &Motor{
 	&element.Config{
 		Name: "motor",

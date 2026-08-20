@@ -62,7 +62,7 @@ var (
 			Bold(true)
 )
 
-// ===== keyMap =====
+// ===== keyMap 快捷键映射 =====
 // keyMap 定义 TUI 键盘快捷键映射，包含导航、执行和退出等按键。
 type keyMap struct {
 	Up    key.Binding
@@ -77,9 +77,12 @@ type keyMap struct {
 	Quit  key.Binding
 }
 
+// ShortHelp 返回简短的帮助按键列表。
 func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{k.Tab, k.Enter, k.Esc}
 }
+
+// FullHelp 返回完整的帮助按键列表。
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{{k.Tab, k.Up, k.Down, k.Enter, k.Esc}}
 }
@@ -98,7 +101,7 @@ var keys = keyMap{
 	Quit:  key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("Ctrl+C", "退出")),
 }
 
-// ===== simUpdate =====
+// ===== simUpdate 仿真更新消息 =====
 // simUpdate 仿真后台 goroutine 发送到 UI 的消息，携带当前电压、时间和步数。
 type simUpdate struct {
 	voltages    []float64
@@ -107,7 +110,7 @@ type simUpdate struct {
 	currentStep float64
 }
 
-// ===== tuiModel =====
+// ===== tuiModel 核心模型 =====
 // tuiModel 是 TUI 界面的核心模型，管理仿真状态、用户输入、输出日志和 UI 组件。
 type tuiModel struct {
 	con     *element.Context
@@ -190,7 +193,7 @@ func (m *tuiModel) listenUpdates() tea.Cmd {
 	}
 }
 
-// ===== Update =====
+// ===== Update 消息处理 =====
 // Update 实现 tea.Model 接口，处理按键、窗口大小变化和仿真更新消息。
 func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
@@ -330,7 +333,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-// ===== View =====
+// ===== View 渲染 =====
 // View 实现 tea.Model 接口，渲染标题栏、侧边栏、主视口和输入框组成的 TUI 布局。
 func (m *tuiModel) View() string {
 	if m.quitting {
@@ -930,7 +933,7 @@ func (m *tuiModel) checkTrigger(v []float64) {
 	}
 }
 
-// ===== runTUI =====
+// ===== runTUI 启动 =====
 // runTUI 启动连续仿真 TUI 模式：初始化时间控制器、双缓冲区和 bubbletea 程序，运行后台仿真 goroutine。
 func runTUI(con *element.Context, cfg config) error {
 	// 交互式 TUI 依赖真实终端（TTY）进入 raw mode / AltScreen。

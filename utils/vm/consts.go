@@ -87,7 +87,7 @@ const (
 // 中断原因码（最高位为1表示中断）
 const (
 	CAUSE_MACHINE_TIMER_INTERRUPT VmMcauseCode = 0x80000007 // 机器定时器中断
-	CAUSE_SUPERVISOR_TIMER_INTERRUPT VmMcauseCode = 0x80000005 // 超级用户模式定时器中断，用于将定时器中断委托到 S-mode 处理。
+	CAUSE_SUPERVISOR_TIMER_INTERRUPT VmMcauseCode = 0x80000005 // 监控模式定时器中断，用于将定时器中断委托到 S-mode 处理。
 )
 
 // --- CSR (Control and Status Register) 地址 ---

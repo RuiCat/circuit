@@ -251,8 +251,7 @@ func LerpColor(a, b Color, t float32) Color {
 	gb := float32((b >> 5) & 0x3F)
 	bd := float32(b & 0x1F)
 
-	// clamp 防止弹性缓动超调导致 uint16 负值溢出
-	// 各通道线性插值（夹紧防止缓动函数超调导致溢出）
+	// 各通道线性插值（夹紧防止缓动函数超调导致 uint16 负值溢出）
 	r := uint16(clampF32(ra+(rb-ra)*t, 0, 31) + 0.5)
 	g := uint16(clampF32(ga+(gb-ga)*t, 0, 63) + 0.5)
 	bl := uint16(clampF32(bc+(bd-bc)*t, 0, 31) + 0.5)

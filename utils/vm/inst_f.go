@@ -408,7 +408,7 @@ func handleOpFP(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, Vm
 			int_rdid, int_rval = rdid, classify_float64(fd1)
 			return int_rdid, int_rval, pc + 4, CAUSE_TRAP_CODE_OK
 		case FUNCT3_FMV_X_D: // FMV.X.D (RV64D)
-			// In RV32, this moves the lower 32 bits of the double-precision float
+			// 在 RV32 中，仅搬运双精度浮点数的低 32 位到整数寄存器
 			int_rdid, int_rval = rdid, uint32(vmst.Core.FRegs[rs1id])
 			return int_rdid, int_rval, pc + 4, CAUSE_TRAP_CODE_OK
 		default:

@@ -87,7 +87,7 @@ func getElementFace(nodeType NodeType) (ElementFaceList, bool) {
 }
 
 // NodeType 元件类型标识，使用无符号整数表示。
-// 每个元件类型都有一个唯一的NodeType值，用于在ElementLitt中标识和查找。
+// 每个元件类型都有一个唯一的 NodeType 值，用于在 ElementList 中标识和查找。
 type NodeType uint
 
 // NodeFace 元件节点接口，提供对元件动态数据的访问和操作。
@@ -101,15 +101,15 @@ type NodeFace interface {
 	GetFloat64(i int) float64                        // 获取第i个浮点数值参数。
 	GetInt(i int) int                                // 获取第i个整数值参数。
 	GetBool(i int) bool                              // 获取第i个逻辑值参数。
-	GetString(i int) string                          // 获取第i个逻辑值参数。
+	GetString(i int) string                          // 获取第i个字符串值参数。
 	GetNodes(i int) mna.NodeID                       // 获取第i个引脚对应的MNA节点索引。
 	GetVoltSource(i int) mna.VoltageID               // 获取第i个电压源对应的MNA节点索引。
-	GetVoltSourceNodeID(m mna.Mna, i int) mna.NodeID // 获取第i个电压源对应的MNA节点索引。
+	GetVoltSourceNodeID(m mna.Mna, i int) mna.NodeID // 获取第i个电压源对应的MNA物理节点索引。
 	GetNodesInternal(i int) mna.NodeID               // 获取第i个内部节点对应的MNA节点索引。
 	SetFloat64(i int, v float64)                     // 设置第i个浮点数值参数。
 	SetInt(i int, v int)                             // 设置第i个整数值参数。
 	SetBool(i int, v bool)                           // 设置第i个逻辑值参数。
-	SetString(i int, v string)                       // 设置第i个逻辑值参数。
+	SetString(i int, v string)                       // 设置第i个字符串值参数。
 	SetNodePin(i int, n mna.NodeID)                  // 设置指定引脚对应的MNA节点索引。
 	SetNodePins(n ...mna.NodeID)                     // 设置引脚节点索引。
 	SetNodesInternal(i int, n mna.NodeID)            // 设置指定内部节点对应的MNA节点索引。

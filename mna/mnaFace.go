@@ -42,7 +42,7 @@ type Stamp[T maths.Number] interface {
 	// 数学模型: G=1/resistance，在矩阵A的对角元(n1,n1)和(n2,n2)加上G，非对角元(n1,n2)和(n2,n1)减去G。
 	//   n1:         元件的第一个节点ID。
 	//   n2:         元件的第二个节点ID。
-	//   resistance: 阻值（欧姆），必须大于0。
+	//   resistance: 阻值（欧姆）；接近零时实现按大电导处理以避免除零。
 	StampImpedance(n1, n2 NodeID, resistance T)
 
 	// StampAdmittance 为电导元件添加MNA加盖，直接将其电导值g贡献到MNA矩阵A中。

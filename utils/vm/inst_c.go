@@ -258,8 +258,8 @@ func handleC2(vmst *VmState, ir uint16, pc uint32) (uint32, uint32, uint32, VmMc
 
 // 解码 C.J 和 C.JAL 的立即数 (生成 imm[11:1]，bit 0 强制为 0)
 func decodeCJImm(ir uint16) uint32 {
-	// 指令位映射关系 (RISC-V Spec):
-	// inst[12]   -> imm[11] (sign)
+	// 指令位映射关系 (RISC-V 规范):
+	// inst[12]   -> imm[11] (符号位)
 	// inst[11]   -> imm[4]
 	// inst[10:9] -> imm[9:8]
 	// inst[8]    -> imm[10]
@@ -283,7 +283,7 @@ func decodeCJImm(ir uint16) uint32 {
 
 // 解码 C.BEQZ 和 C.BNEZ 的立即数 (8-bit 有符号)
 func decodeCBImm(ir uint16) uint32 {
-	imm := ((ir>>12)&1)<<8 | // bit 8 (sign)
+	imm := ((ir>>12)&1)<<8 | // bit 8 (符号位)
 		((ir>>5)&3)<<6 | // bit 7:6
 		((ir>>2)&1)<<5 | // bit 5
 		((ir>>10)&3)<<3 | // bit 4:3

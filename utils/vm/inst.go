@@ -46,7 +46,7 @@ var (
 )
 
 // init 在包初始化期间自动调用。
-// 其目的是填充 `instructions` 映射，为每个已实现的 RISC-V 操作码注册一个处理函数。
+// 其目的是填充 `Instructions` 映射，为每个已实现的 RISC-V 操作码注册一个处理函数。
 // 此处未注册的操作码将被视为非法指令。
 func init() {
 	Instructions[OPCODE_LUI] = handleLUI

@@ -29,7 +29,7 @@ func TestTransformer(t *testing.T) {
 
 	var maxV1, maxV2 float64
 
-	// 4. 执行仿真
+	// 执行仿真并记录峰值电压
 	time.TransientSimulation(con, func(voltages []float64) {
 		// 记录节点 1 和 节点 2 的最大绝对值（峰值）
 		v1 := math.Abs(con.GetNodeVoltage(1))

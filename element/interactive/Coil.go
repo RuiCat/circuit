@@ -26,7 +26,7 @@ func init() {
 			Name: "RLY",
 			Pin:  element.SetPin(element.PinLowVoltage, "c1", "c2"),
 			ValueInit: []any{
-				"RLY1",         // 0: eventName (模板默认)
+				"RLY1",         // 0: eventName — 事件名（模板默认）
 				float64(100),   // 1: R_coil — 线圈电阻 (Ω)
 				float64(0.01),  // 2: L_coil — 线圈电感 (H)
 				float64(0.01),  // 3: I_pullin — 吸合电流阈值 (A)
@@ -137,7 +137,7 @@ func (c *Coil) StartIteration(mna mna.Mna, time mna.Time, value element.NodeFace
 	}
 
 	// 注意：此变量虽命名为 G_eq，但计算的是电阻值（欧姆），在 Stamp 中用作串联电阻
-	G_eq := math.Max(2*L/dt, 1e-12) // 梯形积分的等效电导
+	G_eq := math.Max(2*L/dt, 1e-12) // 梯形积分的等效电阻（2L/dt，单位 Ω）
 	V_diff := mna.GetNodeVoltage(value.GetNodes(0)) - mna.GetNodeVoltage(value.GetNodes(1))
 	I_coil := value.GetFloat64(base + 7) // I_coil (上一时间步)
 	R := value.GetFloat64(base)          // R_coil

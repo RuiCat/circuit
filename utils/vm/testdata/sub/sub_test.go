@@ -56,7 +56,7 @@ func TestRunSimpleSubELF(t *testing.T) {
 		}
 	}
 
-	// 5. 运行模拟器 (PC is set by NewVmState)
+	// 5. 运行模拟器 (PC 已由 NewVmState 设置)
 	_, evt := v_m.Run(100000)
 	if evt.Typ != vm.VmEvtTypErr || evt.Err.Errcode != vm.VmErrNone {
 		t.Fatalf("模拟器在意外的状态下停止: Evt=%v, Err=%v", evt.Typ, evt.Err.Errcode)

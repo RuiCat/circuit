@@ -50,7 +50,7 @@ func baseWrite(w *Write, v reflect.Value) error {
 	case reflect.String:
 		w.Bytes([]byte(v.String()))
 	case reflect.Pointer:
-	// 防止 nil 指针调用 v.Elem() 导致 panic
+		// 防止 nil 指针调用 v.Elem() 导致 panic
 		if v.IsNil() {
 			w.Bool(false)
 			return nil

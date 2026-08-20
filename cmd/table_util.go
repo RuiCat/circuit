@@ -10,8 +10,8 @@ import (
 )
 
 // renderTable 创建并渲染自适应宽度表格，根据终端宽度动态分配列宽。
-// Column widths are calculated based on content and available width.
-// Returns the rendered table string, or "" if rows is empty.
+// 列宽根据内容与可用宽度计算。
+// 返回渲染后的表格字符串;rows 为空时返回 ""。
 func renderTable(headers []string, rows [][]string, width int) string {
 	if len(rows) == 0 {
 		return ""
@@ -20,7 +20,7 @@ func renderTable(headers []string, rows [][]string, width int) string {
 	ncols := len(headers)
 	minColWidth := 5
 
-	// Calculate max content width per column
+	// 计算每列的最大内容宽度
 	contentWidths := make([]int, ncols)
 	for i, h := range headers {
 		contentWidths[i] = len(h)
@@ -33,7 +33,7 @@ func renderTable(headers []string, rows [][]string, width int) string {
 		}
 	}
 
-	// Add padding (1 left + 1 right)
+	// 加左右各 1 的内边距
 	colWidths := make([]int, ncols)
 	totalNatural := 0
 	for i, cw := range contentWidths {
@@ -42,9 +42,9 @@ func renderTable(headers []string, rows [][]string, width int) string {
 		totalNatural += w
 	}
 
-	// Distribute available width
+	// 分配可用宽度
 	if totalNatural < width {
-		// Expand proportionally
+		// 按比例扩张
 		extra := width - totalNatural
 		for i := range ncols {
 			share := extra / (ncols - i)
@@ -52,7 +52,7 @@ func renderTable(headers []string, rows [][]string, width int) string {
 			extra -= share
 		}
 	} else if totalNatural > width {
-		// Shrink proportionally, keep minimum
+		// 按比例收缩,保持最小宽度
 		scale := float64(width) / float64(totalNatural)
 		allocated := 0
 		for i := 0; i < ncols-1; i++ {
@@ -63,19 +63,19 @@ func renderTable(headers []string, rows [][]string, width int) string {
 		colWidths[ncols-1] = max(width-allocated, minColWidth)
 	}
 
-	// Build table columns with calculated widths
+	// 按计算出的宽度构建表格列
 	cols := make([]table.Column, ncols)
 	for i, h := range headers {
 		cols[i] = table.Column{Title: h, Width: colWidths[i]}
 	}
 
-	// Build table rows
+	// 构建表格行
 	tRows := make([]table.Row, len(rows))
 	for i, row := range rows {
 		tRows[i] = table.Row(row)
 	}
 
-	// Styles
+	// 样式
 	s := table.DefaultStyles()
 	s.Header = lipgloss.NewStyle().Bold(true).Padding(0, 1)
 	s.Cell = lipgloss.NewStyle().Padding(0, 1)

@@ -109,8 +109,7 @@ func getVoltage(value element.NodeFace, time mna.Time) float64 {
 	freqTimeZero := value.GetFloat64(6)
 	noiseValue := value.GetFloat64(7)
 
-	// 如果是直流分析，返回偏置电压
-	// 注意：这里无法访问graph.IsDCAnalysis，简化处理
+	// 直流波形时返回最大电压与偏置之和（当前无法访问直流分析标志，按波形类型简化处理）
 	if waveform == WfDC {
 		return maxVoltage + bias
 	}

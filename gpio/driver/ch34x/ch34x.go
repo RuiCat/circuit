@@ -331,6 +331,7 @@ const (
 	ChipMode3 = 3
 )
 
+// EEPROMType 表示EEPROM芯片型号类型（ID24C01~ID24C4096）。
 type EEPROMType int
 
 const (
@@ -349,6 +350,7 @@ const (
 	ID24C4096
 )
 
+// ChipType 表示芯片型号类型（CH341/CH347T/CH347F/CH339W/CH346C）。
 type ChipType int
 
 const (
@@ -359,6 +361,7 @@ const (
 	ChipCH346C
 )
 
+// FuncType 表示设备功能类型（TTY/HID/VCP）。
 type FuncType int
 
 const (
@@ -484,11 +487,13 @@ func init() {
 	GlobalLib = &library{handle: unsafe.Pointer(h)}
 }
 
+// Error 表示CH34x库调用错误，包含错误码和错误信息，实现了 error 接口。
 type Error struct {
 	Code    int
 	Message string
 }
 
+// Error 返回错误信息的字符串表示。
 func (e *Error) Error() string {
 	return fmt.Sprintf("ch34x error %d: %s", e.Code, e.Message)
 }

@@ -48,7 +48,7 @@ func (m *tuiModel) cmdPlot(args []string) {
 		}
 	}
 
-	// ---- Parse queried nodes ----
+	// ---- 解析查询节点 ----
 	var qn []int
 	if nodeStr == "all" {
 		for raw := range m.con.CompactNodeID {
@@ -75,7 +75,7 @@ func (m *tuiModel) cmdPlot(args []string) {
 		return
 	}
 
-	// ---- Get historical data ----
+	// ---- 获取历史数据 ----
 	m.mu.RLock()
 	total := m.bufCfg.TotalRows()
 	rows := m.bufCfg.LastRows(total)
@@ -87,7 +87,7 @@ func (m *tuiModel) cmdPlot(args []string) {
 		return
 	}
 
-	// ---- Adaptive image size based on actual data points ----
+	// ---- 按实际数据点数自适应图像尺寸 ----
 	imgW := 800
 	dataPts := len(filtered)
 	if dataPts > 400 {
@@ -96,7 +96,7 @@ func (m *tuiModel) cmdPlot(args []string) {
 			imgW = 4096
 		}
 	}
-	// Height: 3:5 ratio to width, min 500, max 4096
+	// 高度:宽度的 3:5,最小 500,最大 4096
 	imgH := imgW * 3 / 5
 	if imgH < 500 {
 		imgH = 500
@@ -105,24 +105,24 @@ func (m *tuiModel) cmdPlot(args []string) {
 	tMin := filtered[0][0]
 	tMax := filtered[len(filtered)-1][0]
 
-	// ---- Build title label ----
+	// ---- 构建标题 ----
 	nodeLabel := nodeStr
 	if len(qn) > 3 && nodeStr == "all" {
 		nodeLabel = fmt.Sprintf("%d nodes", len(qn))
 	}
 	titleStr := fmt.Sprintf("Voltage: %s  [%.3es ~ %.3es]", nodeLabel, tMin, tMax)
 
-	// ---- Create gonum/plot ----
+	// ---- 创建 gonum/plot 绘图对象 ----
 	p := plot.New()
 	p.Title.Text = titleStr
 	p.Title.TextStyle.Font.Size = vg.Points(14)
 	p.X.Label.Text = "Time (s)"
 	p.Y.Label.Text = "Voltage (V)"
 
-	// Add grid
+	// 添加网格
 	p.Add(plotter.NewGrid())
 
-	// ---- Plot curves ----
+	// ---- 绘制曲线 ----
 	for ci, n := range qn {
 		idx, ok := m.con.CompactNodeID[mna.NodeID(n)]
 		if !ok {
@@ -148,13 +148,13 @@ func (m *tuiModel) cmdPlot(args []string) {
 		}
 	}
 
-	// Legend position
+	// 图例位置
 	if len(qn) > 1 {
 		p.Legend.Top = true
 		p.Legend.Left = true
 	}
 
-	// ---- Save PNG ----
+	// ---- 保存 PNG ----
 	dpi := 96.0
 	w := vg.Length(float64(imgW)) * vg.Inch / vg.Length(dpi)
 	h := vg.Length(float64(imgH)) * vg.Inch / vg.Length(dpi)

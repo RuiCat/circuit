@@ -77,7 +77,7 @@ func (vmst *VmState) CsrRead(csr uint32) (uint32, bool) {
 		return 0, false // 返回 false 触发 ILLEGAL_INSTRUCTION
 	}
 	switch csr {
-	// --- Supervisor CSRs ---
+	// --- 监控模式 CSRs ---
 	case CSR_SSTATUS:
 		return vmst.Core.Sstatus, true
 	case CSR_SIE:
@@ -96,7 +96,7 @@ func (vmst *VmState) CsrRead(csr uint32) (uint32, bool) {
 		return vmst.Core.Sip, true
 	case CSR_SATP:
 		return vmst.Core.Satp, true
-	// --- Machine CSRs ---
+	// --- 机器模式 CSRs ---
 	case CSR_MSTATUS:
 		return vmst.Core.Mstatus, true
 	case CSR_MISA:
@@ -152,7 +152,7 @@ func (vmst *VmState) CsrRead(csr uint32) (uint32, bool) {
 	case CSR_MINSTRETH_ALIAS: // minstreth 的别名 (RV32)
 		return uint32(vmst.Core.Minstret >> 32), true
 
-	// --- Floating-Point CSRs ---
+	// --- 浮点 CSRs ---
 	case CSR_FFLAGS:
 		// fflags 是 fcsr 的低5位 [4:0]。
 		return vmst.Core.Fcsr & 0x1f, true
@@ -162,7 +162,7 @@ func (vmst *VmState) CsrRead(csr uint32) (uint32, bool) {
 	case CSR_FCSR:
 		return vmst.Core.Fcsr, true
 
-	// --- Vector CSRs ---
+	// --- 向量 CSRs ---
 	case CSR_VSTART:
 		return vmst.Core.Vstart, true
 	case CSR_VL:
@@ -197,7 +197,7 @@ func (vmst *VmState) CsrWrite(csr uint32, value uint32) bool {
 		return false
 	}
 	switch csr {
-	// --- Supervisor CSRs ---
+	// --- 监控模式 CSRs ---
 	case CSR_SSTATUS:
 		vmst.Core.Sstatus = value
 	case CSR_SIE:
@@ -216,7 +216,7 @@ func (vmst *VmState) CsrWrite(csr uint32, value uint32) bool {
 		vmst.Core.Sip = value
 	case CSR_SATP:
 		vmst.Core.Satp = value
-	// --- Machine CSRs ---
+	// --- 机器模式 CSRs ---
 	case CSR_MSTATUS:
 		vmst.Core.Mstatus = value
 	case CSR_MISA:
@@ -271,7 +271,7 @@ func (vmst *VmState) CsrWrite(csr uint32, value uint32) bool {
 	case CSR_MINSTRETH_ALIAS: // minstreth 的别名 (RV32)
 		vmst.Core.Minstret = (vmst.Core.Minstret & 0xffffffff) | (uint64(value) << 32)
 
-	// --- Floating-Point CSRs ---
+	// --- 浮点 CSRs ---
 	case CSR_FFLAGS:
 		// 只更新 fcsr 的低5位。
 		vmst.Core.Fcsr = (vmst.Core.Fcsr &^ 0x1f) | (value & 0x1f)
@@ -281,7 +281,7 @@ func (vmst *VmState) CsrWrite(csr uint32, value uint32) bool {
 	case CSR_FCSR:
 		vmst.Core.Fcsr = value
 
-	// --- Vector CSRs ---
+	// --- 向量 CSRs ---
 	case CSR_VSTART:
 		vmst.Core.Vstart = value
 	case CSR_VL:
@@ -596,8 +596,8 @@ func (vmst *VmState) VmImaStep(count int) VmMcauseCode {
 //
 // 返回:
 //
-	// (uint32, bool): 该元素在 vmst.Core.Vregs 字节数组中的绝对偏移量，以及地址是否有效。
-	// 返回 false 时调用者应终止当前向量指令并触发 CAUSE_ILLEGAL_INSTRUCTION 异常。
+//	(uint32, bool): 该元素在 vmst.Core.Vregs 字节数组中的绝对偏移量，以及地址是否有效。
+//	返回 false 时调用者应终止当前向量指令并触发 CAUSE_ILLEGAL_INSTRUCTION 异常。
 func (vmst *VmState) GetVelementAddr(reg_start_idx uint32, element_idx uint32, sew_bytes uint32) (uint32, bool) {
 	const VLEN_BYTES = 16 // VLEN (向量寄存器的物理大小) 在此实现中固定为128位（16字节）。
 

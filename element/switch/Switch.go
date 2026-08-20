@@ -5,7 +5,7 @@ import (
 	"circuit/mna"
 )
 
-// SwitchType 定义元件
+// SwitchType 开关元件类型标识（NodeType=7），网表 "sw<name> <n1,n2> [state,R_on,R_off]"。
 var SwitchType element.NodeType = element.AddElement(7, &Switch{
 	&element.Config{
 		Name: "sw",
@@ -14,7 +14,7 @@ var SwitchType element.NodeType = element.AddElement(7, &Switch{
 			int(0),        // 0: 开关状态 (0=关, 1=开)
 			float64(1e-6), // 1: 导通电阻
 			float64(1e12), // 2: 关断电阻
-			int(0),        // 3: 上次盖印状态
+			int(0),        // 3: 上次加盖状态
 			float64(0),    // 4: 电流 I (A)（CalculateCurrent 写入）
 		},
 		ValueName: []string{"state", "R_on", "R_off", "last_state", "I"},
@@ -23,11 +23,11 @@ var SwitchType element.NodeType = element.AddElement(7, &Switch{
 	},
 })
 
-// Switch 开关
+// Switch 单刀单掷开关：state=1 闭合导通（R_on），state=0 断开隔离（R_off）。
 type Switch struct{ *element.Config }
 
 // DoStep 检测开关状态变化并驱动重新盖章。
-// 当开关状态发生变化时（state != lastState），标记未收敛并触发重新 Stamp 以更新阻抗矩阵。
+// 当开关状态发生变化时（state != lastState），标记未收敛并触发重新加盖以更新阻抗矩阵。
 func (s *Switch) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	state := value.GetInt(0)
 	lastState := value.GetInt(3)

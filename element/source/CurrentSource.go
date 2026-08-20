@@ -10,7 +10,7 @@ var CurrentSourceType element.NodeType = element.AddElement(1, &CurrentSource{
 	&element.Config{
 		Name:      "i",
 		Pin:       element.SetPin(element.PinLowVoltage, "i+", "i-"),
-		ValueInit: []any{float64(0.01)}, // 基础电流: 0:0.01A
+		ValueInit: []any{float64(0.01)}, // 索引0：默认电流 0.01A
 		ValueName: []string{"I"},
 		Current:   []int{0},
 	},

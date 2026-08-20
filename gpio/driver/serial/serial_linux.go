@@ -20,11 +20,7 @@ import (
 //
 // 参数：
 //   - name: 串口设备路径，例如 "/dev/ttyUSB0"
-//   - baud: 波特率，支持 50 到 4000000 的标准值
-//   - databits: 数据位大小，支持 5、6、7、8
-//   - parity: 奇偶校验类型，使用 Parity 常量
-//   - stopbits: 停止位类型，使用 StopBits 常量
-//   - readTimeout: 读取超时时间，影响 VMIN 和 VTIME 设置
+//   - config: UART配置，包含波特率、数据位、校验位、停止位和读取超时等设置
 //
 // 返回值：
 //   - *Port: 打开的串口端口实例

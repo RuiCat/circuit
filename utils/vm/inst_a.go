@@ -48,7 +48,7 @@ func handleAMO(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmM
 	// --- 根据 funct5 执行具体操作 ---
 	switch funct5 {
 	case FUNCT5_LR:
-		// LR.W (Load-Reserved Word)
+		// LR.W（加载保留字 Load-Reserved Word）
 		// 从内存加载值，设置保留地址，并将值写入 rd
 		rval, ok := vmst.LoadUint32(paddr)
 		if !ok {
@@ -58,7 +58,7 @@ func handleAMO(vmst *VmState, ir uint32, pc uint32) (uint32, uint32, uint32, VmM
 		return rdid, rval, pc + 4, CAUSE_TRAP_CODE_OK
 
 	case FUNCT5_SC:
-		// SC.W (Store-Conditional Word)
+		// SC.W（存储条件字 Store-Conditional Word）
 		// 检查地址是否与保留地址匹配
 		if paddr == vmst.Core.LoadReservation {
 			// 成功：将 rs2 的值写入内存，rd 置为0

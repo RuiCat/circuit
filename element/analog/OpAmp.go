@@ -1,3 +1,4 @@
+// Package analog 提供模拟电路元件实现（当前为运算放大器 OpAmp）。
 package analog
 
 import (
@@ -5,7 +6,7 @@ import (
 	MNA "circuit/mna"
 )
 
-// OpAmpType 定义元件
+// OpAmpType 运算放大器元件类型标识(NodeType=5)，网表"opamp<name> <Vp,Vn,Vout> [Vmax,Vmin,G]"。
 var OpAmpType element.NodeType = element.AddElement(5, &OpAmp{
 	&element.Config{
 		Name: "opamp",
@@ -26,24 +27,26 @@ var OpAmpType element.NodeType = element.AddElement(5, &OpAmp{
 	},
 })
 
-// OpAmp 运算放大器（基于文章反正切非线性模型的实现）
+// OpAmp 运算放大器元件，采用线性开环增益加输出饱和钳位（Vmax/Vmin）的非线性模型。
 type OpAmp struct{ *element.Config }
 
+// Stamp 加盖运放的MNA贡献：输入端接 1e16Ω 高阻抗到地，输出端通过增益为 G 的压控电压源（VCVS）建立 Vout = G·(Vp-Vn) 约束。
 func (OpAmp) Stamp(mna MNA.Mna, time MNA.Time, value element.NodeFace) {
 	// 输入引脚连接到高阻抗（大电阻到地）
 	mna.StampImpedance(-1, value.GetNodes(0), 1e16)
 	mna.StampImpedance(-1, value.GetNodes(1), 1e16)
 	// 输出引脚通过压控电压源连接
-	// 注意：当前模型为理想线性VCVS，未实现输出饱和限制（Vmax/Vmin）
-	// 在负反馈电路中会正确收敛，开环大信号时输出电压可能无界
+	// 输出饱和钳位（Vmax/Vmin）由 DoStep 实现：进入饱和区时会把 VCVS 方程改写为钳位电压源；
+	// 负反馈电路中会正确收敛，开环大信号时输出电压受 Vmax/Vmin 限幅
 	gain := value.GetFloat64(2)
 	mna.StampVCVS(
-		value.GetNodes(2), -1, // Vout to Gnd
-		value.GetNodes(0), value.GetNodes(1), // controlled by Vp - Vn
+		value.GetNodes(2), -1, // Vout 对地
+		value.GetNodes(0), value.GetNodes(1), // 受 Vp - Vn 控制
 		value.GetVoltSource(0), gain,
 	)
 }
 
+// DoStep 计算输入电压差并执行输出饱和钳位：未饱和时保持线性 VCVS 方程，饱和时将方程改写为钳位电压源。
 func (OpAmp) DoStep(mna MNA.Mna, time MNA.Time, value element.NodeFace) {
 	// 获取节点电压
 	vp := mna.GetNodeVoltage(value.GetNodes(0)) // 同相输入电压 (Vp)
@@ -85,6 +88,7 @@ func (OpAmp) DoStep(mna MNA.Mna, time MNA.Time, value element.NodeFace) {
 	}
 }
 
+// CalculateCurrent 读取电压源支路电流作为运放输出电流 Iout。
 func (OpAmp) CalculateCurrent(mna MNA.Mna, time MNA.Time, value element.NodeFace) {
 	// 电压源的支路电流即为运放输出电流
 	iout := mna.GetVoltageSourceCurrent(value.GetVoltSource(0))

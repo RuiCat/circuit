@@ -36,6 +36,7 @@ type errWriter struct {
 	err error
 }
 
+// Write 实现 io.Writer:记录首次错误,后续写入自动丢弃。
 func (ew *errWriter) Write(p []byte) (int, error) {
 	if ew.err != nil {
 		return 0, ew.err

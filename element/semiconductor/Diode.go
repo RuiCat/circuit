@@ -6,7 +6,7 @@ import (
 	"math"
 )
 
-// DiodeType 定义元件
+// DiodeType 二极管类型标识(NodeType=2)，网表"D<name> <anode,cathode> [Is,Vz,N,Rs,T]"；Vz>0 时启用齐纳击穿分支。
 var DiodeType element.NodeType = element.AddElement(2, &Diode{
 	&element.Config{
 		Name:     "d",

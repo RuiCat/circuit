@@ -6,7 +6,7 @@ import (
 	"math"
 )
 
-// TransistorType 定义元件
+// TransistorType 晶体管类型标识(NodeType=9)，网表"Q<name> <base,collector,emitter> [PNP,hFE]"；支持NPN/PNP。
 var TransistorType element.NodeType = element.AddElement(9, &Transistor{
 	&element.Config{
 		Name: "q",
@@ -22,9 +22,9 @@ var TransistorType element.NodeType = element.AddElement(9, &Transistor{
 			float64(0),        // 7: 发射极电流
 			float64(0),        // 8: 基极电流
 			float64(0),        // 9: 最小电导
-			float64(0),        // 电流记录
-			float64(0),        // 电流记录
-			float64(0),        // 电流记录
+			float64(0),        // 10: 保留槽位（未使用）
+			float64(0),        // 11: 保留槽位（未使用）
+			float64(0),        // 12: 保留槽位（未使用）
 			float64(0.025865), // 13: 热电压 thermalVoltage
 			float64(1e-13),    // 14: 饱和电流 csat
 			float64(100.0),    // 15: 反向beta

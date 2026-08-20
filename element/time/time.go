@@ -119,7 +119,7 @@ type TimeMNA struct {
 	notifier   func()        // 状态改变通知回调，当状态从 Paused 离开时调用
 }
 
-// NewTimeMNA 创建通用TimeMNAImpl实例
+// NewTimeMNA 创建通用的 TimeMNA 实例
 // 参数：targetTime - 仿真目标总时间
 func NewTimeMNA(targetTime float64) (*TimeMNA, error) {
 	// 校验目标时间合法性
@@ -454,7 +454,7 @@ func (t *TimeMNA) Status() mna.SimStatus {
 	return mna.SimStatus(t.status.Load())
 }
 
-// Status 设置当前仿真运行状态。
+// SetStatus 设置当前仿真运行状态（仅当旧状态匹配时生效）。
 func (t *TimeMNA) SetStatus(old, new mna.SimStatus) {
 	t.status.CompareAndSwap(old, new)
 }

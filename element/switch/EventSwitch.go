@@ -83,7 +83,7 @@ func calcEventSwitchState(eventVal float64, threshold float64, normallyOpen int)
 func (es *EventSwitch) Stamp(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	state := calcEventSwitchState(value.GetFloat64(6), value.GetFloat64(1), value.GetInt(2))
 	value.SetInt(5, state)
-	// 阻抗全部由 DoStep 处理，Stamp 不再盖章
+	// 阻抗全部由 DoStep 处理，Stamp 阶段不盖章
 }
 
 // DoStep 根据当前事件值刷新阻抗，并检测状态切换。
