@@ -1,10 +1,16 @@
 # circuit
-Go实现的电气仿真,通过底层泛型与接口统一实现对 电子元件,气路元件,油路元件 综合综合仿真.通过事件同步实现 逻辑电路,潮汐计算 的联动仿真.
+Go实现的电气仿真,通过底层泛型与接口统一实现对 电子元件,气路元件,油路元件 综合综合仿真.通过事件同步实现 逻辑电路,潮流计算 的联动仿真.
 
 ## MCP 服务器
 提供 MCP (Model Context Protocol) 服务器，可通过 LLM 客户端（Claude Desktop / dsh / Cursor）直接进行电路仿真：
-网表加载与校验、元件/节点检视、参数修改、事件驱动、异步瞬态/DC 仿真、结果获取与 HTML 波形导出。
-共 22 个工具（会话 5 + 检视 6 + 修改 4 + 仿真 5 + 导出 2）。
+网表加载与校验、元件/节点检视、参数修改、事件驱动、异步瞬态/DC 仿真、稳态分析（AC 相量 / 频率扫描 / 潮流计算）、结果获取与 HTML 波形导出。
+共 25 个工具（会话 5 + 检视 6 + 修改 4 + 仿真 5 + 导出 2 + 稳态分析 3）。
+
+## 稳态分析（analysis / powerflow 包）
+- **AC 相量分析**：复数 MNA 一次求解，节点幅值/相位/复功率，频率扫描（`circuit_run_ac` / `circuit_sweep_ac`）
+- **小信号混合分析**：DC 工作点 + 工作点线性化（二极管 g_d、逻辑门输出短路），逻辑电路与模拟网络频域联动
+- **潮流计算**：Slack/PV/PQ 母线 + 极坐标牛顿-拉夫逊，母线电压/注入功率/线路潮流/网损（`circuit_run_powerflow`）
+- 详见 [docs/powerflow.md](docs/powerflow.md)；验证电路 cmd/circuits/27~29
 
 ```bash
 # stdio（默认） / HTTP / SSE
@@ -263,6 +269,13 @@ go run ./cmd mcpserver -transport http -addr :18080
     6. element/logic/: 比较器/施密特触发器/SR锁存器测试(3项)
     7. element/semiconductor/: 稳压管钳位/LED正向导通测试(2项)
     8. 测试发现并修正网表语法(GND为-1而非0)、参数顺序等6个问题
+  * [2026-8] 实现稳态分析三层能力:AC 相量分析 / 小信号混合分析 / 潮流计算
+    1. mna 复数实例化(NewMnaComplex)+ oneOf[T] 修复复数 Stamp 类型断言 panic
+    2. analysis 包:AnalyzeAC/SweepAC(复数 MNA 一次求解,RC -3dB 验证)
+    3. 小信号:DC 工作点(element 体系)+ 二极管工作点线性化 + 逻辑门输出短路
+    4. 修复 element 二极管 Rs=0 内部节点悬空导致开路
+    5. powerflow 包:牛顿-拉夫逊(H/N/J/L 雅可比,PV 无功越限转 PQ)
+    6. MCP 新增 3 工具(22→25),集成测试全绿
   * [2026-6-3] 补全26个源文件Go文档注释
     1. 统一注释规范: 文件头模块说明+变量(类型标识+网表格式)+类型(数学模型)+方法(参数/步骤)
     2. 覆盖: controlled(3) pneumatic(5) hydraulic(5) semiconductor(4) sensor(4) logic(5) maths(1)
