@@ -1,5 +1,5 @@
 # circuit
-Go实现的电气仿真,通过底层泛型与接口统一实现对 电子元件,气路元件,油路元件 综合综合仿真.通过事件同步实现 逻辑电路,潮流计算 的联动仿真.
+Go实现的电气仿真,通过底层泛型与接口统一实现对 电子元件,气路元件,油路元件 综合综合仿真.通过事件同步实现 逻辑电路,潮流计算 的联动仿真——时域(瞬态/逻辑)与稳态(AC 相量/小信号/潮流)双引擎,见 [docs/powerflow.md](docs/powerflow.md).
 
 ## MCP 服务器
 提供 MCP (Model Context Protocol) 服务器，可通过 LLM 客户端（Claude Desktop / dsh / Cursor）直接进行电路仿真：
@@ -287,7 +287,8 @@ go run ./cmd mcpserver -transport http -addr :18080
   4. [✔] 实现 加载与导出 
   5. [✔] 规划元件并行计算实现  
   6. [✔] 增加虚拟机,用于加载指令集  
-  7. [✔] 实现 MCP 服务器（22 工具 + stdio/HTTP/SSE 传输，见 docs/mcp.md）
+  7. [✔] 实现 MCP 服务器（25 工具 + stdio/HTTP/SSE 传输，见 docs/mcp.md）
+  8. [✔] 实现稳态分析三层:AC 相量 / 小信号混合 / 潮流计算（见 docs/powerflow.md）
 
 
 ## 实现过程
