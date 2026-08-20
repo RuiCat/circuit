@@ -110,10 +110,26 @@ func main() {
 		}
 	}()
 
-	con, err := load.LoadContext(netlistFile)
+	netlistText, err := io.ReadAll(netlistFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "错误: 网表加载失败: %v\n", err)
-		os.Exit(3)
+		fmt.Fprintf(os.Stderr, "错误: 读取网表文件 %s: %v\n", cfg.netlistPath, err)
+		os.Exit(2)
+	}
+	netlist := string(netlistText)
+	pfNetlist := isPowerflowNetlist(netlist)
+
+	var con *element.Context
+	if pfNetlist {
+		if cfg.mode == "interactive" {
+			fmt.Fprintf(os.Stderr, "错误: 交互式 TUI 不支持潮流网表(B/BR),请用批处理模式输出 csv/tsv/table/html\n")
+			os.Exit(4)
+		}
+	} else {
+		con, err = load.LoadContext(strings.NewReader(netlist))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "错误: 网表加载失败: %v\n", err)
+			os.Exit(3)
+		}
 	}
 
 	if cfg.mode == "interactive" {
@@ -143,6 +159,23 @@ func main() {
 		}()
 		bufWriter = bufio.NewWriter(outFile)
 		w = bufWriter
+	}
+
+	if pfNetlist {
+		if err := runPowerflow(w, netlist, cfg); err != nil {
+			if bufWriter != nil {
+				bufWriter.Flush()
+			}
+			fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+			os.Exit(4)
+		}
+		if bufWriter != nil {
+			if ferr := bufWriter.Flush(); ferr != nil {
+				fmt.Fprintf(os.Stderr, "错误: 刷新输出缓冲区失败: %v\n", ferr)
+				os.Exit(4)
+			}
+		}
+		return
 	}
 
 	if err := runSim(w, con, cfg); err != nil {
