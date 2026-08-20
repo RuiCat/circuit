@@ -223,9 +223,17 @@ func (lu *luSparse[T]) Decompose(matrix Matrix[T]) error {
 		}
 
 		if maxRow != k {
-			// 对于稀疏矩阵，交换 L 和 U 的行，并更新置换矩阵
+			// 对于稀疏矩阵，交换 U 的行，并更新置换矩阵。
+			// L 必须只交换前 k 列（已计算出的乘子），与稠密 LU 一致；
+			// 若整行交换 L，会把对角元素 1 移到次对角位置（如 L[maxRow][k]），
+			// 在前向回代中被当作乘子读取，污染解向量。
 			lu.U.SwapRows(k, maxRow)
-			lu.L.SwapRows(k, maxRow)
+			for j := 0; j < k; j++ {
+				vk := lu.L.Get(k, j)
+				vm := lu.L.Get(maxRow, j)
+				lu.L.Set(k, j, vm)
+				lu.L.Set(maxRow, j, vk)
+			}
 			lu.updatePermutation(k, maxRow)
 		}
 
@@ -236,7 +244,7 @@ func (lu *luSparse[T]) Decompose(matrix Matrix[T]) error {
 
 		for i := k + 1; i < lu.n; i++ {
 			valIK := lu.U.Get(i, k)
-			if Abs(valIK) < Epsilon { // 如果 (i,k) 元素已为零，则跳过该行
+			if valIK == 0 { // 结构零（该列无此行元素），跳过
 				continue
 			}
 
@@ -245,18 +253,15 @@ func (lu *luSparse[T]) Decompose(matrix Matrix[T]) error {
 			var zero T
 			lu.U.Set(i, k, zero)
 
-			// 仅更新主元行中的非零元素对应的列
+			// 仅更新主元行中的非零元素对应的列。
+			// 不丢弃任何 fill-in：与稠密 LU 数值一致。若用绝对阈值丢弃（如 <Epsilon），
+			// 会在近奇异矩阵（如二极管 Rs=0 用 1e9 近似短路）上把后续会成长的有效
+			// pivot 提前置零，导致误判奇异。
 			for idx, j := range pivotCols {
 				if j <= k {
 					continue
 				}
-				updatedVal := lu.U.Get(i, j) - factor*pivotVals.Get(idx)
-				// 维持稀疏性：如果更新后的值接近于零，则视其为零
-				if Abs(updatedVal) < Epsilon {
-					lu.U.Set(i, j, zero)
-				} else {
-					lu.U.Set(i, j, updatedVal)
-				}
+				lu.U.Set(i, j, lu.U.Get(i, j)-factor*pivotVals.Get(idx))
 			}
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
 )
 
 // TransientSimulation 执行瞬态仿真，使用元件回调函数和LU求解器实现迭代计算。
@@ -33,11 +34,16 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 	nodesNum, voltageSourcesNum := con.GetNodeNum(), con.GetVoltageSourcesNum()
 	// 创建LU分解器
 	systemSize := nodesNum + voltageSourcesNum
+	// 稀疏模式（CIRCUIT_LUSPARSE 非空）优先使用稀疏 LU；否则并行稠密 / 串行稠密。
+	sparseLU := os.Getenv("CIRCUIT_LUSPARSE") != ""
 	var luSolver maths.LU[float64]
 	var err error
-	if con.ParallelOpts != nil && con.ParallelOpts.StampWorkers > 1 {
+	switch {
+	case sparseLU:
+		luSolver, err = maths.NewLUSparse[float64](systemSize)
+	case con.ParallelOpts != nil && con.ParallelOpts.StampWorkers > 1:
 		luSolver, err = maths.NewParallelLU[float64](systemSize, con.ParallelOpts.StampWorkers)
-	} else {
+	default:
 		luSolver, err = maths.NewLU[float64](systemSize)
 	}
 	if err != nil {
@@ -52,10 +58,23 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 		return fmt.Errorf("元件状态重置失败: %v", err)
 	}
 	con.ResetTimeStepCount()
+	// Gmin 延续（标准 SPICE Gmin stepping）：t=0 直流求解启动延续步进。
+	// 大 Gmin 把交叉耦合双稳态阻尼成单稳态，随迭代收敛逐级下调至自然 gmin，
+	// 解决锁存器/触发器在 t=0 的对称振荡不收敛问题。默认关闭（CIRCUIT_GMCONT 开启），
+	// 不影响普通电路的既有行为。
+	gminContEnabled := os.Getenv("CIRCUIT_GMCONT") != ""
 	for !con.IsSimulationFinished() {
 		// 将事件值同步到元件 NodeValue
 		if !con.PushEvents() {
 			return nil // 优雅停止
+		}
+		// Gmin 延续调度：仅在 t=0 直流求解步启用；t=0 完成后立即释放，后续步用自然 gmin。
+		if gminContEnabled {
+			if con.Time.GoodIterations() == 0 {
+				con.Time.BeginGminStepping()
+			} else if con.Time.GminSteppingActive() {
+				con.Time.EndGminStepping()
+			}
 		}
 		// 重置X更新状态，允许本时间步内重新调用UpdateX/RollbackX
 		con.MnaUpdateType.ResetXUpdate()
@@ -126,7 +145,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 				return err
 			}
 			// 求解MNA方程（使用均衡化LU分解以处理混合域）
-			rowScale, colScale, err := maths.EquilibrateAndDecompose(luSolver, con.GetA())
+			rowScale, colScale, err := equilibrateDecompose(luSolver, con.GetA(), sparseLU)
 			if err != nil {
 				newStep := con.CurrentStep() / 2
 				if newStep < con.MinTimeStep() {
@@ -156,12 +175,21 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 			// 最少2轮迭代：防止第1轮线性精确求解后残差为0导致的假收敛
 			con.CheckResidualConvergence()
 			if con.IsConverged() && newtonIterCount >= 2 {
+				// 标准 Gmin 步进：收敛于当前阻尼水平，但延续尚未降到终值 →
+				// 下调一档并以当前解为热启动继续迭代，直到在自然 gmin 下收敛。
+				if con.Time.GminSteppingActive() && con.Time.StepGminDown() {
+					if os.Getenv("CIRCUIT_GMIN_DBG") != "" {
+						fmt.Printf("GMIN_DBG step=%d iter=%d -> gmin=%g\n", con.Time.GoodIterations(), newtonIterCount, con.Time.GetContinuationGmin())
+					}
+					continue
+				}
 				newtonConverged = true
 				break // 牛顿迭代收敛，退出内层循环
 			}
 			// 重置元件迭代计数器
 			con.ResetElemIter()
 			// 开始次级迭代循环
+			gminContinue := false
 			for con.NextElemIter() {
 				// 将矩阵回滚到加盖线性元件之后的状态
 				con.A.Rollback()
@@ -171,7 +199,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 					return err
 				}
 				// 重新求解MNA方程（使用均衡化LU分解以处理混合域）
-				rowScale, colScale, err := maths.EquilibrateAndDecompose(luSolver, con.GetA())
+				rowScale, colScale, err := equilibrateDecompose(luSolver, con.GetA(), sparseLU)
 				if err != nil {
 					newStep := con.CurrentStep() / 2
 					if newStep < con.MinTimeStep() {
@@ -199,6 +227,12 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 				con.CheckResidualConvergence()
 				// 如果整个系统现在已经收敛，则更新状态并返回
 				if con.IsConverged() {
+					// 标准 Gmin 步进：中间阻尼解不提交（提交会交换 X，破坏热启动），
+					// 下调一档后继续外层牛顿循环，直至在自然 gmin 下收敛。
+					if con.Time.GminSteppingActive() && con.Time.StepGminDown() {
+						gminContinue = true
+						break
+					}
 					if err = con.CallMark(element.MarkUpdateElements); err != nil {
 						return fmt.Errorf("元件状态更新失败: %v", err)
 					}
@@ -206,12 +240,20 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 					break
 				}
 			}
+			if gminContinue {
+				continue
+			}
 			if luRetry {
 				break
 			}
 			// 如果循环结束，意味着即使经过额外的迭代也未能收敛
 			// 交叉耦合门可能永远无法收敛；继续牛顿外循环而非失败
 			if con.IsElemIterExhausted() {
+				// 标准 Gmin 步进：当前阻尼水平下元件子迭代耗尽（振荡）→
+				// 增大阻尼一档重试；若已到起始阻尼或恢复超限，回退原有强制推进。
+				if con.Time.GminSteppingActive() && con.Time.RecoverGmin() {
+					continue
+				}
 				log.Printf("警告: 时间 %.6e 元件次级迭代耗尽（%d 次），强制推进", con.CurrentTime(), con.MaxElemIter())
 				newtonConverged = true
 			}
@@ -314,6 +356,15 @@ func doStep(con *element.Context) error {
 		return con.ParallelCallMark(element.MarkDoStep)
 	}
 	return con.CallMark(element.MarkDoStep)
+}
+
+// equilibrateDecompose 根据稀疏开关选择均衡化 LU 分解路径：
+// 稀疏模式用只遍历非零元的稀疏版本，否则用稠密版本。两者数值等价。
+func equilibrateDecompose(luSolver maths.LU[float64], A maths.Matrix[float64], sparse bool) (rowScale, colScale []float64, err error) {
+	if sparse {
+		return maths.EquilibrateAndDecomposeSparse(luSolver, A)
+	}
+	return maths.EquilibrateAndDecompose(luSolver, A)
 }
 
 // extractAndValidateVoltages 从MNA求解器提取节点电压和电压源电流并验证有效性

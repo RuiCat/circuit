@@ -290,6 +290,10 @@ func doDiodeStep(mna mna.Mna, time mna.Time, value element.NodeFace, voltdiff fl
 	if gmin < 1e-12 {
 		gmin = 1e-12
 	}
+	// Gmin 延续（t=0 阻尼收敛）：取元素 gmin 与延续值的较大者
+	if cg := time.GetContinuationGmin(); cg > gmin {
+		gmin = cg
+	}
 
 	// 只有在收敛困难时才增加gmin，且增加幅度要小
 	// 原始CircuitJS1代码中这个逻辑可能导致gmin过大

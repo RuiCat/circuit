@@ -62,6 +62,8 @@ $$
 
 **收敛条件**：最小 2 轮 Newton 迭代防止线性精确求解导致假收敛；元件次级迭代用于处理交叉耦合元件。
 
+**Gmin 延续（标准 SPICE Gmin stepping）**：对交叉耦合双稳态电路（SR 锁存器、触发器、RAM 单元），t=0 直流求解时 Newton 迭代会在「两输出同为高/同为低」之间对称振荡、永不收敛。引擎实现了标准 SPICE 延续法：从大 Gmin（1e-3 S，给每个 PN 结并联低阻）把双稳态阻尼成单稳态，锁存器先被压到确定状态，再随 Newton 收敛逐级 ×0.1 下调 Gmin 至 1e-12，数值上平滑逼近真实工作点。启用方式：环境变量 `CIRCUIT_GMCONT=1`（默认关闭，仅作用于 t=0 步，后续时间步恢复自然 gmin，不影响普通电路）；调试轨迹用 `CIRCUIT_GMIN_DBG=1`。相关实现：`element/time/time.go`（状态机：Begin/StepGminDown/RecoverGmin/End）、`element/time/simulation.go`（每步调度 + 残差判据耦合）、`element/semiconductor/*`（DoStep 读取延续值）。
+
 ### 1.3 Adams-Bashforth-Moulton 预测-校正法（3 阶）
 
 对于纯 DC 电路（无储能元件），使用 3 阶 Adams 多步法提供 Newton 迭代的初始猜测值并估计局部截断误差 (LTE) 以自适应调整步长。
@@ -115,6 +117,9 @@ $$
 2. 回代 (Backward Substitution)：$\mathbf{U}\mathbf{x} = \mathbf{y}$
 
 支持泛型类型 `float32`、`float64`、`complex64`、`complex128`。并行版本使用递归分块 LU 分解。
+
+**稀疏 LU（CSR）**：`maths/lu.go` 提供 `luSparse`（CSR 稀疏存储的 Doolittle LU + 部分主元），消元不丢弃任何 fill-in，与稠密 LU 数值一致。引擎通过环境变量 `CIRCUIT_LUSPARSE=1` 切换到整条稀疏链路：`load.go` 用 `NewMnaUpdateSparse`（稀疏矩阵 A）+ `simulation.go` 用 `NewLUSparse` + `EquilibrateAndDecomposeSparse`。默认关闭（走稠密）；稀疏模式在大电路上显著提速（300 节点 RC 链约 17x）。注意稀疏 LU 与 `--parallel`（稠密并行 `ParallelLU`）是正交的两条路径，`CIRCUIT_LUSPARSE` 优先于 `--parallel`。
+
 
 ---
 

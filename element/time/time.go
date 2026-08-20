@@ -36,6 +36,17 @@ const (
 	defaultMaxElem = 100   // 默认单个元件最大收敛迭代次数
 )
 
+// Gmin 延续（Gmin stepping）参数：标准 SPICE 延续法。
+// 从大 Gmin 开始，把双稳态电路（锁存器/触发器/RAM 单元）阻尼成单稳态，
+// 随牛顿收敛逐级下调至自然 gmin，解决交叉耦合锁存器在 t=0 直流求解时的对称振荡不收敛。
+const (
+	gminStepStart  = 1e-3  // 起始（最大）延续 Gmin (S)：每结并联 ~1kΩ，把双稳态阻尼成单稳态
+	gminStepFinal  = 1e-12 // 终值：与元件自然 gmin 同量级，此时解即真实工作点
+	gminStepScale  = 0.1   // 每级衰减比例（收敛后 ×0.1）
+	gminMaxRecover = 9     // 单步再阻尼恢复次数上限（1e-3→1e-12 共 9 级）
+	gminFinalEps   = 1e-6  // 终值判定相对容差：吸收 1e-11*0.1 等浮点误差，避免多出一级无效步进
+)
+
 // 3阶Adams方法系数常量
 const (
 	// Adams-Bashford预测器系数 (3阶)
@@ -68,8 +79,8 @@ type TimeMNA struct {
 	currentTime atomicFloat64 // 当前仿真时间（累积值）；跨 goroutine（AdvanceFor 读取）故原子化
 	targetTime  atomicFloat64 // 仿真目标总时间；跨 goroutine（AdvanceFor 写入）故原子化
 	currentStep float64       // 当前自适应步长
-	minStep     float64 // 最小允许步长
-	maxStep     float64 // 最大允许步长
+	minStep     float64       // 最小允许步长
+	maxStep     float64       // 最大允许步长
 
 	// 时间步控制
 	maxTimeSteps  int // 最大时间步数限制
@@ -97,10 +108,12 @@ type TimeMNA struct {
 	residualHist [3]float64 // 残差历史（用于趋势分析）
 
 	// 非线性迭代控制
-	maxNonlinIter  int // 全局最大非线性迭代次数
-	currNonlinIter int // 当前非线性迭代计数
-	maxElemIter    int // 单个元件最大收敛迭代次数
-	currElemIter   int // 当前元件收敛迭代计数
+	continuationGmin float64 // Gmin 延续值（t=0 阻尼用；0 = 关闭）
+	gminRecoveries   int     // 当前步 Gmin 再阻尼恢复次数（防止病态电路在阻尼循环中空转）
+	maxNonlinIter    int     // 全局最大非线性迭代次数
+	currNonlinIter   int     // 当前非线性迭代计数
+	maxElemIter      int     // 单个元件最大收敛迭代次数
+	currElemIter     int     // 当前元件收敛迭代计数
 
 	// 局部截断误差（LTE）相关
 	localTruncError float64 // 局部截断误差估计
@@ -173,6 +186,68 @@ func (t *TimeMNA) SetTolerances(absTol, relTol float64) error {
 // ------------------------------
 // TransientSimulation 支持方法
 // ------------------------------
+
+// GetContinuationGmin 返回当前 Gmin 延续值。
+func (t *TimeMNA) GetContinuationGmin() float64 {
+	return t.continuationGmin
+}
+
+// SetContinuationGmin 设置 Gmin 延续值。
+func (t *TimeMNA) SetContinuationGmin(v float64) {
+	t.continuationGmin = v
+}
+
+// BeginGminStepping 启动 Gmin 延续：延续值设为起始大值，并复位恢复计数。
+// 由仿真循环在 t=0 直流求解（GoodIterations==0）且开启延续时调用。
+func (t *TimeMNA) BeginGminStepping() {
+	t.continuationGmin = gminStepStart
+	t.gminRecoveries = 0
+}
+
+// EndGminStepping 结束 Gmin 延续：恢复自然 gmin（0 = 关闭延续）。
+// t=0 步完成后，后续时间步不再使用阻尼延续。
+func (t *TimeMNA) EndGminStepping() {
+	t.continuationGmin = 0
+}
+
+// GminSteppingActive 返回延续是否激活（>0 表示正在步进中）。
+func (t *TimeMNA) GminSteppingActive() bool {
+	return t.continuationGmin > 0
+}
+
+// StepGminDown 把延续 Gmin 下调一档（×gminStepScale），到达终值后钳位到 gminStepFinal。
+// 返回是否仍需继续步进（true = 尚未到达终值，需以更小 gmin 重新迭代）。
+func (t *TimeMNA) StepGminDown() bool {
+	if t.continuationGmin <= gminStepFinal {
+		t.continuationGmin = gminStepFinal
+		return false
+	}
+	next := t.continuationGmin * gminStepScale
+	// 浮点误差下 next 可能略高于终值（如 1e-11*0.1 = 1.0000000000000001e-12），
+	// 用相对容差判定「到达终值」，避免多出一级无效步进。
+	if next <= gminStepFinal*(1+gminFinalEps) {
+		t.continuationGmin = gminStepFinal
+		return false
+	}
+	t.continuationGmin = next
+	return true
+}
+
+// RecoverGmin 牛顿未收敛（元件子迭代耗尽）时增大阻尼一档（回退上一级），
+// 返回是否还有恢复额度（false = 已在起始阻尼或恢复次数超限）。
+func (t *TimeMNA) RecoverGmin() bool {
+	if t.continuationGmin >= gminStepStart || t.gminRecoveries >= gminMaxRecover {
+		return false
+	}
+	t.gminRecoveries++
+	next := t.continuationGmin / gminStepScale
+	// 与 StepGminDown 对称：浮点误差下 next 可能略低于起始值，钳位到起始值。
+	if next >= gminStepStart*(1-gminFinalEps) {
+		next = gminStepStart
+	}
+	t.continuationGmin = math.Min(gminStepStart, next)
+	return true
+}
 
 // MaxNonlinearIter 返回最大非线性迭代次数
 func (t *TimeMNA) MaxNonlinearIter() int {
@@ -703,7 +778,7 @@ func (t *TimeMNA) CalculateMNAResidual(mnaSolver mna.Mna) error {
 	for i := range n {
 		xVal := X.Get(i)
 		absX := math.Abs(xVal)
-		t.solutionNorm += absX * absX  // 保持 L2 范数用于日志
+		t.solutionNorm += absX * absX // 保持 L2 范数用于日志
 
 		residual := AX.Get(i) - Z.Get(i)
 		absRes := math.Abs(residual)
@@ -711,7 +786,7 @@ func (t *TimeMNA) CalculateMNAResidual(mnaSolver mna.Mna) error {
 
 		// 分量容差：absTol + relTol * max(|X_i|, 1.0)
 		// 1.0 作为保护下限，防止零解分量的相对容差过严
-		componentTol := t.absTol + t.relTol * math.Max(absX, 1.0)
+		componentTol := t.absTol + t.relTol*math.Max(absX, 1.0)
 		if componentTol > 0 {
 			relErr := absRes / componentTol
 			if relErr > maxRelError {

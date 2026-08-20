@@ -120,14 +120,21 @@ func (Transistor) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	csat := value.GetFloat64(14) // 默认饱和电流
 	vtn := value.GetFloat64(13)  // 热电压
 
+	// Gmin 延续（t=0 阻尼收敛）：取元件自然 gmin 与延续值的较大者。
+	// 用局部变量，不写回参数槽，避免延续结束后元件 gmin 被永久抬高。
+	elemGmin := value.GetFloat64(9)
+	if cg := time.GetContinuationGmin(); cg > elemGmin {
+		elemGmin = cg
+	}
+
 	// 计算发射结电流
 	var cbe, gbe float64
 	if vbe > -5*vtn {
 		evbe := safeExp(vbe / vtn)
-		cbe = csat*(evbe-1) + value.GetFloat64(9)*vbe
-		gbe = csat*evbe/vtn + value.GetFloat64(9)
+		cbe = csat*(evbe-1) + elemGmin*vbe
+		gbe = csat*evbe/vtn + elemGmin
 	} else {
-		gbe = value.GetFloat64(9)
+		gbe = elemGmin
 		cbe = -csat + gbe*vbe
 	}
 
@@ -135,10 +142,10 @@ func (Transistor) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	var cbc, gbc float64
 	if vbc > -5*vtn {
 		evbc := safeExp(vbc / vtn)
-		cbc = csat*(evbc-1) + value.GetFloat64(9)*vbc
-		gbc = csat*evbc/vtn + value.GetFloat64(9)
+		cbc = csat*(evbc-1) + elemGmin*vbc
+		gbc = csat*evbc/vtn + elemGmin
 	} else {
-		gbc = value.GetFloat64(9)
+		gbc = elemGmin
 		cbc = -csat + gbc*vbc
 	}
 

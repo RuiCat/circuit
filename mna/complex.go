@@ -34,6 +34,23 @@ func NewMnaUpdateT[T maths.Number](nodesNum, vsNum int) *MnaUpdateType[T] {
 	return mna
 }
 
+// NewMnaUpdateSparseT 泛型工厂：与 NewMnaUpdateT 相同，但 A 使用 CSR 稀疏基矩阵。
+// 供瞬态引擎在稀疏模式下使用（与稀疏 LU 分解器配套）。
+func NewMnaUpdateSparseT[T maths.Number](nodesNum, vsNum int) *MnaUpdateType[T] {
+	n := nodesNum + vsNum
+	mna := &MnaUpdateType[T]{
+		MnaType: NewMnaT[T](nodesNum, vsNum),
+		A:       maths.NewUpdateMatrixPtr(maths.NewSparseMatrix[T](n, n)),
+		Z:       maths.NewUpdateVectorPtr(maths.NewDenseVector[T](n)),
+		X:       maths.NewDenseVector[T](n),
+		LastX:   maths.NewDenseVector[T](n),
+	}
+	mna.MnaType.A = mna.A
+	mna.MnaType.Z = mna.Z
+	mna.MnaType.X = mna.X
+	return mna
+}
+
 // NewMnaComplex 创建复数(complex128)基础 MNA 求解器,用于 AC 相量分析。
 func NewMnaComplex(nodesNum, vsNum int) *MnaType[complex128] {
 	return NewMnaT[complex128](nodesNum, vsNum)

@@ -169,6 +169,10 @@ func ledDoStep(mna mna.Mna, time mna.Time, value element.NodeFace, voltdiff floa
 	if gmin < 1e-12 {
 		gmin = 1e-12
 	}
+	// Gmin 延续（t=0 阻尼收敛）：取元素 gmin 与延续值的较大者
+	if cg := time.GetContinuationGmin(); cg > gmin {
+		gmin = cg
+	}
 
 	subIterations := time.GoodIterations()
 	if subIterations > 100 {

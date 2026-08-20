@@ -110,3 +110,56 @@ func SolveEquilibrated[T Number](luSolver LU[T], b, x Vector[T], rowScale, colSc
 
 	return nil
 }
+
+// EquilibrateAndDecomposeSparse 稀疏版均衡化分解：只遍历非零元素构建缩放矩阵，
+// 避免稠密 n² 拷贝。数值上与 EquilibrateAndDecompose 等价（行列缩放因子一致）。
+func EquilibrateAndDecomposeSparse[T Number](luSolver LU[T], A Matrix[T]) (rowScale, colScale []float64, err error) {
+	n := A.Rows()
+	if n == 0 || !A.IsSquare() {
+		return nil, nil, errors.New("equilibrate sparse: matrix must be non-empty square")
+	}
+
+	rowScale = make([]float64, n)
+	colScale = make([]float64, n)
+	colMax := make([]float64, n)
+
+	// 单遍扫描：同时统计每行最大元素与每列最大元素（只遍历非零元）
+	for i := 0; i < n; i++ {
+		cols, vals := A.GetRow(i)
+		maxAbs := 0.0
+		for idx, j := range cols {
+			abs := Abs(vals.Get(idx))
+			if abs > maxAbs {
+				maxAbs = abs
+			}
+			if abs > colMax[j] {
+				colMax[j] = abs
+			}
+		}
+		if maxAbs > Epsilon {
+			rowScale[i] = 1.0 / maxAbs
+		} else {
+			rowScale[i] = 1.0
+		}
+	}
+	for j := 0; j < n; j++ {
+		if colMax[j] > Epsilon {
+			colScale[j] = 1.0 / colMax[j]
+		} else {
+			colScale[j] = 1.0
+		}
+	}
+
+	// 构建缩放后的稀疏矩阵 A'[i][j] = rowScale[i]·A[i][j]·colScale[j]
+	scaledA := NewSparseMatrix[T](n, n)
+	for i := 0; i < n; i++ {
+		cols, vals := A.GetRow(i)
+		rs := rowScale[i]
+		for idx, j := range cols {
+			scaledA.Set(i, j, scaleNum(vals.Get(idx), rs*colScale[j]))
+		}
+	}
+
+	err = luSolver.Decompose(scaledA)
+	return rowScale, colScale, err
+}

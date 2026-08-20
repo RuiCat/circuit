@@ -151,6 +151,21 @@ type Time interface {
 	// 非线性迭代控制（通用状态管理）
 	// ------------------------------
 
+	// GetContinuationGmin 返回当前 Gmin 延续值（0 = 关闭），用于 t=0 直流求解的阻尼收敛。
+	GetContinuationGmin() float64
+	// SetContinuationGmin 设置 Gmin 延续值（仅 TimeMNA 实现使用）。
+	SetContinuationGmin(v float64)
+	// BeginGminStepping 启动 Gmin 延续（延续值设为起始大值，复位恢复计数）。
+	BeginGminStepping()
+	// EndGminStepping 结束 Gmin 延续（恢复自然 gmin）。
+	EndGminStepping()
+	// GminSteppingActive 返回延续是否激活（>0 表示正在步进）。
+	GminSteppingActive() bool
+	// StepGminDown 下调延续 Gmin 一档，返回是否仍需继续步进。
+	StepGminDown() bool
+	// RecoverGmin 牛顿未收敛时增大阻尼一档，返回是否还有恢复额度。
+	RecoverGmin() bool
+
 	// ResetNonlinearIter 重置非线性迭代状态（每时间步开始时调用）
 	ResetNonlinearIter()
 	// NextNonlinearIter 推进非线性迭代计数，返回是否未超限

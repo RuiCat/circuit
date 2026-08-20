@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -300,6 +301,11 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 	}
 
 	mnaUpdate := mna.NewMnaUpdate(nodesNum, voltageSourcesNum)
+	// 稀疏模式（环境变量 CIRCUIT_LUSPARSE 非空）：A 改用 CSR 稀疏存储，
+	// 与瞬态引擎的稀疏 LU 分解器配套使用。
+	if os.Getenv("CIRCUIT_LUSPARSE") != "" {
+		mnaUpdate = mna.NewMnaUpdateSparse(nodesNum, voltageSourcesNum)
+	}
 	if mnaUpdateType, ok := mnaUpdate.(*mna.MnaUpdateType[float64]); ok {
 		con.MnaUpdateType = mnaUpdateType
 	} else {

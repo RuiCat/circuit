@@ -36,6 +36,12 @@ func NewMnaUpdate(NodesNum, VoltageSourcesNum int) MnaUpdate {
 	return NewMnaUpdateT[float64](NodesNum, VoltageSourcesNum)
 }
 
+// NewMnaUpdateSparse 创建稀疏版 MNA 求解器（瞬态引擎专用）。
+// 底层矩阵 A 使用 CSR 稀疏存储，配合稀疏 LU 分解器可在大规模电路上显著提速。
+func NewMnaUpdateSparse(NodesNum, VoltageSourcesNum int) MnaUpdate {
+	return NewMnaUpdateSparseT[float64](NodesNum, VoltageSourcesNum)
+}
+
 // Update 将对矩阵A和向量Z的暂存修改应用到底层数据结构中。
 func (mna *MnaUpdateType[T]) Update() {
 	mna.A.Update()
@@ -246,7 +252,7 @@ func (m *MnaType[T]) StampImpedance(n1, n2 NodeID, z T) {
 		case float32:
 			one = any(float32(1.0)).(T)
 		case complex64:
-			one = any(complex64(1+0i)).(T)
+			one = any(complex64(1 + 0i)).(T)
 		default:
 			one = any(float64(1.0)).(T)
 		}
@@ -257,7 +263,7 @@ func (m *MnaType[T]) StampImpedance(n1, n2 NodeID, z T) {
 			case float32:
 				y = any(float32(1e9)).(T)
 			case complex64:
-				y = any(complex64(0+1e9i)).(T)
+				y = any(complex64(0 + 1e9i)).(T)
 			default:
 				y = any(float64(1e9)).(T)
 			}
