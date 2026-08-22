@@ -1,0 +1,277 @@
+# =============================================================================
+# 16×8 位 SRAM（多位总线演示：子电路端口 A[3:0]/D[7:0]/Q0[7:0]..Q15[7:0]）
+# =============================================================================
+# 总线语法：X[name[msb:lsb]] 展开为 name msb..lsb（空格分隔），
+# 见 load.ExpandBusNotation。子电路端口可用总线，顶层实例化一行完成。
+#
+# 操作 (circuit interactive cmd/circuits/41_sram16x8.net):
+#   > step
+#   --- 写地址 0 (A3A2A1A0=0000) = 0x5A (D7..D0=01011010) ---
+#   > set WE 1 ; set A0 0 ; set A1 0 ; set A2 0 ; set A3 0
+#   > set D7 0 ; set D6 1 ; set D5 0 ; set D4 1 ; set D3 1 ; set D2 0 ; set D1 1 ; set D0 0
+#   > step
+#   --- 读地址 0（WE=0 观察 Q0[7:0]）---
+#   > set WE 0 ; step ; v Q07,Q06,Q05,Q04,Q03,Q02,Q01,Q00
+#     期望 Q0[7:0] = 01011010
+#   --- 写地址 5 (0101) = 0xFF 再读 ---
+#   > set WE 1 ; set A0 1 ; set A1 0 ; set A2 1 ; set A3 0
+#   > set D7 1 ; set D6 1 ; set D5 1 ; set D4 1 ; set D3 1 ; set D2 1 ; set D1 1 ; set D0 1
+#   > step ; set WE 0 ; step ; v Q57,Q56,Q55,Q54,Q53,Q52,Q51,Q50
+#     期望 Q5[7:0] = 11111111
+# =============================================================================
+
+.subckt sram_cell wl bl nbl q nq
+U_S [bl,wl,s] [1,5]
+U_R [nbl,wl,r] [1,5]
+SR1 [s,r,q,nq] [5]
+R_Q [q,-1] [10000]
+R_NQ [nq,-1] [10000]
+.ends sram_cell
+
+.subckt sram16x8 A[3:0] D[7:0] WE Q0[7:0] Q1[7:0] Q2[7:0] Q3[7:0] Q4[7:0] Q5[7:0] Q6[7:0] Q7[7:0] Q8[7:0] Q9[7:0] Q10[7:0] Q11[7:0] Q12[7:0] Q13[7:0] Q14[7:0] Q15[7:0]
+# 反相 A0..A3
+U_N0 [A0,-1,nA0] [0,5]
+U_N1 [A1,-1,nA1] [0,5]
+U_N2 [A2,-1,nA2] [0,5]
+U_N3 [A3,-1,nA3] [0,5]
+# WL[w] = AND(p0,p1,p2,p3)，pi = Ai 或 ¬Ai（按 w 位）
+U_D0a [nA0,nA1,t0a] [1,5]
+U_D0b [t0a,nA2,t0b] [1,5]
+U_D0c [t0b,nA3,WL0] [1,5]
+U_D1a [A0,nA1,t1a] [1,5]
+U_D1b [t1a,nA2,t1b] [1,5]
+U_D1c [t1b,nA3,WL1] [1,5]
+U_D2a [nA0,A1,t2a] [1,5]
+U_D2b [t2a,nA2,t2b] [1,5]
+U_D2c [t2b,nA3,WL2] [1,5]
+U_D3a [A0,A1,t3a] [1,5]
+U_D3b [t3a,nA2,t3b] [1,5]
+U_D3c [t3b,nA3,WL3] [1,5]
+U_D4a [nA0,nA1,t4a] [1,5]
+U_D4b [t4a,A2,t4b] [1,5]
+U_D4c [t4b,nA3,WL4] [1,5]
+U_D5a [A0,nA1,t5a] [1,5]
+U_D5b [t5a,A2,t5b] [1,5]
+U_D5c [t5b,nA3,WL5] [1,5]
+U_D6a [nA0,A1,t6a] [1,5]
+U_D6b [t6a,A2,t6b] [1,5]
+U_D6c [t6b,nA3,WL6] [1,5]
+U_D7a [A0,A1,t7a] [1,5]
+U_D7b [t7a,A2,t7b] [1,5]
+U_D7c [t7b,nA3,WL7] [1,5]
+U_D8a [nA0,nA1,t8a] [1,5]
+U_D8b [t8a,nA2,t8b] [1,5]
+U_D8c [t8b,A3,WL8] [1,5]
+U_D9a [A0,nA1,t9a] [1,5]
+U_D9b [t9a,nA2,t9b] [1,5]
+U_D9c [t9b,A3,WL9] [1,5]
+U_D10a [nA0,A1,t10a] [1,5]
+U_D10b [t10a,nA2,t10b] [1,5]
+U_D10c [t10b,A3,WL10] [1,5]
+U_D11a [A0,A1,t11a] [1,5]
+U_D11b [t11a,nA2,t11b] [1,5]
+U_D11c [t11b,A3,WL11] [1,5]
+U_D12a [nA0,nA1,t12a] [1,5]
+U_D12b [t12a,A2,t12b] [1,5]
+U_D12c [t12b,A3,WL12] [1,5]
+U_D13a [A0,nA1,t13a] [1,5]
+U_D13b [t13a,A2,t13b] [1,5]
+U_D13c [t13b,A3,WL13] [1,5]
+U_D14a [nA0,A1,t14a] [1,5]
+U_D14b [t14a,A2,t14b] [1,5]
+U_D14c [t14b,A3,WL14] [1,5]
+U_D15a [A0,A1,t15a] [1,5]
+U_D15b [t15a,A2,t15b] [1,5]
+U_D15c [t15b,A3,WL15] [1,5]
+# WE 门控字线 wlg[w] = WL[w]·WE
+U_G0 [WL0,WE,wlg0] [1,5]
+U_G1 [WL1,WE,wlg1] [1,5]
+U_G2 [WL2,WE,wlg2] [1,5]
+U_G3 [WL3,WE,wlg3] [1,5]
+U_G4 [WL4,WE,wlg4] [1,5]
+U_G5 [WL5,WE,wlg5] [1,5]
+U_G6 [WL6,WE,wlg6] [1,5]
+U_G7 [WL7,WE,wlg7] [1,5]
+U_G8 [WL8,WE,wlg8] [1,5]
+U_G9 [WL9,WE,wlg9] [1,5]
+U_G10 [WL10,WE,wlg10] [1,5]
+U_G11 [WL11,WE,wlg11] [1,5]
+U_G12 [WL12,WE,wlg12] [1,5]
+U_G13 [WL13,WE,wlg13] [1,5]
+U_G14 [WL14,WE,wlg14] [1,5]
+U_G15 [WL15,WE,wlg15] [1,5]
+# NBL[col] = ¬D[col]
+U_NBL0 [D0,-1,nbl0] [0,5]
+U_NBL1 [D1,-1,nbl1] [0,5]
+U_NBL2 [D2,-1,nbl2] [0,5]
+U_NBL3 [D3,-1,nbl3] [0,5]
+U_NBL4 [D4,-1,nbl4] [0,5]
+U_NBL5 [D5,-1,nbl5] [0,5]
+U_NBL6 [D6,-1,nbl6] [0,5]
+U_NBL7 [D7,-1,nbl7] [0,5]
+# 存储阵列：X{row}_{col} [wlg{row}, D{col}, nbl{col}, Q{row}{col}, nq{row}{col}] sram_cell
+X0_0 [wlg0,D0,nbl0,Q00,nq00] sram_cell
+X0_1 [wlg0,D1,nbl1,Q01,nq01] sram_cell
+X0_2 [wlg0,D2,nbl2,Q02,nq02] sram_cell
+X0_3 [wlg0,D3,nbl3,Q03,nq03] sram_cell
+X0_4 [wlg0,D4,nbl4,Q04,nq04] sram_cell
+X0_5 [wlg0,D5,nbl5,Q05,nq05] sram_cell
+X0_6 [wlg0,D6,nbl6,Q06,nq06] sram_cell
+X0_7 [wlg0,D7,nbl7,Q07,nq07] sram_cell
+X1_0 [wlg1,D0,nbl0,Q10,nq10] sram_cell
+X1_1 [wlg1,D1,nbl1,Q11,nq11] sram_cell
+X1_2 [wlg1,D2,nbl2,Q12,nq12] sram_cell
+X1_3 [wlg1,D3,nbl3,Q13,nq13] sram_cell
+X1_4 [wlg1,D4,nbl4,Q14,nq14] sram_cell
+X1_5 [wlg1,D5,nbl5,Q15,nq15] sram_cell
+X1_6 [wlg1,D6,nbl6,Q16,nq16] sram_cell
+X1_7 [wlg1,D7,nbl7,Q17,nq17] sram_cell
+X2_0 [wlg2,D0,nbl0,Q20,nq20] sram_cell
+X2_1 [wlg2,D1,nbl1,Q21,nq21] sram_cell
+X2_2 [wlg2,D2,nbl2,Q22,nq22] sram_cell
+X2_3 [wlg2,D3,nbl3,Q23,nq23] sram_cell
+X2_4 [wlg2,D4,nbl4,Q24,nq24] sram_cell
+X2_5 [wlg2,D5,nbl5,Q25,nq25] sram_cell
+X2_6 [wlg2,D6,nbl6,Q26,nq26] sram_cell
+X2_7 [wlg2,D7,nbl7,Q27,nq27] sram_cell
+X3_0 [wlg3,D0,nbl0,Q30,nq30] sram_cell
+X3_1 [wlg3,D1,nbl1,Q31,nq31] sram_cell
+X3_2 [wlg3,D2,nbl2,Q32,nq32] sram_cell
+X3_3 [wlg3,D3,nbl3,Q33,nq33] sram_cell
+X3_4 [wlg3,D4,nbl4,Q34,nq34] sram_cell
+X3_5 [wlg3,D5,nbl5,Q35,nq35] sram_cell
+X3_6 [wlg3,D6,nbl6,Q36,nq36] sram_cell
+X3_7 [wlg3,D7,nbl7,Q37,nq37] sram_cell
+X4_0 [wlg4,D0,nbl0,Q40,nq40] sram_cell
+X4_1 [wlg4,D1,nbl1,Q41,nq41] sram_cell
+X4_2 [wlg4,D2,nbl2,Q42,nq42] sram_cell
+X4_3 [wlg4,D3,nbl3,Q43,nq43] sram_cell
+X4_4 [wlg4,D4,nbl4,Q44,nq44] sram_cell
+X4_5 [wlg4,D5,nbl5,Q45,nq45] sram_cell
+X4_6 [wlg4,D6,nbl6,Q46,nq46] sram_cell
+X4_7 [wlg4,D7,nbl7,Q47,nq47] sram_cell
+X5_0 [wlg5,D0,nbl0,Q50,nq50] sram_cell
+X5_1 [wlg5,D1,nbl1,Q51,nq51] sram_cell
+X5_2 [wlg5,D2,nbl2,Q52,nq52] sram_cell
+X5_3 [wlg5,D3,nbl3,Q53,nq53] sram_cell
+X5_4 [wlg5,D4,nbl4,Q54,nq54] sram_cell
+X5_5 [wlg5,D5,nbl5,Q55,nq55] sram_cell
+X5_6 [wlg5,D6,nbl6,Q56,nq56] sram_cell
+X5_7 [wlg5,D7,nbl7,Q57,nq57] sram_cell
+X6_0 [wlg6,D0,nbl0,Q60,nq60] sram_cell
+X6_1 [wlg6,D1,nbl1,Q61,nq61] sram_cell
+X6_2 [wlg6,D2,nbl2,Q62,nq62] sram_cell
+X6_3 [wlg6,D3,nbl3,Q63,nq63] sram_cell
+X6_4 [wlg6,D4,nbl4,Q64,nq64] sram_cell
+X6_5 [wlg6,D5,nbl5,Q65,nq65] sram_cell
+X6_6 [wlg6,D6,nbl6,Q66,nq66] sram_cell
+X6_7 [wlg6,D7,nbl7,Q67,nq67] sram_cell
+X7_0 [wlg7,D0,nbl0,Q70,nq70] sram_cell
+X7_1 [wlg7,D1,nbl1,Q71,nq71] sram_cell
+X7_2 [wlg7,D2,nbl2,Q72,nq72] sram_cell
+X7_3 [wlg7,D3,nbl3,Q73,nq73] sram_cell
+X7_4 [wlg7,D4,nbl4,Q74,nq74] sram_cell
+X7_5 [wlg7,D5,nbl5,Q75,nq75] sram_cell
+X7_6 [wlg7,D6,nbl6,Q76,nq76] sram_cell
+X7_7 [wlg7,D7,nbl7,Q77,nq77] sram_cell
+X8_0 [wlg8,D0,nbl0,Q80,nq80] sram_cell
+X8_1 [wlg8,D1,nbl1,Q81,nq81] sram_cell
+X8_2 [wlg8,D2,nbl2,Q82,nq82] sram_cell
+X8_3 [wlg8,D3,nbl3,Q83,nq83] sram_cell
+X8_4 [wlg8,D4,nbl4,Q84,nq84] sram_cell
+X8_5 [wlg8,D5,nbl5,Q85,nq85] sram_cell
+X8_6 [wlg8,D6,nbl6,Q86,nq86] sram_cell
+X8_7 [wlg8,D7,nbl7,Q87,nq87] sram_cell
+X9_0 [wlg9,D0,nbl0,Q90,nq90] sram_cell
+X9_1 [wlg9,D1,nbl1,Q91,nq91] sram_cell
+X9_2 [wlg9,D2,nbl2,Q92,nq92] sram_cell
+X9_3 [wlg9,D3,nbl3,Q93,nq93] sram_cell
+X9_4 [wlg9,D4,nbl4,Q94,nq94] sram_cell
+X9_5 [wlg9,D5,nbl5,Q95,nq95] sram_cell
+X9_6 [wlg9,D6,nbl6,Q96,nq96] sram_cell
+X9_7 [wlg9,D7,nbl7,Q97,nq97] sram_cell
+X10_0 [wlg10,D0,nbl0,Q100,nq100] sram_cell
+X10_1 [wlg10,D1,nbl1,Q101,nq101] sram_cell
+X10_2 [wlg10,D2,nbl2,Q102,nq102] sram_cell
+X10_3 [wlg10,D3,nbl3,Q103,nq103] sram_cell
+X10_4 [wlg10,D4,nbl4,Q104,nq104] sram_cell
+X10_5 [wlg10,D5,nbl5,Q105,nq105] sram_cell
+X10_6 [wlg10,D6,nbl6,Q106,nq106] sram_cell
+X10_7 [wlg10,D7,nbl7,Q107,nq107] sram_cell
+X11_0 [wlg11,D0,nbl0,Q110,nq110] sram_cell
+X11_1 [wlg11,D1,nbl1,Q111,nq111] sram_cell
+X11_2 [wlg11,D2,nbl2,Q112,nq112] sram_cell
+X11_3 [wlg11,D3,nbl3,Q113,nq113] sram_cell
+X11_4 [wlg11,D4,nbl4,Q114,nq114] sram_cell
+X11_5 [wlg11,D5,nbl5,Q115,nq115] sram_cell
+X11_6 [wlg11,D6,nbl6,Q116,nq116] sram_cell
+X11_7 [wlg11,D7,nbl7,Q117,nq117] sram_cell
+X12_0 [wlg12,D0,nbl0,Q120,nq120] sram_cell
+X12_1 [wlg12,D1,nbl1,Q121,nq121] sram_cell
+X12_2 [wlg12,D2,nbl2,Q122,nq122] sram_cell
+X12_3 [wlg12,D3,nbl3,Q123,nq123] sram_cell
+X12_4 [wlg12,D4,nbl4,Q124,nq124] sram_cell
+X12_5 [wlg12,D5,nbl5,Q125,nq125] sram_cell
+X12_6 [wlg12,D6,nbl6,Q126,nq126] sram_cell
+X12_7 [wlg12,D7,nbl7,Q127,nq127] sram_cell
+X13_0 [wlg13,D0,nbl0,Q130,nq130] sram_cell
+X13_1 [wlg13,D1,nbl1,Q131,nq131] sram_cell
+X13_2 [wlg13,D2,nbl2,Q132,nq132] sram_cell
+X13_3 [wlg13,D3,nbl3,Q133,nq133] sram_cell
+X13_4 [wlg13,D4,nbl4,Q134,nq134] sram_cell
+X13_5 [wlg13,D5,nbl5,Q135,nq135] sram_cell
+X13_6 [wlg13,D6,nbl6,Q136,nq136] sram_cell
+X13_7 [wlg13,D7,nbl7,Q137,nq137] sram_cell
+X14_0 [wlg14,D0,nbl0,Q140,nq140] sram_cell
+X14_1 [wlg14,D1,nbl1,Q141,nq141] sram_cell
+X14_2 [wlg14,D2,nbl2,Q142,nq142] sram_cell
+X14_3 [wlg14,D3,nbl3,Q143,nq143] sram_cell
+X14_4 [wlg14,D4,nbl4,Q144,nq144] sram_cell
+X14_5 [wlg14,D5,nbl5,Q145,nq145] sram_cell
+X14_6 [wlg14,D6,nbl6,Q146,nq146] sram_cell
+X14_7 [wlg14,D7,nbl7,Q147,nq147] sram_cell
+X15_0 [wlg15,D0,nbl0,Q150,nq150] sram_cell
+X15_1 [wlg15,D1,nbl1,Q151,nq151] sram_cell
+X15_2 [wlg15,D2,nbl2,Q152,nq152] sram_cell
+X15_3 [wlg15,D3,nbl3,Q153,nq153] sram_cell
+X15_4 [wlg15,D4,nbl4,Q154,nq154] sram_cell
+X15_5 [wlg15,D5,nbl5,Q155,nq155] sram_cell
+X15_6 [wlg15,D6,nbl6,Q156,nq156] sram_cell
+X15_7 [wlg15,D7,nbl7,Q157,nq157] sram_cell
+.ends sram16x8
+
+# 5V 电源
+V1 [vcc,-1] [0,0,0,0,5]
+
+# 地址开关 A3..A0（总线 A[3:0] 对应节点 A3,A2,A1,A0）
+B_A0 [vcc,A0] [A0,0.5,1]
+R_A0 [A0,-1] [10000]
+B_A1 [vcc,A1] [A1,0.5,1]
+R_A1 [A1,-1] [10000]
+B_A2 [vcc,A2] [A2,0.5,1]
+R_A2 [A2,-1] [10000]
+B_A3 [vcc,A3] [A3,0.5,1]
+R_A3 [A3,-1] [10000]
+# 数据开关 D7..D0
+B_D0 [vcc,D0] [D0,0.5,1]
+R_D0 [D0,-1] [10000]
+B_D1 [vcc,D1] [D1,0.5,1]
+R_D1 [D1,-1] [10000]
+B_D2 [vcc,D2] [D2,0.5,1]
+R_D2 [D2,-1] [10000]
+B_D3 [vcc,D3] [D3,0.5,1]
+R_D3 [D3,-1] [10000]
+B_D4 [vcc,D4] [D4,0.5,1]
+R_D4 [D4,-1] [10000]
+B_D5 [vcc,D5] [D5,0.5,1]
+R_D5 [D5,-1] [10000]
+B_D6 [vcc,D6] [D6,0.5,1]
+R_D6 [D6,-1] [10000]
+B_D7 [vcc,D7] [D7,0.5,1]
+R_D7 [D7,-1] [10000]
+# 写使能开关
+B_WE [vcc,WE] [WE,0.5,1]
+R_WE [WE,-1] [10000]
+
+# 顶层实例化：一行完成 16×8 SRAM（总线端口）
+X1 [A[3:0],D[7:0],WE,Q0[7:0],Q1[7:0],Q2[7:0],Q3[7:0],Q4[7:0],Q5[7:0],Q6[7:0],Q7[7:0],Q8[7:0],Q9[7:0],Q10[7:0],Q11[7:0],Q12[7:0],Q13[7:0],Q14[7:0],Q15[7:0]] sram16x8

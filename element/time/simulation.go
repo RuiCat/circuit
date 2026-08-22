@@ -30,24 +30,13 @@ import (
 func TransientSimulation(con *element.Context, call func([]float64)) error {
 	// 初始化阶段：获取电路规模并创建求解器
 	nodesNum, voltageSourcesNum := con.GetNodeNum(), con.GetVoltageSourcesNum()
-	// 创建LU分解器
+	// LU 分解器懒创建：首次线性加盖完成后根据矩阵非零密度自动选择
+	// 稀疏/稠密（显式 CIRCUIT_LUSPARSE / CIRCUIT_LUSDENSE 优先，见 chooseLUSolver）。
 	systemSize := nodesNum + voltageSourcesNum
-	// 稀疏模式（con.EngineCfg.SparseLU，load 从 CIRCUIT_LUSPARSE 解析）优先使用稀疏 LU；
-	// 否则并行稠密 / 串行稠密。
-	sparseLU := con.EngineCfg.SparseLU
-	var luSolver maths.LU[float64]
 	var err error
-	switch {
-	case sparseLU:
-		luSolver, err = maths.NewLUSparse[float64](systemSize)
-	case con.ParallelOpts != nil && con.ParallelOpts.StampWorkers > 1:
-		luSolver, err = maths.NewParallelLU[float64](systemSize, con.ParallelOpts.StampWorkers)
-	default:
-		luSolver, err = maths.NewLU[float64](systemSize)
-	}
-	if err != nil {
-		return fmt.Errorf("LU分解器初始化失败: %v", err)
-	}
+	var luSolver maths.LU[float64]
+	sparseLU := false
+	luReady := false
 	// 电压数组用于存储每步的节点电压结果
 	voltages := make([]float64, nodesNum+voltageSourcesNum)
 	// 标记是否需要重新加盖线性元件（步长变化或首次迭代）
@@ -137,6 +126,14 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 			}
 			// 保存线性状态（用于后续回滚）
 			con.Update()
+			// 首次加盖完成：矩阵已填充，自动选择 LU 分解器（稀疏/稠密）
+			if !luReady {
+				luReady = true
+				luSolver, sparseLU, err = chooseLUSolver(con, systemSize)
+				if err != nil {
+					return fmt.Errorf("LU分解器初始化失败: %v", err)
+				}
+			}
 		} else {
 			// 重用已有的线性贡献，仅通知元件开始新迭代
 			if err = con.CallMark(element.MarkStartIteration); err != nil {
@@ -441,6 +438,45 @@ func doStep(con *element.Context) error {
 		return con.ParallelCallMark(element.MarkDoStep)
 	}
 	return con.CallMark(element.MarkDoStep)
+}
+
+// autoSparseDensity 自动选择阈值：矩阵非零密度低于此值用稀疏 LU。
+// 基准（2026-08-22）：RTL 稀疏矩阵（每行 ~10 非零）稀疏 LU 全面占优
+// （n=50 起即不慢于稠密，n=300 快 25 倍）；稠密矩阵（nnz~80%）稀疏退化
+// 2~5 倍（fill-in 开销）。阈值 0.3 分隔两种形态。
+const autoSparseDensity = 0.3
+
+// chooseLUSolver 根据显式配置或矩阵非零密度选择 LU 分解器：
+//
+//	CIRCUIT_LUSPARSE=1 → 强制稀疏；CIRCUIT_LUSDENSE=1 → 强制稠密；
+//	并行（StampWorkers>1）→ 并行稠密；否则按首次加盖后矩阵密度自动选择。
+//
+// 返回 luSolver 与 sparseLU 标志（供均衡化路径 equilibrateDecompose 选择）。
+func chooseLUSolver(con *element.Context, systemSize int) (maths.LU[float64], bool, error) {
+	switch {
+	case con.EngineCfg.SparseLU:
+		lu, err := maths.NewLUSparse[float64](systemSize)
+		return lu, true, err
+	case con.EngineCfg.ForceDense:
+		lu, err := maths.NewLU[float64](systemSize)
+		return lu, false, err
+	case con.ParallelOpts != nil && con.ParallelOpts.StampWorkers > 1:
+		lu, err := maths.NewParallelLU[float64](systemSize, con.ParallelOpts.StampWorkers)
+		return lu, false, err
+	}
+	// 自动：按矩阵非零密度（首次线性加盖完成后统计）
+	n := systemSize
+	nnz := con.GetA().NonZeroCount()
+	density := 0.0
+	if n > 0 {
+		density = float64(nnz) / float64(n*n)
+	}
+	if density < autoSparseDensity {
+		lu, err := maths.NewLUSparse[float64](systemSize)
+		return lu, true, err
+	}
+	lu, err := maths.NewLU[float64](systemSize)
+	return lu, false, err
 }
 
 // gminForLU 计算本次 LU 分解的对角 gmin：

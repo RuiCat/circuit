@@ -11,7 +11,8 @@ import (
 // 供瞬态引擎（element/time/simulation.go）与 MNA 存储选择读取，
 // 避免引擎内部直接 os.Getenv（配置集中、可测试、可程序化设置）。
 type EngineConfig struct {
-	SparseLU    bool    // CIRCUIT_LUSPARSE：稀疏 LU 分解
+	SparseLU    bool    // CIRCUIT_LUSPARSE：强制稀疏 LU（未设置时按矩阵密度自动选择）
+	ForceDense  bool    // CIRCUIT_LUSDENSE：强制稠密 LU（覆盖自动选择；与 SparseLU 互斥）
 	GminCont    bool    // CIRCUIT_GMCONT：Gmin 延续步进
 	NaturalGmin float64 // CIRCUIT_NATGMIN：自然 gmin（对角叠加）
 	GminFinal   float64 // CIRCUIT_GMINFINAL：延续终值（<=0 用默认）

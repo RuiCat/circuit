@@ -306,9 +306,11 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 	con.EngineCfg = loadEngineConfig()
 
 	mnaUpdate := mna.NewMnaUpdate(nodesNum, voltageSourcesNum)
-	// 稀疏模式（con.EngineCfg.SparseLU，load 从 CIRCUIT_LUSPARSE 解析）：
-	// A 改用 CSR 稀疏存储，与瞬态引擎的稀疏 LU 分解器配套使用。
-	if con.EngineCfg.SparseLU {
+	// 稀疏存储：显式 CIRCUIT_LUSPARSE=1 强制；自动模式（未设 CIRCUIT_LUSDENSE
+	// 强制稠密）默认用稀疏存储——稀疏 LU 分解器需要稀疏存储才完整生效
+	// （自动选择见 element/time/simulation.go chooseLUSolver，按矩阵密度）。
+	// 稀疏存储对稠密小电路仅 GetRow/Get 微开销，数值等价。
+	if con.EngineCfg.SparseLU || !con.EngineCfg.ForceDense {
 		mnaUpdate = mna.NewMnaUpdateSparse(nodesNum, voltageSourcesNum)
 	}
 	if mnaUpdateType, ok := mnaUpdate.(*mna.MnaUpdateType[float64]); ok {
@@ -325,6 +327,7 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 func loadEngineConfig() element.EngineConfig {
 	cfg := element.EngineConfig{}
 	cfg.SparseLU = os.Getenv("CIRCUIT_LUSPARSE") != ""
+	cfg.ForceDense = os.Getenv("CIRCUIT_LUSDENSE") != ""
 	cfg.GminCont = os.Getenv("CIRCUIT_GMCONT") != ""
 	cfg.GminDbg = os.Getenv("CIRCUIT_GMIN_DBG") != ""
 	cfg.NoEq = os.Getenv("CIRCUIT_NOEQ") != ""

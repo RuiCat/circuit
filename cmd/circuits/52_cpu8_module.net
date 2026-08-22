@@ -1,0 +1,555 @@
+# =============================================================================
+# MCPU-8：完整 8 位 CPU（哈佛结构，单累加器，4 指令）— 模块组合
+# =============================================================================
+# 端口：CLK（时钟）+ HALT（停机，高电平冻结 PC）+ Q[0:7]（ACC 输出观察）
+# 指令集（8 位 = OP[7:6] + X[5:4] + ADDR[3:0]）：
+#   00 LDA addr   A ← RAM[addr]         （加载）
+#   01 ADD addr   A ← A + RAM[addr]      （累加）
+#   10 STA addr   RAM[addr] ← A          （存储）
+#   11 JMP addr   PC ← addr              （跳转）
+# 结构（哈佛：指令 ROM 与数据 RAM 分离）：
+#   X1  pc8        程序计数器（4 位地址，递增/跳转）
+#   X2  rom16x8    指令 ROM（16×8，译码器+OR 阵列）
+#   X3  reg8       IR 指令寄存器（取指相锁存）
+#   X4  cu         控制单元（T 状态 DFF + 组合译码）
+#   X5  reg8       ACC 累加器
+#   X6  adder8     ALU（A=ACC 或 0，B=RAM 读数据）
+#   X7  ram16x8    数据 RAM（16×8，复用 47 模块）
+# 两相时序（每个 CLK 上升沿）：
+#   T=0（取指）：IR←ROM[PC]，PC←PC+1
+#   T=1（执行）：按 OP 执行——LDA/ADD 锁存 ACC；STA 写 RAM；JMP 加载 PC
+# 控制信号（cu 组合输出）：
+#   IR_LOAD = ¬T
+#   PC_LOAD = T ∧ JMP
+#   ACC_LOAD = T ∧ (LDA ∨ ADD) = T ∧ ¬OP1
+#   RAM_WE  = T ∧ STA = T ∧ OP1 ∧ ¬OP0
+#   ALU_A_SEL = OP1（ADD 时选 ACC；LDA 时选 0）
+# =============================================================================
+
+# ---- 1 位全加器 fa ----
+.subckt fa A B CIN S COUT
+U1 [A,B,t1] [5,5]
+U2 [t1,CIN,S] [5,5]
+U3 [A,B,t2] [1,5]
+U4 [t1,CIN,t3] [1,5]
+U5 [t2,t3,COUT] [3,5]
+.ends fa
+
+# ---- 8 位行波进位加法器 adder8 ----
+.subckt adder8 A[0:7] B[0:7] CIN S[0:7] COUT
+X1 [A0,B0,CIN,S0,C1] fa
+X2 [A1,B1,C1,S1,C2] fa
+X3 [A2,B2,C2,S2,C3] fa
+X4 [A3,B3,C3,S3,C4] fa
+X5 [A4,B4,C4,S4,C5] fa
+X6 [A5,B5,C5,S5,C6] fa
+X7 [A6,B6,C6,S6,C7] fa
+X8 [A7,B7,C7,S7,COUT] fa
+.ends adder8
+
+# ---- 8 位上升沿 DFF 寄存器 reg8 ----
+# DFF1..DFF8：原生 DFF（clk,d,q,nq）；R10..R17：nq 下拉（nq 是电压源输出）
+.subckt reg8 CLK D[0:7] Q[0:7]
+DFF1 [CLK,D0,Q0,nq0]
+DFF2 [CLK,D1,Q1,nq1]
+DFF3 [CLK,D2,Q2,nq2]
+DFF4 [CLK,D3,Q3,nq3]
+DFF5 [CLK,D4,Q4,nq4]
+DFF6 [CLK,D5,Q5,nq5]
+DFF7 [CLK,D6,Q6,nq6]
+DFF8 [CLK,D7,Q7,nq7]
+R10 [nq0,-1] [10000]
+R11 [nq1,-1] [10000]
+R12 [nq2,-1] [10000]
+R13 [nq3,-1] [10000]
+R14 [nq4,-1] [10000]
+R15 [nq5,-1] [10000]
+R16 [nq6,-1] [10000]
+R17 [nq7,-1] [10000]
+.ends reg8
+
+# ---- 4→16 译码器 decoder4to16 ----
+.subckt decoder4to16 X[0:3] Y[0:15]
+U1 [X0,-1,nX0] [0,5]
+U2 [X1,-1,nX1] [0,5]
+U3 [X2,-1,nX2] [0,5]
+U4 [X3,-1,nX3] [0,5]
+U5 [nX0,nX1,t0a] [1,5]
+U6 [t0a,nX2,t0b] [1,5]
+U7 [t0b,nX3,Y0] [1,5]
+U8 [X0,nX1,t1a] [1,5]
+U9 [t1a,nX2,t1b] [1,5]
+U10 [t1b,nX3,Y1] [1,5]
+U11 [nX0,X1,t2a] [1,5]
+U12 [t2a,nX2,t2b] [1,5]
+U13 [t2b,nX3,Y2] [1,5]
+U14 [X0,X1,t3a] [1,5]
+U15 [t3a,nX2,t3b] [1,5]
+U16 [t3b,nX3,Y3] [1,5]
+U17 [nX0,nX1,t4a] [1,5]
+U18 [t4a,X2,t4b] [1,5]
+U19 [t4b,nX3,Y4] [1,5]
+U20 [X0,nX1,t5a] [1,5]
+U21 [t5a,X2,t5b] [1,5]
+U22 [t5b,nX3,Y5] [1,5]
+U23 [nX0,X1,t6a] [1,5]
+U24 [t6a,X2,t6b] [1,5]
+U25 [t6b,nX3,Y6] [1,5]
+U26 [X0,X1,t7a] [1,5]
+U27 [t7a,X2,t7b] [1,5]
+U28 [t7b,nX3,Y7] [1,5]
+U29 [nX0,nX1,t8a] [1,5]
+U30 [t8a,nX2,t8b] [1,5]
+U31 [t8b,X3,Y8] [1,5]
+U32 [X0,nX1,t9a] [1,5]
+U33 [t9a,nX2,t9b] [1,5]
+U34 [t9b,X3,Y9] [1,5]
+U35 [nX0,X1,t10a] [1,5]
+U36 [t10a,nX2,t10b] [1,5]
+U37 [t10b,X3,Y10] [1,5]
+U38 [X0,X1,t11a] [1,5]
+U39 [t11a,nX2,t11b] [1,5]
+U40 [t11b,X3,Y11] [1,5]
+U41 [nX0,nX1,t12a] [1,5]
+U42 [t12a,X2,t12b] [1,5]
+U43 [t12b,X3,Y12] [1,5]
+U44 [X0,nX1,t13a] [1,5]
+U45 [t13a,X2,t13b] [1,5]
+U46 [t13b,X3,Y13] [1,5]
+U47 [nX0,X1,t14a] [1,5]
+U48 [t14a,X2,t14b] [1,5]
+U49 [t14b,X3,Y14] [1,5]
+U50 [X0,X1,t15a] [1,5]
+U51 [t15a,X2,t15b] [1,5]
+U52 [t15b,X3,Y15] [1,5]
+.ends decoder4to16
+
+# ---- 16×8 指令 ROM（内容：LDA5/ADD6/STA7/JMP3）----
+# W0=0x05 LDA5  W1=0x46 ADD6  W2=0x87 STA7  W3=0xC3 JMP3
+# 位线：Y0=W0+W2+W3, Y1=W1+W2+W3, Y2=W0+W1+W2, Y6=W1+W3, Y7=W2+W3
+.subckt rom16x8 A[0:3] Y[0:7]
+X1 [A[0:3],WL[0:15]] decoder4to16
+U100 [WL0,WL2,t0a] [3,5]
+U101 [t0a,WL3,Y0] [3,5]
+U102 [WL1,WL2,t1a] [3,5]
+U107 [t1a,WL3,Y1] [3,5]
+U103 [WL0,WL1,t2a] [3,5]
+U104 [t2a,WL2,Y2] [3,5]
+U105 [WL1,WL3,Y6] [3,5]
+U106 [WL2,WL3,Y7] [3,5]
+R20 [Y0,-1] [10000]
+R21 [Y1,-1] [10000]
+R22 [Y2,-1] [10000]
+R23 [Y3,-1] [10000]
+R24 [Y4,-1] [10000]
+R25 [Y5,-1] [10000]
+R26 [Y6,-1] [10000]
+R27 [Y7,-1] [10000]
+.ends rom16x8
+
+# ---- 1 位存储单元 sram_cell ----
+.subckt sram_cell wl bl nbl q nq
+U1 [bl,wl,s] [1,5]
+U2 [nbl,wl,r] [1,5]
+SR1 [s,r,q,nq] [5]
+R3 [q,-1] [10000]
+R4 [nq,-1] [10000]
+.ends sram_cell
+
+# ---- 8 位锁存器 sram8 ----
+.subckt sram8 RW D[0:7] Q[0:7]
+U3 [D0,-1,nD0] [0,5]
+U4 [D1,-1,nD1] [0,5]
+U5 [D2,-1,nD2] [0,5]
+U6 [D3,-1,nD3] [0,5]
+U7 [D4,-1,nD4] [0,5]
+U8 [D5,-1,nD5] [0,5]
+U9 [D6,-1,nD6] [0,5]
+U10 [D7,-1,nD7] [0,5]
+X1 [RW,D0,nD0,Q0,nq0] sram_cell
+X2 [RW,D1,nD1,Q1,nq1] sram_cell
+X3 [RW,D2,nD2,Q2,nq2] sram_cell
+X4 [RW,D3,nD3,Q3,nq3] sram_cell
+X5 [RW,D4,nD4,Q4,nq4] sram_cell
+X6 [RW,D5,nD5,Q5,nq5] sram_cell
+X7 [RW,D6,nD6,Q6,nq6] sram_cell
+X8 [RW,D7,nD7,Q7,nq7] sram_cell
+.ends sram8
+
+# ---- 8 位锁存器 sram8_pre（预置版：SR 初始 q_state 写死，用于数据 RAM 初始化）----
+# 位单元内联（不引用 sram_cell，因为每个位初始状态不同）：
+#   Ua：s = bl·wl；Ub：r = nbl·wl；SR1 [V_high, q_state]（q_state=true 初始为 1）
+# 用于 RAM[5]：预置 0x3C = 0011 1100（bit2/3/4/5=1）
+.subckt sram8_pre5 RW D[0:7] Q[0:7]
+U3 [D0,-1,nD0] [0,5]
+U4 [D1,-1,nD1] [0,5]
+U5 [D2,-1,nD2] [0,5]
+U6 [D3,-1,nD3] [0,5]
+U7 [D4,-1,nD4] [0,5]
+U8 [D5,-1,nD5] [0,5]
+U9 [D6,-1,nD6] [0,5]
+U10 [D7,-1,nD7] [0,5]
+U20 [D0,RW,s0] [1,5]
+U21 [nD0,RW,r0] [1,5]
+SR1 [s0,r0,Q0,nq0] [5,false]
+R30 [Q0,-1] [10000]
+R31 [nq0,-1] [10000]
+U22 [D1,RW,s1] [1,5]
+U23 [nD1,RW,r1] [1,5]
+SR2 [s1,r1,Q1,nq1] [5,false]
+R32 [Q1,-1] [10000]
+R33 [nq1,-1] [10000]
+U24 [D2,RW,s2] [1,5]
+U25 [nD2,RW,r2] [1,5]
+SR3 [s2,r2,Q2,nq2] [5,true]
+R34 [Q2,-1] [10000]
+R35 [nq2,-1] [10000]
+U26 [D3,RW,s3] [1,5]
+U27 [nD3,RW,r3] [1,5]
+SR4 [s3,r3,Q3,nq3] [5,true]
+R36 [Q3,-1] [10000]
+R37 [nq3,-1] [10000]
+U28 [D4,RW,s4] [1,5]
+U29 [nD4,RW,r4] [1,5]
+SR5 [s4,r4,Q4,nq4] [5,true]
+R38 [Q4,-1] [10000]
+R39 [nq4,-1] [10000]
+U40 [D5,RW,s5] [1,5]
+U41 [nD5,RW,r5] [1,5]
+SR6 [s5,r5,Q5,nq5] [5,true]
+R40 [Q5,-1] [10000]
+R41 [nq5,-1] [10000]
+U42 [D6,RW,s6] [1,5]
+U43 [nD6,RW,r6] [1,5]
+SR7 [s6,r6,Q6,nq6] [5,false]
+R42 [Q6,-1] [10000]
+R43 [nq6,-1] [10000]
+U44 [D7,RW,s7] [1,5]
+U45 [nD7,RW,r7] [1,5]
+SR8 [s7,r7,Q7,nq7] [5,false]
+R44 [Q7,-1] [10000]
+R45 [nq7,-1] [10000]
+.ends sram8_pre5
+
+# ---- 8 位锁存器 sram8_pre6（预置 RAM[6] = 0x24 = 0010 0100，bit2/5=1）----
+.subckt sram8_pre6 RW D[0:7] Q[0:7]
+U3 [D0,-1,nD0] [0,5]
+U4 [D1,-1,nD1] [0,5]
+U5 [D2,-1,nD2] [0,5]
+U6 [D3,-1,nD3] [0,5]
+U7 [D4,-1,nD4] [0,5]
+U8 [D5,-1,nD5] [0,5]
+U9 [D6,-1,nD6] [0,5]
+U10 [D7,-1,nD7] [0,5]
+U20 [D0,RW,s0] [1,5]
+U21 [nD0,RW,r0] [1,5]
+SR1 [s0,r0,Q0,nq0] [5,false]
+R30 [Q0,-1] [10000]
+R31 [nq0,-1] [10000]
+U22 [D1,RW,s1] [1,5]
+U23 [nD1,RW,r1] [1,5]
+SR2 [s1,r1,Q1,nq1] [5,false]
+R32 [Q1,-1] [10000]
+R33 [nq1,-1] [10000]
+U24 [D2,RW,s2] [1,5]
+U25 [nD2,RW,r2] [1,5]
+SR3 [s2,r2,Q2,nq2] [5,true]
+R34 [Q2,-1] [10000]
+R35 [nq2,-1] [10000]
+U26 [D3,RW,s3] [1,5]
+U27 [nD3,RW,r3] [1,5]
+SR4 [s3,r3,Q3,nq3] [5,false]
+R36 [Q3,-1] [10000]
+R37 [nq3,-1] [10000]
+U28 [D4,RW,s4] [1,5]
+U29 [nD4,RW,r4] [1,5]
+SR5 [s4,r4,Q4,nq4] [5,false]
+R38 [Q4,-1] [10000]
+R39 [nq4,-1] [10000]
+U40 [D5,RW,s5] [1,5]
+U41 [nD5,RW,r5] [1,5]
+SR6 [s5,r5,Q5,nq5] [5,true]
+R40 [Q5,-1] [10000]
+R41 [nq5,-1] [10000]
+U42 [D6,RW,s6] [1,5]
+U43 [nD6,RW,r6] [1,5]
+SR7 [s6,r6,Q6,nq6] [5,false]
+R42 [Q6,-1] [10000]
+R43 [nq6,-1] [10000]
+U44 [D7,RW,s7] [1,5]
+U45 [nD7,RW,r7] [1,5]
+SR8 [s7,r7,Q7,nq7] [5,false]
+R44 [Q7,-1] [10000]
+R45 [nq7,-1] [10000]
+.ends sram8_pre6
+
+# ---- 8 位总线开关 busswitch8（U 门+二极管，高阻读选通）----
+.subckt busswitch8 CTRL X[0:7] Y[0:7]
+U60 [CTRL,X0,t0] [1,5]
+U61 [CTRL,X1,t1] [1,5]
+U62 [CTRL,X2,t2] [1,5]
+U63 [CTRL,X3,t3] [1,5]
+U64 [CTRL,X4,t4] [1,5]
+U65 [CTRL,X5,t5] [1,5]
+U66 [CTRL,X6,t6] [1,5]
+U67 [CTRL,X7,t7] [1,5]
+D20 [t0,Y0] [1e-14,0]
+D21 [t1,Y1] [1e-14,0]
+D22 [t2,Y2] [1e-14,0]
+D23 [t3,Y3] [1e-14,0]
+D24 [t4,Y4] [1e-14,0]
+D25 [t5,Y5] [1e-14,0]
+D26 [t6,Y6] [1e-14,0]
+D27 [t7,Y7] [1e-14,0]
+.ends busswitch8
+
+# ---- 16×8 数据 RAM（同 47，但地址 5/6 预置 0x3C/0x24 供 CPU 测试程序用）----
+.subckt ram16x8 A[0:3] RW D[0:7] Q[0:7]
+X1 [A[0:3],WL[0:15]] decoder4to16
+U100 [WL0,RW,wlg0] [1,5]
+U101 [WL1,RW,wlg1] [1,5]
+U102 [WL2,RW,wlg2] [1,5]
+U103 [WL3,RW,wlg3] [1,5]
+U104 [WL4,RW,wlg4] [1,5]
+U105 [WL5,RW,wlg5] [1,5]
+U106 [WL6,RW,wlg6] [1,5]
+U107 [WL7,RW,wlg7] [1,5]
+U108 [WL8,RW,wlg8] [1,5]
+U109 [WL9,RW,wlg9] [1,5]
+U110 [WL10,RW,wlg10] [1,5]
+U111 [WL11,RW,wlg11] [1,5]
+U112 [WL12,RW,wlg12] [1,5]
+U113 [WL13,RW,wlg13] [1,5]
+U114 [WL14,RW,wlg14] [1,5]
+U115 [WL15,RW,wlg15] [1,5]
+X2 [wlg0,D[0:7],q0[0:7]] sram8
+X3 [wlg1,D[0:7],q1[0:7]] sram8
+X4 [wlg2,D[0:7],q2[0:7]] sram8
+X5 [wlg3,D[0:7],q3[0:7]] sram8
+X6 [wlg4,D[0:7],q4[0:7]] sram8
+X7 [wlg5,D[0:7],q5[0:7]] sram8_pre5
+X8 [wlg6,D[0:7],q6[0:7]] sram8_pre6
+X9 [wlg7,D[0:7],q7[0:7]] sram8
+X10 [wlg8,D[0:7],q8[0:7]] sram8
+X11 [wlg9,D[0:7],q9[0:7]] sram8
+X12 [wlg10,D[0:7],q10[0:7]] sram8
+X13 [wlg11,D[0:7],q11[0:7]] sram8
+X14 [wlg12,D[0:7],q12[0:7]] sram8
+X15 [wlg13,D[0:7],q13[0:7]] sram8
+X16 [wlg14,D[0:7],q14[0:7]] sram8
+X17 [wlg15,D[0:7],q15[0:7]] sram8
+X18 [WL0,q0[0:7],Q[0:7]] busswitch8
+X19 [WL1,q1[0:7],Q[0:7]] busswitch8
+X20 [WL2,q2[0:7],Q[0:7]] busswitch8
+X21 [WL3,q3[0:7],Q[0:7]] busswitch8
+X22 [WL4,q4[0:7],Q[0:7]] busswitch8
+X23 [WL5,q5[0:7],Q[0:7]] busswitch8
+X24 [WL6,q6[0:7],Q[0:7]] busswitch8
+X25 [WL7,q7[0:7],Q[0:7]] busswitch8
+X26 [WL8,q8[0:7],Q[0:7]] busswitch8
+X27 [WL9,q9[0:7],Q[0:7]] busswitch8
+X28 [WL10,q10[0:7],Q[0:7]] busswitch8
+X29 [WL11,q11[0:7],Q[0:7]] busswitch8
+X30 [WL12,q12[0:7],Q[0:7]] busswitch8
+X31 [WL13,q13[0:7],Q[0:7]] busswitch8
+X32 [WL14,q14[0:7],Q[0:7]] busswitch8
+X33 [WL15,q15[0:7],Q[0:7]] busswitch8
+R200 [Q0,-1] [100000]
+R201 [Q1,-1] [100000]
+R202 [Q2,-1] [100000]
+R203 [Q3,-1] [100000]
+R204 [Q4,-1] [100000]
+R205 [Q5,-1] [100000]
+R206 [Q6,-1] [100000]
+R207 [Q7,-1] [100000]
+.ends ram16x8
+
+# ---- 程序计数器 pc8（4 位地址用低 4 位，LOAD 时加载 IR[3:0]）----
+# Q[3:0] 为 PC 值；X1：adder8(+1)；U116..U124：2:1 多路器 M=LOAD?A:Q+1
+.subckt pc8 CLK LOAD A[0:7] Q[0:7]
+V1 [vcc,-1] [0,0,0,0,5]
+R1 [c8,-1] [10000]
+R2 [nc,-1] [10000]
+X1 [Q[0:7],vcc,-1,-1,-1,-1,-1,-1,-1,nc,S[0:7],c8] adder8
+U116 [LOAD,-1,nLOAD] [0,5]
+U100 [LOAD,A0,ma0] [1,5]
+U101 [LOAD,A1,ma1] [1,5]
+U102 [LOAD,A2,ma2] [1,5]
+U103 [LOAD,A3,ma3] [1,5]
+U104 [LOAD,A4,ma4] [1,5]
+U105 [LOAD,A5,ma5] [1,5]
+U106 [LOAD,A6,ma6] [1,5]
+U107 [LOAD,A7,ma7] [1,5]
+U108 [nLOAD,S0,ms0] [1,5]
+U109 [nLOAD,S1,ms1] [1,5]
+U110 [nLOAD,S2,ms2] [1,5]
+U111 [nLOAD,S3,ms3] [1,5]
+U112 [nLOAD,S4,ms4] [1,5]
+U113 [nLOAD,S5,ms5] [1,5]
+U114 [nLOAD,S6,ms6] [1,5]
+U115 [nLOAD,S7,ms7] [1,5]
+U117 [ma0,ms0,M0] [3,5]
+U118 [ma1,ms1,M1] [3,5]
+U119 [ma2,ms2,M2] [3,5]
+U120 [ma3,ms3,M3] [3,5]
+U121 [ma4,ms4,M4] [3,5]
+U122 [ma5,ms5,M5] [3,5]
+U123 [ma6,ms6,M6] [3,5]
+U124 [ma7,ms7,M7] [3,5]
+X2 [CLK,M[0:7],Q[0:7]] reg8
+.ends pc8
+
+# ---- 控制单元 cu ----
+# 输入：CLK + IR7/IR6（OP 两位）+ HALT
+# 输出：T（状态）、PC_LOAD（JMP）、ACC_LOAD、RAM_WE、A_SEL（ALU 输入选择）
+# 两相时序（T 由 DFF 在 CLK∧¬HALT 上升沿翻转，每 CLK 翻转一次）：
+#   T=0（取指相）：PC 递增（LOAD=0 → Q←Q+1）；IR 用 CLK 锁存 ROM[PC]（PC 旧值）
+#   T=1（执行相）：PC 用 CLK 锁存（LOAD=1，A=JMP?IRQ:PC → 跳转或保持）
+#                 ACC 用 CLK 锁存 D 端 MUX（ACC_LOAD=1 选 ALU 结果，否则保持）
+#                 RAM_WE 电平写 RAM（STA）
+# 控制信号（组合译码，OP=IR[7:6]，LDA=00 ADD=01 STA=10 JMP=11）：
+#   T        = DFF 状态
+#   PC_LOAD  = T∧OP1∧OP0（JMP：PC 加载跳转地址）
+#   ACC_LOAD = T∧¬OP1（LDA/ADD：ACC 更新）
+#   RAM_WE   = T∧OP1∧¬OP0（STA：写 RAM）
+#   A_SEL    = ¬OP1·OP0（ADD 时 ALU A=ACC；LDA 时 A=0）
+.subckt cu CLK IR7 IR6 HALT T PC_LOAD ACC_LOAD RAM_WE A_SEL
+# T 状态 DFF：时钟 = CLK∧¬HALT（HALT=1 冻结）；d=nq → 每有效 CLK 翻转
+U2 [HALT,-1,nHALT] [0,5]
+U1 [CLK,nHALT,CLKH] [1,5]       # CLKH = CLK·¬HALT
+DFF1 [CLKH,nT,T,nT]             # d=nq → 翻转；nT 由 nq 输出提供
+R1 [T,-1] [10000]
+# 译码（OP1=IR7 指令位7，OP0=IR6 指令位6；LDA=00 ADD=01 STA=10 JMP=11）
+U3 [IR7,-1,nOP1] [0,5]
+U4 [IR6,-1,nOP0] [0,5]
+U5 [T,nOP1,ACC_LOAD] [1,5]      # ACC_LOAD = T·¬OP1（LDA/ADD）
+U6 [T,IR7,t_sta] [1,5]          # t_sta = T·OP1
+U7 [t_sta,nOP0,RAM_WE] [1,5]    # RAM_WE = T·OP1·¬OP0（STA）
+U8 [t_sta,IR6,PC_LOAD] [1,5]    # PC_LOAD = T·OP1·OP0（JMP）
+U13 [nOP1,IR6,A_SEL] [1,5]      # A_SEL = ¬OP1·OP0（ADD 选 ACC，LDA 选 0）
+R2 [T,-1] [10000]
+R3 [PC_LOAD,-1] [10000]
+R4 [ACC_LOAD,-1] [10000]
+R5 [RAM_WE,-1] [10000]
+R6 [A_SEL,-1] [10000]
+.ends cu
+
+# ---- 顶层 CPU ----
+# X1：pc8（PC）；X2：rom16x8（指令 ROM）；X3：reg8（IR）
+# X4：cu（控制单元）；X5：reg8（ACC）；X6：adder8（ALU）；X7：ram16x8（数据 RAM）
+# 数据通路（全部寄存器用原始 CLK，无门控时钟竞态）：
+#   每个 CLK 上升沿同时：
+#     PC：LOAD=T（执行相加载）；A 端 MUX 选 JMP 目标或 PC 自身
+#        → T=0 时 LOAD=0，PC←PC+1（取指递增）
+#        → T=1 非 JMP 时 LOAD=1 且 A=PC，PC←PC（保持）
+#        → T=1 JMP 时 LOAD=1 且 A=IRQ[3:0]，PC←跳转目标
+#     IR：锁存 ROM[PC]（上升沿瞬间 PC 还是旧值，取到当前指令）
+#     ACC：D 端 MUX（ACC_LOAD 选 ALU 结果 SUM，否则保持）
+#   RAM 读写：地址=IRQ[3:0]（当前指令操作数），RW=RAM_WE（STA 电平写）
+# 注意：RAM 读输出 Q 经二极管有 ~0.7V 压降（~4.3V），判高阈值 3V
+.subckt cpu8 CLK HALT Q[0:7]
+V1 [vcc,-1] [0,0,0,0,5]
+# 控制单元
+X4 [CLK,IRQ7,IRQ6,HALT,T,PC_LOAD,ACC_LOAD,RAM_WE,A_SEL] cu
+R20 [A_SEL,-1] [10000]
+# PC 跳转目标 A 端 MUX：A_i = PC_LOAD?IRQ_i:PC_i（低 4 位），高 4 位保持 PC
+U300 [PC_LOAD,IRQ0,tp0] [1,5]
+U301 [nPCLOAD,PC0,tk0] [1,5]
+U302 [tp0,tk0,PA0] [3,5]
+U303 [PC_LOAD,IRQ1,tp1] [1,5]
+U304 [nPCLOAD,PC1,tk1] [1,5]
+U305 [tp1,tk1,PA1] [3,5]
+U306 [PC_LOAD,IRQ2,tp2] [1,5]
+U307 [nPCLOAD,PC2,tk2] [1,5]
+U308 [tp2,tk2,PA2] [3,5]
+U309 [PC_LOAD,IRQ3,tp3] [1,5]
+U310 [nPCLOAD,PC3,tk3] [1,5]
+U311 [tp3,tk3,PA3] [3,5]
+U312 [PC_LOAD,-1,nPCLOAD] [0,5]
+U313 [nPCLOAD,PC4,tk4] [1,5]
+U314 [PC_LOAD,PC4,td4] [1,5]
+U315 [tk4,td4,PA4] [3,5]
+U316 [nPCLOAD,PC5,tk5] [1,5]
+U317 [PC_LOAD,PC5,td5] [1,5]
+U318 [tk5,td5,PA5] [3,5]
+U319 [nPCLOAD,PC6,tk6] [1,5]
+U320 [PC_LOAD,PC6,td6] [1,5]
+U321 [tk6,td6,PA6] [3,5]
+U322 [nPCLOAD,PC7,tk7] [1,5]
+U323 [PC_LOAD,PC7,td7] [1,5]
+U324 [tk7,td7,PA7] [3,5]
+# PC：时钟=CLK（原始），LOAD=T（执行相加载），A=PA（跳转目标或自身）
+X1 [CLK,T,PA0,PA1,PA2,PA3,PA4,PA5,PA6,PA7,PC[0:7]] pc8
+# 指令 ROM：PC[3:0] → IR 总线
+X2 [PC0,PC1,PC2,PC3,IR[0:7]] rom16x8
+# IR：CLK 上升沿锁存 ROM 输出（上升沿瞬间 PC 还是旧值，取到当前指令）
+X3 [CLK,IR0,IR1,IR2,IR3,IR4,IR5,IR6,IR7,IRQ0,IRQ1,IRQ2,IRQ3,IRQ4,IRQ5,IRQ6,IRQ7] reg8
+# 数据 RAM：地址=IRQ[3:0]，RW=RAM_WE，写数据=ACC，读数据=DB
+X7 [IRQ0,IRQ1,IRQ2,IRQ3,RAM_WE,Q0,Q1,Q2,Q3,Q4,Q5,Q6,Q7,DB0,DB1,DB2,DB3,DB4,DB5,DB6,DB7] ram16x8
+# ALU：adder8 计算 A+B，A 输入 = A_SEL?ACC:0（8 个 AND 门），B=DB（RAM 读数据）
+U100 [A_SEL,Q0,aa0] [1,5]
+U101 [A_SEL,Q1,aa1] [1,5]
+U102 [A_SEL,Q2,aa2] [1,5]
+U103 [A_SEL,Q3,aa3] [1,5]
+U104 [A_SEL,Q4,aa4] [1,5]
+U105 [A_SEL,Q5,aa5] [1,5]
+U106 [A_SEL,Q6,aa6] [1,5]
+U107 [A_SEL,Q7,aa7] [1,5]
+X6 [aa0,aa1,aa2,aa3,aa4,aa5,aa6,aa7,DB0,DB1,DB2,DB3,DB4,DB5,DB6,DB7,nc,SUM0,SUM1,SUM2,SUM3,SUM4,SUM5,SUM6,SUM7,c8] adder8
+R21 [nc,-1] [10000]
+R22 [c8,-1] [10000]
+# ACC D 端 2:1 MUX：D_i = ACC_LOAD?SUM_i:ACC_i（无门控时钟竞态）
+U200 [ACC_LOAD,-1,nACC_LOAD] [0,5]
+U201 [ACC_LOAD,SUM0,ds0] [1,5]
+U202 [nACC_LOAD,Q0,dk0] [1,5]
+U203 [ds0,dk0,D0] [3,5]
+U204 [ACC_LOAD,SUM1,ds1] [1,5]
+U205 [nACC_LOAD,Q1,dk1] [1,5]
+U206 [ds1,dk1,D1] [3,5]
+U207 [ACC_LOAD,SUM2,ds2] [1,5]
+U208 [nACC_LOAD,Q2,dk2] [1,5]
+U209 [ds2,dk2,D2] [3,5]
+U210 [ACC_LOAD,SUM3,ds3] [1,5]
+U211 [nACC_LOAD,Q3,dk3] [1,5]
+U212 [ds3,dk3,D3] [3,5]
+U213 [ACC_LOAD,SUM4,ds4] [1,5]
+U214 [nACC_LOAD,Q4,dk4] [1,5]
+U215 [ds4,dk4,D4] [3,5]
+U216 [ACC_LOAD,SUM5,ds5] [1,5]
+U217 [nACC_LOAD,Q5,dk5] [1,5]
+U218 [ds5,dk5,D5] [3,5]
+U219 [ACC_LOAD,SUM6,ds6] [1,5]
+U220 [nACC_LOAD,Q6,dk6] [1,5]
+U221 [ds6,dk6,D6] [3,5]
+U222 [ACC_LOAD,SUM7,ds7] [1,5]
+U223 [nACC_LOAD,Q7,dk7] [1,5]
+U224 [ds7,dk7,D7] [3,5]
+# ACC：CLK 上升沿锁存 D（执行相锁 SUM，取指相保持）
+X5 [CLK,D0,D1,D2,D3,D4,D5,D6,D7,Q0,Q1,Q2,Q3,Q4,Q5,Q6,Q7] reg8
+R30 [Q0,-1] [10000]
+R31 [Q1,-1] [10000]
+R32 [Q2,-1] [10000]
+R33 [Q3,-1] [10000]
+R34 [Q4,-1] [10000]
+R35 [Q5,-1] [10000]
+R36 [Q6,-1] [10000]
+R37 [Q7,-1] [10000]
+.ends cpu8
+
+# =============================================================================
+# 顶层演示 —— 时钟驱动 cpu8，HALT 开关控制停机
+# =============================================================================
+# V1：5V 电源 vcc；V2：1kHz 脉冲时钟；B1：HALT 开关（默认 0 运行）
+# X1：顶层实例化 cpu8，Q0..Q7 为 ACC 累加器输出
+# 测试程序（烧在指令 ROM）：
+#   0: LDA 5    A ← RAM[5]（预置 0x3C）
+#   1: ADD 6    A ← A + RAM[6]（预置 0x24）= 0x60
+#   2: STA 7    RAM[7] ← 0x60
+#   3: JMP 3    死循环
+# 运行 8 个时钟（4 指令 × 2 相）后：ACC=0x60，RAM[7]=0x60
+# =============================================================================
+V1 [vcc,-1] [0,0,0,0,5]
+V2 [clk,-1] [5,0,1000,0,5,0.5]
+B1 [vcc,HALT] [HALT,0.5,1]
+R1 [HALT,-1] [10000]
+X1 [clk,HALT,Q[0:7]] cpu8
