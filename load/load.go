@@ -300,10 +300,15 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 		}
 	}
 
+	// 解析引擎仿真配置（环境变量 → EngineConfig），集中注入 Context。
+	// 引擎内部（element/time/simulation.go）与 MNA 存储选择都读 con.EngineCfg，
+	// 不再直接 os.Getenv。
+	con.EngineCfg = loadEngineConfig()
+
 	mnaUpdate := mna.NewMnaUpdate(nodesNum, voltageSourcesNum)
-	// 稀疏模式（环境变量 CIRCUIT_LUSPARSE 非空）：A 改用 CSR 稀疏存储，
-	// 与瞬态引擎的稀疏 LU 分解器配套使用。
-	if os.Getenv("CIRCUIT_LUSPARSE") != "" {
+	// 稀疏模式（con.EngineCfg.SparseLU，load 从 CIRCUIT_LUSPARSE 解析）：
+	// A 改用 CSR 稀疏存储，与瞬态引擎的稀疏 LU 分解器配套使用。
+	if con.EngineCfg.SparseLU {
 		mnaUpdate = mna.NewMnaUpdateSparse(nodesNum, voltageSourcesNum)
 	}
 	if mnaUpdateType, ok := mnaUpdate.(*mna.MnaUpdateType[float64]); ok {
@@ -313,6 +318,36 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 	}
 
 	return con, nil
+}
+
+// loadEngineConfig 从环境变量解析引擎仿真配置。
+// 保持与既有 CIRCUIT_* 环境变量完全兼容；数值解析失败时静默回退默认值。
+func loadEngineConfig() element.EngineConfig {
+	cfg := element.EngineConfig{}
+	cfg.SparseLU = os.Getenv("CIRCUIT_LUSPARSE") != ""
+	cfg.GminCont = os.Getenv("CIRCUIT_GMCONT") != ""
+	cfg.GminDbg = os.Getenv("CIRCUIT_GMIN_DBG") != ""
+	cfg.NoEq = os.Getenv("CIRCUIT_NOEQ") != ""
+	if v := os.Getenv("CIRCUIT_NATGMIN"); v != "" {
+		fmt.Sscanf(v, "%g", &cfg.NaturalGmin)
+	}
+	if v := os.Getenv("CIRCUIT_GMINFINAL"); v != "" {
+		fmt.Sscanf(v, "%g", &cfg.GminFinal)
+	}
+	if v := os.Getenv("CIRCUIT_GLOBALGMIN"); v != "" && v != "0" {
+		// 支持显式数值（如 CIRCUIT_GLOBALGMIN=1e-7）或布尔启用（默认 1e-9 S=1GΩ）。
+		// 全局 gmin 是"到地电导"：值必须远小于 RTL 上拉电导（1kΩ=1e-3 S），
+		// 否则会把逻辑节点拉到中间电平、门失去增益、锁存器焊死中间态。
+		// 不叠加 continuationGmin（Gmin stepping 的 1kΩ 级阻尼）——延续阻尼
+		// 只由 PN 结元件自身读取，不进入矩阵对角。
+		var f float64
+		if _, err := fmt.Sscanf(v, "%g", &f); err == nil && f > 0 && f < 1 {
+			cfg.GlobalGmin = f
+		} else {
+			cfg.GlobalGmin = 1e-9
+		}
+	}
+	return cfg
 }
 
 // createElementFromAST 根据AST元素节点创建元件实例

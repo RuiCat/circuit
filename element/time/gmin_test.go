@@ -88,6 +88,10 @@ R101 [100,2] [1000]
 Q200 [2,1,-1] [false,100]
 Q201 [1,2,-1] [false,100]
 `
+	// 开启 Gmin 延续（与 CLI 的 CIRCUIT_GMCONT 一致）。
+	// 注意：配置在 load.LoadString 时从环境变量解析注入 Context，
+	// 因此 Setenv 必须先于 LoadString。
+	t.Setenv("CIRCUIT_GMCONT", "1")
 	con, err := load.LoadString(netlist)
 	if err != nil {
 		t.Fatalf("加载锁存网表失败: %v", err)
@@ -97,9 +101,6 @@ Q201 [1,2,-1] [false,100]
 	if terr != nil {
 		t.Fatalf("创建仿真时间失败: %v", terr)
 	}
-
-	// 开启 Gmin 延续（与 CLI 的 CIRCUIT_GMCONT 一致）
-	t.Setenv("CIRCUIT_GMCONT", "1")
 
 	var count int
 	var last1, last2 float64
@@ -135,6 +136,11 @@ R1 [1,2] [1000]
 R2 [2,-1] [2000]
 `
 	run := func(gmin bool) float64 {
+		if gmin {
+			t.Setenv("CIRCUIT_GMCONT", "1")
+		} else {
+			t.Setenv("CIRCUIT_GMCONT", "")
+		}
 		con, err := load.LoadString(netlist)
 		if err != nil {
 			t.Fatalf("加载网表失败: %v", err)
@@ -142,11 +148,6 @@ R2 [2,-1] [2000]
 		con.Time, err = NewTimeMNA(1e-3)
 		if err != nil {
 			t.Fatalf("创建仿真时间失败: %v", err)
-		}
-		if gmin {
-			t.Setenv("CIRCUIT_GMCONT", "1")
-		} else {
-			t.Setenv("CIRCUIT_GMCONT", "")
 		}
 		var v2 float64
 		if err := TransientSimulation(con, func(voltages []float64) {

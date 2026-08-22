@@ -19,6 +19,11 @@ V2 [3,-1] [1,0,1000,0,0.1]
 R2 [3,2] [100000]
 `
 	run := func(sparse bool) float64 {
+		if sparse {
+			t.Setenv("CIRCUIT_LUSPARSE", "1")
+		} else {
+			t.Setenv("CIRCUIT_LUSPARSE", "")
+		}
 		con, err := load.LoadString(netlist)
 		if err != nil {
 			t.Fatalf("加载网表失败: %v", err)
@@ -26,11 +31,6 @@ R2 [3,2] [100000]
 		con.Time, err = NewTimeMNA(1e-3)
 		if err != nil {
 			t.Fatalf("创建仿真时间失败: %v", err)
-		}
-		if sparse {
-			t.Setenv("CIRCUIT_LUSPARSE", "1")
-		} else {
-			t.Setenv("CIRCUIT_LUSPARSE", "")
 		}
 		var v2 float64
 		if err := TransientSimulation(con, func(voltages []float64) {

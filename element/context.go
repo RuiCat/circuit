@@ -7,6 +7,19 @@ import (
 	"sync"
 )
 
+// EngineConfig 引擎仿真配置：由 load 包在创建 Context 时从环境变量解析注入，
+// 供瞬态引擎（element/time/simulation.go）与 MNA 存储选择读取，
+// 避免引擎内部直接 os.Getenv（配置集中、可测试、可程序化设置）。
+type EngineConfig struct {
+	SparseLU    bool    // CIRCUIT_LUSPARSE：稀疏 LU 分解
+	GminCont    bool    // CIRCUIT_GMCONT：Gmin 延续步进
+	NaturalGmin float64 // CIRCUIT_NATGMIN：自然 gmin（对角叠加）
+	GminFinal   float64 // CIRCUIT_GMINFINAL：延续终值（<=0 用默认）
+	GlobalGmin  float64 // CIRCUIT_GLOBALGMIN：全局对角 gmin（0=关闭；支持显式数值）
+	GminDbg     bool    // CIRCUIT_GMIN_DBG：打印 gmin 步进轨迹
+	NoEq        bool    // CIRCUIT_NOEQ：跳过行/列均衡化
+}
+
 // Context 上下文。
 type Context struct {
 	mna.Time                                                 // 时间接口。
@@ -16,6 +29,7 @@ type Context struct {
 	CompactNodeID               map[mna.NodeID]int           // 原始节点ID→紧凑索引的映射。
 	HierarchicalNodeID          map[string]mna.NodeID        // 层级路径(如"X1.out")→紧凑节点ID的映射。
 	ParallelOpts                *ParallelOptions             // 并行仿真选项，nil=串行模式。
+	EngineCfg                   EngineConfig                 // 引擎仿真配置（load 解析环境变量注入）。
 	stampCaches                 map[NodeFace]*mna.StampCache // 元件盖章缓存。
 	cacheTime                   float64                      // 缓存时间戳。
 	cacheMu                     sync.Mutex                   // 缓存访问互斥锁。

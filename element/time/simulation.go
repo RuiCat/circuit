@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"os"
 )
 
 // TransientSimulation 执行瞬态仿真，使用元件回调函数和LU求解器实现迭代计算。
@@ -34,8 +33,9 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 	nodesNum, voltageSourcesNum := con.GetNodeNum(), con.GetVoltageSourcesNum()
 	// 创建LU分解器
 	systemSize := nodesNum + voltageSourcesNum
-	// 稀疏模式（CIRCUIT_LUSPARSE 非空）优先使用稀疏 LU；否则并行稠密 / 串行稠密。
-	sparseLU := os.Getenv("CIRCUIT_LUSPARSE") != ""
+	// 稀疏模式（con.EngineCfg.SparseLU，load 从 CIRCUIT_LUSPARSE 解析）优先使用稀疏 LU；
+	// 否则并行稠密 / 串行稠密。
+	sparseLU := con.EngineCfg.SparseLU
 	var luSolver maths.LU[float64]
 	var err error
 	switch {
@@ -60,32 +60,19 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 	con.ResetTimeStepCount()
 	// Gmin 延续（标准 SPICE Gmin stepping）：t=0 直流求解启动延续步进。
 	// 大 Gmin 把交叉耦合双稳态阻尼成单稳态，随迭代收敛逐级下调至自然 gmin，
-	// 解决锁存器/触发器在 t=0 的对称振荡不收敛问题。默认关闭（CIRCUIT_GMCONT 开启），
-	// 不影响普通电路的既有行为。
-	gminContEnabled := os.Getenv("CIRCUIT_GMCONT") != ""
-	naturalGmin := 0.0
-	if v := os.Getenv("CIRCUIT_NATGMIN"); v != "" {
-		fmt.Sscanf(v, "%g", &naturalGmin)
+	// 解决锁存器/触发器在 t=0 的对称振荡不收敛问题。默认关闭（con.EngineCfg.GminCont，
+	// load 从 CIRCUIT_GMCONT 解析），不影响普通电路的既有行为。
+	gminContEnabled := con.EngineCfg.GminCont
+	naturalGmin := con.EngineCfg.NaturalGmin
+	if con.EngineCfg.GminFinal > 0 {
+		con.Time.SetGminFinal(con.EngineCfg.GminFinal)
 	}
-	if v := os.Getenv("CIRCUIT_GMINFINAL"); v != "" {
-		var f float64
-		fmt.Sscanf(v, "%g", &f)
-		con.Time.SetGminFinal(f)
-	}
-	globalGmin := 0.0
-	if v := os.Getenv("CIRCUIT_GLOBALGMIN"); v != "" && v != "0" {
-		// 支持显式数值（如 CIRCUIT_GLOBALGMIN=1e-7）或布尔启用（默认 1e-9 S=1GΩ）。
-		// 全局 gmin 是"到地电导"：值必须远小于 RTL 上拉电导（1kΩ=1e-3 S），
-		// 否则会把逻辑节点拉到中间电平、门失去增益、锁存器焊死中间态。
-		// 因此这里不再叠加 continuationGmin（Gmin stepping 的 1kΩ 级阻尼），
-		// 只用独立的小值给弱连接节点（如只接截止晶体管基极的控制线）接地。
-		var f float64
-		if _, err := fmt.Sscanf(v, "%g", &f); err == nil && f > 0 && f < 1 {
-			globalGmin = f
-		} else {
-			globalGmin = 1e-9
-		}
-	}
+	// 全局 gmin（con.EngineCfg.GlobalGmin，load 解析 CIRCUIT_GLOBALGMIN）：
+	// 到地电导，仅给弱连接节点（如只接截止晶体管基极的控制线）接地。
+	// 值必须远小于 RTL 上拉电导（1kΩ=1e-3 S），否则会把逻辑节点拉到中间电平、
+	// 门失去增益、锁存器焊死中间态；不叠加 continuationGmin（延续阻尼只由
+	// PN 结元件自身读取，不进入矩阵对角）。
+	globalGmin := con.EngineCfg.GlobalGmin
 	for !con.IsSimulationFinished() {
 		// 将事件值同步到元件 NodeValue
 		if !con.PushEvents() {
@@ -166,7 +153,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 				return err
 			}
 			// 求解MNA方程（使用均衡化LU分解以处理混合域）
-			rowScale, colScale, err := equilibrateDecompose(luSolver, con.GetA(), sparseLU, gminForLU(naturalGmin, globalGmin))
+			rowScale, colScale, err := equilibrateDecompose(luSolver, con.GetA(), sparseLU, gminForLU(naturalGmin, globalGmin), con.EngineCfg.NoEq)
 			if err != nil {
 				newStep := con.CurrentStep() / 2
 				if newStep < con.MinTimeStep() {
@@ -199,7 +186,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 				// 标准 Gmin 步进：收敛于当前阻尼水平，但延续尚未降到终值 →
 				// 下调一档并以当前解为热启动继续迭代，直到在自然 gmin 下收敛。
 				if con.Time.GminSteppingActive() && con.Time.StepGminDown() {
-					if os.Getenv("CIRCUIT_GMIN_DBG") != "" {
+					if con.EngineCfg.GminDbg {
 						fmt.Printf("GMIN_DBG step=%d iter=%d -> gmin=%g\n", con.Time.GoodIterations(), newtonIterCount, con.Time.GetContinuationGmin())
 					}
 					continue
@@ -220,7 +207,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 					return err
 				}
 				// 重新求解MNA方程（使用均衡化LU分解以处理混合域）
-				rowScale, colScale, err := equilibrateDecompose(luSolver, con.GetA(), sparseLU, gminForLU(naturalGmin, globalGmin))
+				rowScale, colScale, err := equilibrateDecompose(luSolver, con.GetA(), sparseLU, gminForLU(naturalGmin, globalGmin), con.EngineCfg.NoEq)
 				if err != nil {
 					newStep := con.CurrentStep() / 2
 					if newStep < con.MinTimeStep() {
@@ -413,16 +400,17 @@ func gminForLU(naturalGmin, globalGmin float64) float64 {
 // 稀疏模式用只遍历非零元的稀疏版本，否则用稠密版本。两者数值等价。
 // gmin>0 时（Gmin stepping 激活）给所有节点对角并联 gmin 到地（标准 SPICE 做法），
 // 为无直流通路的弱连接节点（如只接截止晶体管基极的控制线）提供接地路径，避免近奇异。
-func equilibrateDecompose(luSolver maths.LU[float64], A maths.Matrix[float64], sparse bool, gmin float64) (rowScale, colScale []float64, err error) {
+// noEq=true 时跳过行/列均衡化（con.EngineCfg.NoEq，load 从 CIRCUIT_NOEQ 解析）：
+// 均衡化的缩放会破坏近奇异矩阵（如含大量电压源支路的 MNA 矩阵）的部分主元选择，
+// 导致假奇异→步长减半卡死。
+func equilibrateDecompose(luSolver maths.LU[float64], A maths.Matrix[float64], sparse bool, gmin float64, noEq bool) (rowScale, colScale []float64, err error) {
 	if gmin > 0 {
 		n := A.Rows()
 		for i := 0; i < n; i++ {
 			A.Increment(i, i, gmin)
 		}
 	}
-	// NOEQ 旁路：跳过行/列均衡化，直接分解。均衡化的缩放会破坏近奇异矩阵
-	// （如含大量电压源支路的 MNA 矩阵）的部分主元选择，导致假奇异→步长减半卡死。
-	if os.Getenv("CIRCUIT_NOEQ") != "" {
+	if noEq {
 		n := A.Rows()
 		rowScale = make([]float64, n)
 		colScale = make([]float64, n)
