@@ -72,7 +72,20 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 		fmt.Sscanf(v, "%g", &f)
 		con.Time.SetGminFinal(f)
 	}
-	globalGmin := os.Getenv("CIRCUIT_GLOBALGMIN") != ""
+	globalGmin := 0.0
+	if v := os.Getenv("CIRCUIT_GLOBALGMIN"); v != "" && v != "0" {
+		// 支持显式数值（如 CIRCUIT_GLOBALGMIN=1e-7）或布尔启用（默认 1e-9 S=1GΩ）。
+		// 全局 gmin 是"到地电导"：值必须远小于 RTL 上拉电导（1kΩ=1e-3 S），
+		// 否则会把逻辑节点拉到中间电平、门失去增益、锁存器焊死中间态。
+		// 因此这里不再叠加 continuationGmin（Gmin stepping 的 1kΩ 级阻尼），
+		// 只用独立的小值给弱连接节点（如只接截止晶体管基极的控制线）接地。
+		var f float64
+		if _, err := fmt.Sscanf(v, "%g", &f); err == nil && f > 0 && f < 1 {
+			globalGmin = f
+		} else {
+			globalGmin = 1e-9
+		}
+	}
 	for !con.IsSimulationFinished() {
 		// 将事件值同步到元件 NodeValue
 		if !con.PushEvents() {
@@ -373,15 +386,17 @@ func doStep(con *element.Context) error {
 }
 
 // gminForLU 计算本次 LU 分解的对角 gmin：
-// 自然 gmin（CIRCUIT_NATGMIN）始终叠加；continuationGmin（Gmin stepping 延续值）
-// 仅当 CIRCUIT_GLOBALGMIN=1 时叠加到所有节点对角（标准 SPICE 做法，为弱连接节点
-// 提供接地路径）；默认只由 PN 结元件自身读取延续值（保持既有行为）。
-func gminForLU(con *element.Context, naturalGmin float64, globalGmin bool) float64 {
+// 自然 gmin（CIRCUIT_NATGMIN）始终叠加；全局 gmin（CIRCUIT_GLOBALGMIN，
+// 默认 1e-9 S=1GΩ，可显式设数值如 1e-7）仅当启用时叠加到所有节点对角
+// （标准 SPICE 做法，为弱连接节点提供接地路径）。
+// 注意：不再叠加 continuationGmin——Gmin stepping 的阻尼（起始 1e-3 S=1kΩ）
+// 若叠加到所有节点对角，会把 RTL 逻辑门（1kΩ 上拉）拉向中间电平，
+// 门失去增益、锁存器焊死中间态（见 2026-08-22 诊断）。延续阻尼只由
+// PN 结元件自身读取，不进入矩阵对角。
+func gminForLU(con *element.Context, naturalGmin, globalGmin float64) float64 {
 	g := naturalGmin
-	if globalGmin {
-		if cg := con.Time.GetContinuationGmin(); cg > g {
-			g = cg
-		}
+	if globalGmin > g {
+		g = globalGmin
 	}
 	return g
 }
