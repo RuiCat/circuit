@@ -64,6 +64,9 @@ type config struct {
 	quiet       bool
 	showHelp    bool
 	netlistPath string
+	pprofAddr   string
+	cpuProfile  string
+	memProfile  string
 }
 
 // main 程序入口：解析参数、加载网表、运行仿真、输出结果。
@@ -73,8 +76,22 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "mcpserver" {
 		os.Exit(runMCPServer(os.Args[2:]))
 	}
+	os.Exit(run())
+}
 
+// run 执行批处理与交互式模式的主流程，返回进程退出码。
+// 独立于 main 以便 defer（含 pprof 数据落盘）在 os.Exit 前可靠执行。
+func run() int {
 	cfg := parseFlags()
+
+	// pprof 性能剖析：--pprof HTTP 调试服务 / --cpuprofile CPU 采样 / --memprofile 堆画像。
+	// 必须在最早阶段启动，保证网表加载与仿真的热点都被覆盖。
+	pprofCleanup, pprofErr := startPprof(cfg.pprofAddr, cfg.cpuProfile, cfg.memProfile)
+	if pprofErr != nil {
+		fmt.Fprintf(os.Stderr, "错误: %v\n", pprofErr)
+		return 2
+	}
+	defer pprofCleanup()
 
 	if cfg.parallel < 0 {
 		fmt.Fprintf(os.Stderr, "警告: --parallel 不能为负值 (%d)，已重置为 0\n", cfg.parallel)
@@ -86,23 +103,23 @@ func main() {
 
 	if cfg.showHelp {
 		printHelp()
-		os.Exit(0)
+		return 0
 	}
 
 	if cfg.format != "csv" && cfg.format != "tsv" && cfg.format != "table" && cfg.format != "html" {
 		fmt.Fprintf(os.Stderr, "错误: 不支持的输出格式 '%s'，可选: csv, tsv, table, html\n", cfg.format)
-		os.Exit(1)
+		return 1
 	}
 
 	if cfg.netlistPath == "" {
 		printHelp()
-		os.Exit(1)
+		return 1
 	}
 
 	netlistFile, err := os.Open(cfg.netlistPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "错误: 无法打开文件 %s: %v\n", cfg.netlistPath, err)
-		os.Exit(2)
+		return 2
 	}
 	defer func() {
 		if cerr := netlistFile.Close(); cerr != nil {
@@ -113,7 +130,7 @@ func main() {
 	netlistText, err := io.ReadAll(netlistFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "错误: 读取网表文件 %s: %v\n", cfg.netlistPath, err)
-		os.Exit(2)
+		return 2
 	}
 	netlist := string(netlistText)
 	pfNetlist := isPowerflowNetlist(netlist)
@@ -122,22 +139,22 @@ func main() {
 	if pfNetlist {
 		if cfg.mode == "interactive" {
 			fmt.Fprintf(os.Stderr, "错误: 交互式 TUI 不支持潮流网表(B/BR),请用批处理模式输出 csv/tsv/table/html\n")
-			os.Exit(4)
+			return 4
 		}
 	} else {
 		con, err = load.LoadContext(strings.NewReader(netlist))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "错误: 网表加载失败: %v\n", err)
-			os.Exit(3)
+			return 3
 		}
 	}
 
 	if cfg.mode == "interactive" {
 		if err := runTUI(con, cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "错误: %v\n", err)
-			os.Exit(4)
+			return 4
 		}
-		return
+		return 0
 	}
 
 	var w io.Writer
@@ -150,7 +167,7 @@ func main() {
 		outFile, err = os.Create(cfg.outputPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "错误: 无法创建输出文件 %s: %v\n", cfg.outputPath, err)
-			os.Exit(2)
+			return 2
 		}
 		defer func() {
 			if cerr := outFile.Close(); cerr != nil {
@@ -167,15 +184,15 @@ func main() {
 				bufWriter.Flush()
 			}
 			fmt.Fprintf(os.Stderr, "错误: %v\n", err)
-			os.Exit(4)
+			return 4
 		}
 		if bufWriter != nil {
 			if ferr := bufWriter.Flush(); ferr != nil {
 				fmt.Fprintf(os.Stderr, "错误: 刷新输出缓冲区失败: %v\n", ferr)
-				os.Exit(4)
+				return 4
 			}
 		}
-		return
+		return 0
 	}
 
 	if err := runSim(w, con, cfg); err != nil {
@@ -183,14 +200,15 @@ func main() {
 			bufWriter.Flush()
 		}
 		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
-		os.Exit(4)
+		return 4
 	}
 	if bufWriter != nil {
 		if ferr := bufWriter.Flush(); ferr != nil {
 			fmt.Fprintf(os.Stderr, "错误: 刷新输出缓冲区失败: %v\n", ferr)
-			os.Exit(4)
+			return 4
 		}
 	}
+	return 0
 }
 
 // parseFlags 解析命令行参数并返回 config 结构体。
@@ -222,6 +240,10 @@ func parseFlags() config {
 	flag.StringVar(&cfg.format, "format", "csv", "输出格式: csv, tsv, table, html")
 
 	flag.BoolVar(&cfg.quiet, "quiet", false, "静默模式，不输出元信息到 stderr")
+
+	flag.StringVar(&cfg.pprofAddr, "pprof", "", "pprof HTTP 调试地址，如 :6060（空=不启动）")
+	flag.StringVar(&cfg.cpuProfile, "cpuprofile", "", "CPU profile 输出文件（go tool pprof 分析）")
+	flag.StringVar(&cfg.memProfile, "memprofile", "", "内存 profile 输出文件（运行结束后写入）")
 
 	flag.Usage = func() {
 		printHelp()
@@ -272,6 +294,7 @@ func runMCPServer(args []string) int {
 		transport  = fs.String("transport", "stdio", "传输方式: stdio / http / sse")
 		addr       = fs.String("addr", ":18080", "HTTP 监听地址（http/sse 模式）")
 		sessionTTL = fs.Duration("session-ttl", time.Hour, "会话空闲自动清理 TTL（0=不清理）")
+		pprofAddr  = fs.String("pprof", "", "pprof HTTP 调试地址（如 :6060，空=不启动）")
 		showHelp   = fs.Bool("h", false, "显示帮助")
 	)
 	fs.Usage = func() {
@@ -284,6 +307,7 @@ func runMCPServer(args []string) int {
   -transport string   传输方式: stdio / http / sse（默认: stdio）
   -addr string        HTTP 监听地址（http/sse 模式，默认: :18080）
   -session-ttl duration 会话空闲自动清理 TTL（默认: 1h，0=不清理）
+  -pprof string       pprof HTTP 调试地址（如 :6060，空=不启动）
   -h                  显示帮助
 
 示例:
@@ -296,6 +320,14 @@ func runMCPServer(args []string) int {
 		fs.Usage()
 		return 0
 	}
+
+	// pprof 性能剖析：HTTP 调试服务在 stdio 模式下同样可用（子进程长驻）
+	pprofCleanup, pprofErr := startPprof(*pprofAddr, "", "")
+	if pprofErr != nil {
+		fmt.Fprintf(os.Stderr, "错误: %v\n", pprofErr)
+		return 1
+	}
+	defer pprofCleanup()
 
 	store := mcp.NewSessionStore(*sessionTTL)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -370,6 +402,9 @@ func printHelp() {
       --parallel int   并行 worker 数（0=串行模式，默认: 0）
       --format string  输出格式: csv, tsv, table, html（默认: csv）
       --quiet          静默模式，不输出元信息到 stderr
+      --pprof string   pprof HTTP 调试地址，如 :6060（运行中用 go tool pprof 抓画像）
+      --cpuprofile string CPU profile 输出文件（进程结束自动落盘）
+      --memprofile string 内存 profile 输出文件（进程结束自动落盘）
   -h, --help           显示帮助
 
 示例:
@@ -377,6 +412,7 @@ func printHelp() {
   circuit -t 0.01 --nodes 1,2,5 -o result.csv circuit.net
   circuit --parallel 4 --format table circuit.net
   circuit -t 0.05 --format html -o result.html circuit.net
+  circuit --pprof :6060 --cpuprofile cpu.prof circuit.net   # 性能剖析
 `)
 }
 

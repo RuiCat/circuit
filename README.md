@@ -291,6 +291,10 @@ go run ./cmd mcpserver -transport http -addr :18080
     3. cmd/powerflow.go: isPowerflowNetlist 检测(第二词元 slack/pv/pq,防误判 B 开关元件)
     4. 输出 csv/tsv/table/html 四种格式;TUI 模式遇潮流网表明确报错
     5. 实测 29 号 exit 0,01/10 号普通网表回归无误判
+  * [2026-8] CLI 与 MCP 服务器支持 pprof 性能剖析
+    1. 新增 cmd/pprof.go: --pprof HTTP 调试服务(net/http/pprof) / --cpuprofile CPU 采样 / --memprofile 堆画像
+    2. 批处理/interactive 与 mcpserver 子命令均可启用;pprof 在进程退出前完整落盘(main 重构为 run() 保证 defer 可靠执行)
+    3. 用法: circuit --pprof :6060 --cpuprofile cpu.prof circuit.net;运行中可 go tool pprof http://:6060/debug/pprof/profile
   * [2026-8] 引擎标准 SPICE Gmin stepping (解决交叉耦合锁存器 t=0 对称振荡不收敛)
     1. 延续法: 从大 Gmin(1e-3 S) 给每个 PN 结并联低阻把双稳态阻尼成单稳态,收敛后逐级 ×0.1 降至 1e-12 逼近真实工作点
     2. 仅 t=0 直流求解步启用,后续步恢复自然 gmin;开关 CIRCUIT_GMCONT=1(默认关闭,不影响普通电路),调试 CIRCUIT_GMIN_DBG=1
@@ -313,6 +317,7 @@ go run ./cmd mcpserver -transport http -addr :18080
   9. [✔] CLI 直接运行 B/BR 潮流网表（29 号算例可执行，见 docs/powerflow.md §3）
   10. [✔] 引擎标准 SPICE Gmin stepping（CIRCUIT_GMCONT=1，解决交叉耦合锁存器 t=0 振荡不收敛）
   11. [✔] 稀疏 LU 接入与性能优化（CIRCUIT_LUSPARSE=1，行切片存储消除 fill-in 插入 O(n^4) 退化）
+  12. [✔] CLI/MCP 服务器支持 pprof 性能剖析（--pprof / --cpuprofile / --memprofile）
 
 
 ## 实现过程
