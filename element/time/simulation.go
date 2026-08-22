@@ -5,7 +5,6 @@ import (
 	"circuit/maths"
 	"circuit/mna"
 	"fmt"
-	"log"
 	"math"
 )
 
@@ -142,6 +141,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 		// 非线性迭代（牛顿-拉夫逊法）
 		newtonConverged := false
 		newtonIterCount := 0
+		refillConverged := false // 显式补轮后是否收敛（P3：收敛则外层立即终止，避免重复触发采样）
 		var luRetry bool
 		for con.NextNonlinearIter() {
 			newtonIterCount++
@@ -244,7 +244,48 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 					if err = con.CallMark(element.MarkUpdateElements); err != nil {
 						return fmt.Errorf("元件状态更新失败: %v", err)
 					}
-					newtonConverged = true
+					// P3 修复：显式补轮——Rollback A/Z 缓存 → doStep（元件读已提交
+					// 状态）→ 求解写 X → 残差检查。旧实现依赖"外层必然再迭代一轮"
+					// 的隐性补轮把解写回 UpdateX 交换后的缓冲区：若 elem 恰好在外层
+					// 最后一次迭代收敛（额度耗尽），补轮不执行，电压提取会静默读到
+					// 旧解。显式补轮使 X 始终为本步解，与迭代额度无关。
+					// 补轮后若收敛（refillConverged）则本步解即最终解，外层立即终止；
+					// 若未收敛（如 HCV 单向阀/蓄能器写回历史电流后元件仍抖动），
+					// X 已更新为补轮解，外层继续迭代直至稳定。
+					con.A.Rollback()
+					con.Z.Rollback()
+					if err := doStep(con); err != nil {
+						return err
+					}
+					rowScale, colScale, err := equilibrateDecompose(luSolver, con.GetA(), sparseLU, gminForLU(naturalGmin, globalGmin), con.EngineCfg.NoEq)
+					if err != nil {
+						newStep := con.CurrentStep() / 2
+						if newStep < con.MinTimeStep() {
+							return fmt.Errorf("补轮矩阵分解失败且步长已最小（时间=%.6e）: %v", con.CurrentTime(), err)
+						}
+						con.SetTimeStep(newStep)
+						needLinearStamp = true
+						luRetry = true
+						break
+					}
+					if err := maths.SolveEquilibrated(luSolver, con.GetZ(), con.GetX(), rowScale, colScale); err != nil {
+						newStep := con.CurrentStep() / 2
+						if newStep < con.MinTimeStep() {
+							return fmt.Errorf("补轮方程求解失败且步长已最小（时间=%.6e）: %v", con.CurrentTime(), err)
+						}
+						con.SetTimeStep(newStep)
+						needLinearStamp = true
+						luRetry = true
+						break
+					}
+					if err := con.CalculateMNAResidual(con); err != nil {
+						return fmt.Errorf("残差计算失败: %v", err)
+					}
+					con.CheckResidualConvergence()
+					if con.IsConverged() {
+						newtonConverged = true
+						refillConverged = true
+					}
 					break
 				}
 			}
@@ -252,6 +293,13 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 				continue
 			}
 			if luRetry {
+				break
+			}
+			// P3 修复：显式补轮收敛（refillConverged）后立即终止外层牛顿循环。
+			// 若不终止，外层再迭代一轮会基于补轮后的新解重新执行元件 doStep
+			// （如 DFF 上升沿检测读到补轮写入的旧缓冲 prevClk 而重复触发采样、
+			// 把状态改回），破坏"补轮即最终解"的语义并浪费一次 LU。
+			if refillConverged {
 				break
 			}
 			// 如果循环结束，意味着即使经过额外的迭代也未能收敛
@@ -272,9 +320,17 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 					newtonConverged = true
 					break
 				}
-				log.Printf("警告: 时间 %.6e 元件次级迭代耗尽（%d 次），强制推进", con.CurrentTime(), con.MaxElemIter())
-				newtonConverged = true
-				break // 强制推进后立即结束本轮牛顿，避免剩余迭代白跑
+				// P8 修复：元件迭代耗尽且残差未收敛 → 真正的数值困难，减半步长重试
+				// （原实现无条件强制推进，会静默接受不收敛的解；log 警告易被忽略）。
+				// 已到最小步长则报错终止，不再产生错误结果。
+				newStep := con.CurrentStep() / 2
+				if newStep < con.MinTimeStep() {
+					return fmt.Errorf("元件次级迭代耗尽且残差未收敛（时间=%.6e，步长已最小 %.6e）", con.CurrentTime(), con.MinTimeStep())
+				}
+				con.SetTimeStep(newStep)
+				needLinearStamp = true
+				luRetry = true
+				break // 复用 luRetry 路径：break 外层 → 时间循环减半步长重算
 			}
 		}
 		if luRetry {
@@ -319,9 +375,11 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 			needLinearStamp = true // 步长变化较大，需要重新加盖线性元件
 		}
 		// 检查残差是否可接受并推进时间。
-		// Gmin 延续激活时跳过残差检查：延续解的残差包含 gmin 泄漏电流分量，
-		// 在真实系统下天然不为 0，若按常规判据会导致步长反复减半死循环。
-		// 阻尼解（gmin 已降至终值附近）作为本步解，下一步重新步进。
+		// Gmin 延续"步进中"（尚未降到终值）跳过残差检查：中间阻尼解的残差
+		// 含 gmin 泄漏电流分量（PN 结元件按延续值计算 I-V，与自然系统不符），
+		// 若按常规判据会导致步长反复减半死循环。延续降到终值（gminStepDone）后
+		// GminSteppingActive 返回 false，本步解即真实工作点，恢复残差验收
+		// （P1 修复：不再永久旁路 Gmin 电路的残差检查）。
 		if con.IsResidualConverged() || con.Time.GminSteppingActive() {
 			// 残差可接受，推进时间
 			if err := con.Time.AdvanceTimeSimple(); err != nil {
@@ -398,8 +456,12 @@ func gminForLU(naturalGmin, globalGmin float64) float64 {
 
 // equilibrateDecompose 根据稀疏开关选择均衡化 LU 分解路径：
 // 稀疏模式用只遍历非零元的稀疏版本，否则用稠密版本。两者数值等价。
-// gmin>0 时（Gmin stepping 激活）给所有节点对角并联 gmin 到地（标准 SPICE 做法），
-// 为无直流通路的弱连接节点（如只接截止晶体管基极的控制线）提供接地路径，避免近奇异。
+// gmin>0 时（Gmin stepping 激活）给所有行对角并联 gmin 到地（标准 SPICE 做法的
+// 工程变体）：为无直流通路的弱连接节点提供接地路径避免近奇异。节点 KCL 行加 gmin
+// 是标准做法；电压源约束行也加（软电压源效应 gmin·I(vs)<<容差，数值可忽略）是
+// CPU8 这类大规模 RTL 电路的数值需要——电压源行对角保持非零占位，避免稀疏 LU
+// 静态主元序在病态矩阵上假奇异（实测去掉后 CPU8 t=0 分解奇异 k=291）。审查结论
+// （P2 候选）曾计划只加节点行，因破坏 CPU8 回归而放弃，注释留档。
 // noEq=true 时跳过行/列均衡化（con.EngineCfg.NoEq，load 从 CIRCUIT_NOEQ 解析）：
 // 均衡化的缩放会破坏近奇异矩阵（如含大量电压源支路的 MNA 矩阵）的部分主元选择，
 // 导致假奇异→步长减半卡死。

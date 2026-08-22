@@ -27,26 +27,29 @@ func (a *atomicFloat64) Store(v float64) {
 
 // 常量定义（通用配置阈值）
 const (
-	minValidStep   = 1e-12 // 最小有效步长（避免数值下溢）
-	maxValidStep   = 1e-2  // 最大有效步长（避免步长过大发散）
-	defaultAbsTol  = 1e-6  // 默认绝对误差容差
-	defaultRelTol  = 1e-4  // 默认相对误差容差
-	defaultSafety  = 0.85  // 默认步长调整安全系数
-	defaultMaxNonl = 200   // 默认最大非线性迭代次数
-	defaultMaxElem = 20  // 默认单个元件最大收敛迭代次数
+	minValidStep = 1e-12 // 最小有效步长（避免数值下溢）
+	// maxValidStep 是 SetStepLimits 允许的最大步长上限。
+	// 原值 1e-2 对慢信号（亚 Hz 级）仿真过紧；放宽到 1.0 由 LTE 自适应兜底
+	// （步长过大时预测-校正误差增大，AdjustStepSize 会自动收缩），安全。
+	maxValidStep   = 1.0  // 最大允许步长（秒）
+	defaultAbsTol  = 1e-6 // 默认绝对误差容差
+	defaultRelTol  = 1e-4 // 默认相对误差容差
+	defaultSafety  = 0.85 // 默认步长调整安全系数
+	defaultMaxNonl = 200  // 默认最大非线性迭代次数
+	defaultMaxElem = 20   // 默认单个元件最大收敛迭代次数
 )
 
 // Gmin 延续（Gmin stepping）参数：标准 SPICE 延续法。
 // 从大 Gmin 开始，把双稳态电路（锁存器/触发器/RAM 单元）阻尼成单稳态，
 // 随牛顿收敛逐级下调至自然 gmin，解决交叉耦合锁存器在 t=0 直流求解时的对称振荡不收敛。
 const (
-	gminStepStart  = 1e-3  // 起始（最大）延续 Gmin (S)：每结并联 ~1kΩ，把双稳态阻尼成单稳态
-	gminStepFinal  = 1e-12  // 终值：RTL 数字电路在 1e-5（100kΩ 对地泄漏）下残差判据即可通过，
+	gminStepStart = 1e-3  // 起始（最大）延续 Gmin (S)：每结并联 ~1kΩ，把双稳态阻尼成单稳态
+	gminStepFinal = 1e-12 // 终值：RTL 数字电路在 1e-5（100kΩ 对地泄漏）下残差判据即可通过，
 	// 且泄漏对 5V 摆幅/0.7V 阈值的工作点影响 <5%；更小的终值会让弱连接节点
 	// （如只接截止晶体管基极的控制线）进入耗尽-恢复-步长重置死循环
-	gminStepScale  = 0.1   // 每级衰减比例（收敛后 ×0.1）
-	gminMaxRecover = 9     // 单步再阻尼恢复次数上限（1e-3→1e-12 共 9 级）
-	gminFinalEps   = 1e-6  // 终值判定相对容差：吸收 1e-11*0.1 等浮点误差，避免多出一级无效步进
+	gminStepScale  = 0.1  // 每级衰减比例（收敛后 ×0.1）
+	gminMaxRecover = 9    // 单步再阻尼恢复次数上限（1e-3→1e-12 共 9 级）
+	gminFinalEps   = 1e-6 // 终值判定相对容差：吸收 1e-11*0.1 等浮点误差，避免多出一级无效步进
 )
 
 // 3阶Adams方法系数常量
@@ -115,6 +118,7 @@ type TimeMNA struct {
 	gminRecoveries   int     // 当前步 Gmin 再阻尼恢复次数（防止病态电路在阻尼循环中空转）
 	gminPrevRecover  float64 // 上次 RecoverGmin 恢复到的档位（震荡检测用）
 	gminStuck        bool    // Gmin 在相邻两档间来回震荡（RecoverGmin↔StepGminDown）：接受当前阻尼解，不再下调
+	gminStepDone     bool    // 本步 Gmin 延续是否已完成（延续值已降到终值）：完成后恢复时间步级残差检查
 	maxNonlinIter    int     // 全局最大非线性迭代次数
 	currNonlinIter   int     // 当前非线性迭代计数
 	maxElemIter      int     // 单个元件最大收敛迭代次数
@@ -133,8 +137,10 @@ type TimeMNA struct {
 	triggers   []mna.Trigger // 仿真触发点列表
 	continuous bool          // 连续模式标志，为 true 时 IsSimulationFinished 始终返回 false
 	tempTarget atomic.Bool   // 是否为临时目标（AdvanceFor 设置）；跨 goroutine 故原子化
-	status     atomic.Int32  // 运行状态（SimStatus），并发安全
-	notifier   func()        // 状态改变通知回调，当状态从 Paused 离开时调用
+	newTarget  atomic.Bool   // 目标刚被 AdvanceFor 更新（外部 goroutine 置位，仿真侧消耗）：
+	// 消除 IsSimulationFinished 判定旧目标与 AdvanceFor 设置新目标之间的竞态窗口
+	status   atomic.Int32 // 运行状态（SimStatus），并发安全
+	notifier func()       // 状态改变通知回调，当状态从 Paused 离开时调用
 }
 
 // NewTimeMNA 创建通用的 TimeMNA 实例
@@ -154,7 +160,7 @@ func NewTimeMNA(targetTime float64) (*TimeMNA, error) {
 		timeStepCount:     0,
 		goodStepCount:     0,
 		residualConverged: false,
-		gminFinal:        gminStepFinal,
+		gminFinal:         gminStepFinal,
 		absTol:            defaultAbsTol,
 		relTol:            defaultRelTol,
 		safety:            defaultSafety,
@@ -211,27 +217,36 @@ func (t *TimeMNA) SetGminFinal(v float64) {
 	t.gminFinal = v
 }
 
-// BeginGminStepping 启动 Gmin 延续：延续值设为起始大值，并复位恢复计数与震荡标记。
-// 由仿真循环在每个时间步开始（开启延续）时调用。
+// BeginGminStepping 启动 Gmin 延续：延续值设为起始大值，并复位恢复计数、震荡标记
+// 与本步完成标志。由仿真循环在每个时间步开始（开启延续）时调用：
+// 每步从大 Gmin 重新步进（锁存器等双稳态在每步的直流求解都需要阻尼收敛）。
 func (t *TimeMNA) BeginGminStepping() {
 	t.continuationGmin = gminStepStart
 	t.gminRecoveries = 0
 	t.gminPrevRecover = 0
 	t.gminStuck = false
+	t.gminStepDone = false
 }
 
 // EndGminStepping 结束 Gmin 延续：恢复自然 gmin（0 = 关闭延续）。
-// t=0 步完成后，后续时间步不再使用阻尼延续。
+// 由外部（如连续仿真结束）显式调用；仿真循环内不调用——
+// 每步由 BeginGminStepping 重新启动步进，StepGminDown 降到终值后
+// gminStepDone 置位（延续值保留在终值，供 PN 结元件读取），
+// GminSteppingActive 返回 false，恢复时间步级残差检查。
 func (t *TimeMNA) EndGminStepping() {
 	t.continuationGmin = 0
+	t.gminStepDone = true
 }
 
-// GminSteppingActive 返回延续是否激活（>0 表示正在步进中）。
+// GminSteppingActive 返回延续是否处于"步进中"（>0 且未到终值）。
+// 注意：延续值已降到终值（gminStepDone）后返回 false——此时本步解已是
+// 真实工作点，时间步级残差检查应恢复生效（见 simulation.go 残差判据）。
 func (t *TimeMNA) GminSteppingActive() bool {
-	return t.continuationGmin > 0
+	return t.continuationGmin > 0 && !t.gminStepDone
 }
 
-// StepGminDown 把延续 Gmin 下调一档（×gminStepScale），到达终值后钳位到 gminStepFinal。
+// StepGminDown 把延续 Gmin 下调一档（×gminStepScale），到达终值后钳位到终值
+// 并置 gminStepDone（延续完成）。
 // 返回是否仍需继续步进（true = 尚未到达终值，需以更小 gmin 重新迭代）。
 // 若已检测到 Gmin 震荡（临界档位无法继续下调），返回 false 接受当前阻尼解。
 func (t *TimeMNA) StepGminDown() bool {
@@ -244,6 +259,7 @@ func (t *TimeMNA) StepGminDown() bool {
 	}
 	if t.continuationGmin <= final {
 		t.continuationGmin = final
+		t.gminStepDone = true
 		return false
 	}
 	next := t.continuationGmin * gminStepScale
@@ -251,6 +267,7 @@ func (t *TimeMNA) StepGminDown() bool {
 	// 用相对容差判定「到达终值」，避免多出一级无效步进。
 	if next <= final*(1+gminFinalEps) {
 		t.continuationGmin = final
+		t.gminStepDone = true
 		return false
 	}
 	t.continuationGmin = next
@@ -487,6 +504,11 @@ func (t *TimeMNA) NoConverged() {
 // 临时目标模式下到达目标时间后自动暂停并返回 true。
 func (t *TimeMNA) IsSimulationFinished() bool {
 	if t.continuous {
+		// 目标刚被 AdvanceFor 更新（外部 goroutine 置位）：本轮跳过暂停判定，
+		// 下一轮循环重新按新目标检查，消除与旧目标判定的竞态窗口。
+		if t.newTarget.CompareAndSwap(true, false) {
+			return false
+		}
 		// 连续模式：检查临时目标（AdvanceFor 设置）
 		if t.tempTarget.Load() && t.currentTime.Load() >= t.targetTime.Load() {
 			t.tempTarget.Store(false)
@@ -578,6 +600,11 @@ func (t *TimeMNA) AdvanceFor(duration float64) error {
 	old := t.Status()
 	if t.status.CompareAndSwap(mna.StatusPaused, mna.StatusRunning) {
 		t.notifyIfResumed(old)
+	} else if t.continuous {
+		// 状态不是 Paused（仿真仍在 Running/Stepping）：IsSimulationFinished 可能在
+		// 判定旧目标并即将置 Paused——置位 newTarget 标志，仿真侧消耗后跳过本轮
+		// 暂停判定，按新目标继续跑（消除竞态窗口：避免"新目标已设但仿真停在 Paused"）。
+		t.newTarget.Store(true)
 	}
 	return nil
 }
@@ -931,7 +958,11 @@ func (t *TimeMNA) ResetNonlinearIter() {
 	t.elementConverged.Store(true)
 }
 
-// NextNonlinearIter 推进非线性迭代计数，返回是否未超限
+// NextNonlinearIter 推进非线性迭代计数，返回是否未超限。
+// 保持 < 边界（实际迭代次数 = max-1）：审查曾建议改 <= 消除 off-by-one，
+// 但实测 CPU8 的 maxElem=20 调优与 < 语义耦合——<= 让 elem 循环多执行一次
+// doStep，元件状态（PN 结电压限制/锁存器）多推进一轮，t=0 直流工作点改变
+// （maxdiff 32V），整条波形偏移。故保留 < 并留档。
 func (t *TimeMNA) NextNonlinearIter() bool {
 	t.currNonlinIter++
 	t.elementConverged.Store(true)
@@ -943,7 +974,8 @@ func (t *TimeMNA) ResetElemIter() {
 	t.currElemIter = 0
 }
 
-// NextElemIter 推进单个元件迭代计数，返回是否未超限
+// NextElemIter 推进单个元件迭代计数，返回是否未超限。
+// 保持 < 边界：与 maxElemIter 的 CPU8 调优语义耦合（见 NextNonlinearIter 注释）。
 func (t *TimeMNA) NextElemIter() bool {
 	t.currElemIter++
 	t.elementConverged.Store(true)
@@ -1103,13 +1135,17 @@ func (t *TimeMNA) AdvanceTimeSimple() error {
 
 // advanceTimeAndTriggers 计算 nextTime、截断触发点和目标时间、推进 currentTime 并标记触发点。
 // adjustStep 为 true 时，在到达目标时间时同步调整步长（AdvanceTimeStep 路径需要）。
+// 触发点截断时总是同步收缩 currentStep（P5 修复）：否则 DC 电路在 AdjustStepSize
+// 放大步长后，advanceTimeAndTriggers 只截断时间不缩步长，触发点之后会以大步长起步。
 func (t *TimeMNA) advanceTimeAndTriggers(adjustStep bool) {
 	curTime := t.currentTime.Load()
 	nextTime := curTime + t.currentStep
-	// 触发点截断：确保不会越过未触发的触发点
+	// 触发点截断：确保不会越过未触发的触发点（多个触发点时取最近的——条件用
+	// 已更新的 nextTime 比较，循环中 nextTime 被较早触发点缩小后，较晚的自动不满足）
 	for i := range t.triggers {
 		if !t.triggers[i].Triggered && t.triggers[i].Time > curTime && nextTime > t.triggers[i].Time {
 			nextTime = t.triggers[i].Time
+			t.currentStep = nextTime - curTime // 同步收缩步长：下一步从触发点以小步长起步
 		}
 	}
 	// 不超过目标时间（纯连续模式跳过目标时间截断，仅临时目标模式需要）
