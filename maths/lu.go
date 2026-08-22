@@ -342,8 +342,10 @@ func (lu *luSparse[T]) decomposeWithPerm(matrix Matrix[T]) error {
 
 		// --- 消元过程 ---
 		pivotVal = lu.U.Get(k, k)
-		// 获取主元所在行的非零元素，以减少不必要的计算
-		pivotCols, pivotVals := lu.U.GetRow(k)
+		// 直接引用主元行内部切片（消元期间行 k 只读：SwapRows 在消元前，
+		// 消元中 Set/SetAdd 仅修改行 i>k 与 L），避免 GetRow 每次拷贝分配。
+		pivotCols := us.colInd[k]
+		pivotVals := us.val[k]
 
 		// 沿列 k 的非零行集合消元（列索引），避免行存储下遍历全部行
 		// 线性扫描找列 k 的非零行（消元主循环另一处 O(n) 扫描）。
@@ -368,11 +370,13 @@ func (lu *luSparse[T]) decomposeWithPerm(matrix Matrix[T]) error {
 			// 不丢弃任何 fill-in：与稠密 LU 数值一致。若用绝对阈值丢弃（如 <Epsilon），
 			// 会在近奇异矩阵（如二极管 Rs=0 用 1e9 近似短路）上把后续会成长的有效
 			// pivot 提前置零，导致误判奇异。
+			// SetAdd 一次扫描完成读-改-写（浮点 a-b ≡ a+(-b) 位级一致，行序不变），
+			// 替代原 Get+Set 两次线性扫描——消元内层最大热点。
 			for idx, j := range pivotCols {
 				if j <= k {
 					continue
 				}
-				lu.U.Set(i, j, lu.U.Get(i, j)-factor*pivotVals.Get(idx))
+				us.SetAdd(i, j, -factor*pivotVals[idx])
 			}
 		}
 	}
@@ -389,12 +393,15 @@ func (lu *luSparse[T]) SolveReuse(b, x Vector[T]) error {
 	// 利用 L 矩阵的稀疏性，只对非零元素进行计算
 	// 行序经静态重排序（perm）与部分主元（P）两级置换：原矩阵行 = perm[P[i]]
 	lu.Y.Zero()
+	ls := lu.L.(*rowSparseMatrix[T])
+	us := lu.U.(*rowSparseMatrix[T])
 	for i := 0; i < lu.n; i++ {
 		sum := b.Get(lu.perm[lu.P[i]])
-		cols, vals := lu.L.GetRow(i)
+		cols := ls.colInd[i]
+		vals := ls.val[i]
 		for idx, j := range cols {
 			if j < i {
-				sum -= vals.Get(idx) * lu.Y.Get(j)
+				sum -= vals[idx] * lu.Y.Get(j)
 			}
 		}
 		lu.Y.Set(i, sum)
@@ -411,10 +418,11 @@ func (lu *luSparse[T]) SolveReuse(b, x Vector[T]) error {
 			return errors.New("lu sparse solve: division by zero (U diagonal is zero)")
 		}
 
-		cols, vals := lu.U.GetRow(i)
+		cols := us.colInd[i]
+		vals := us.val[i]
 		for idx, j := range cols {
 			if j > i {
-				sum -= vals.Get(idx) * x.Get(j)
+				sum -= vals[idx] * x.Get(j)
 			}
 		}
 		x.Set(i, sum/diag)

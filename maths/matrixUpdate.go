@@ -12,13 +12,13 @@ import (
 // 或者“回滚”（Rollback），直接丢弃缓存中的所有更改。
 // 这种机制在需要进行探索性计算或需要撤销操作的场景下非常高效。
 type updateMatrix[T Number] struct {
-	Matrix[T]                     // Matrix 是底层的矩阵，存储着“已提交”的稳定数据。
-	bitmap        utils.Bitmap    // bitmap 用于标记哪些矩阵元素在缓存中被修改过。每一位对应一个元素。
-	cache         map[int][16]T   // cache 是一个分块缓存。key 是块索引，value 是一个固定大小的数组（块）。
-	blockSize     int             // blockSize 定义了缓存块的大小，固定为16，这有助于利用CPU缓存行对齐。
-	rowResultCols []int           // rowResultCols 是 GetRow 方法的列索引缓冲区，用于避免重复内存分配。
-	rowResultVals []T             // rowResultVals 是 GetRow 方法的值缓冲区。
-	rowResultVec  *denseVector[T] // rowResultVec 是 GetRow 方法返回的向量，重用此实例以减少GC压力。
+	Matrix[T]                          // Matrix 是底层的矩阵，存储着“已提交”的稳定数据。
+	bitmap        utils.Bitmap         // bitmap 用于标记哪些矩阵元素在缓存中被修改过。每一位对应一个元素。
+	cache         map[int][16]T        // cache 是一个分块缓存。key 是块索引，value 是一个固定大小的数组（块）。
+	blockSize     int                  // blockSize 定义了缓存块的大小，固定为16，这有助于利用CPU缓存行对齐。
+	rowResultCols []int                // rowResultCols 是 GetRow 方法的列索引缓冲区，用于避免重复内存分配。
+	rowResultVals []T                  // rowResultVals 是 GetRow 方法的值缓冲区。
+	rowResultVec  *denseVector[T]      // rowResultVec 是 GetRow 方法返回的向量，重用此实例以减少GC压力。
 	dirtyRows     map[int]map[int]bool // 每行被缓存修改的列集合，加速 GetRow 的稀疏合并。
 }
 
@@ -189,6 +189,7 @@ func (um *updateMatrix[T]) BuildFromDense(dense [][]T) {
 	um.bitmap = utils.NewBitmap(um.Rows() * um.Cols())
 
 }
+
 // Zero 将整个矩阵（包括底层和缓存）清零。
 func (um *updateMatrix[T]) Zero() {
 	um.Matrix.Zero()
@@ -268,22 +269,20 @@ func (um *updateMatrix[T]) GetRow(row int) ([]int, Vector[T]) {
 		}
 	}
 	// 缓存中不在底层的新列
-	if dirty != nil {
-		for j := range dirty {
-			// 已在底层行处理过（baseCols 有序，二分查找判存在）
-			if len(baseCols) > 0 {
-				pos := sort.SearchInts(baseCols, j)
-				if pos < len(baseCols) && baseCols[pos] == j {
-					continue
-				}
+	for j := range dirty {
+		// 已在底层行处理过（baseCols 有序，二分查找判存在）
+		if len(baseCols) > 0 {
+			pos := sort.SearchInts(baseCols, j)
+			if pos < len(baseCols) && baseCols[pos] == j {
+				continue
 			}
-			blockIdx, pos := um.getBlockIndexAndPosition(row, j)
-			if block, exists := um.cache[blockIdx]; exists {
-				val := block[pos]
-				if val != 0 {
-					um.rowResultCols = append(um.rowResultCols, j)
-					um.rowResultVals = append(um.rowResultVals, val)
-				}
+		}
+		blockIdx, pos := um.getBlockIndexAndPosition(row, j)
+		if block, exists := um.cache[blockIdx]; exists {
+			val := block[pos]
+			if val != 0 {
+				um.rowResultCols = append(um.rowResultCols, j)
+				um.rowResultVals = append(um.rowResultVals, val)
 			}
 		}
 	}

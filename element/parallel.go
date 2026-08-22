@@ -83,10 +83,7 @@ func (con *Context) parallelDoStep() error {
 	chunkSize := (n + workers - 1) / workers
 	for w := 0; w < workers; w++ {
 		start := w * chunkSize
-		end := start + chunkSize
-		if end > n {
-			end = n
-		}
+		end := min(start+chunkSize, n)
 		if start >= n {
 			break
 		}

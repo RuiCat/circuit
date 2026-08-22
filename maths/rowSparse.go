@@ -120,6 +120,49 @@ func (m *rowSparseMatrix[T]) Increment(row, col int, value T) {
 	m.Set(row, col, m.Get(row, col)+value)
 }
 
+// SetAdd 原位增量更新：v(row,col) += delta，一次线性扫描完成
+// 「读旧值 + 写新值 + 必要时插入/删除 + 列索引同步」。
+// 用于 LU 消元内层 U(i,j) -= factor*U(k,j)：替代 Set(Get(i,j)-x) 的两次扫描。
+// 浮点等价：a - x ≡ a + (-x)（IEEE 754 位级一致），且插入仍为尾部 append
+// （行序不变），数值路径与逐元素 Set/Get 完全一致。
+// 语义同 Increment，但避免 Get+Set 两次遍历同一行。
+func (m *rowSparseMatrix[T]) SetAdd(row, col int, delta T) {
+	if row < 0 || row >= m.rows || col < 0 || col >= m.cols {
+		panic(fmt.Sprintf("matrix index out of range: row=%d, col=%d (rows=%d, cols=%d)", row, col, m.rows, m.cols))
+	}
+	var zero T
+	for idx, c := range m.colInd[row] {
+		if c == col {
+			v := m.val[row][idx] + delta
+			if v == zero {
+				// 归零：删除 + 列索引同步（同 Set 删除）
+				last := len(m.colInd[row]) - 1
+				m.colInd[row][idx] = m.colInd[row][last]
+				m.val[row][idx] = m.val[row][last]
+				m.colInd[row] = m.colInd[row][:last]
+				m.val[row] = m.val[row][:last]
+				for ci, r := range m.colIndex[col] {
+					if r == row {
+						clast := len(m.colIndex[col]) - 1
+						m.colIndex[col][ci] = m.colIndex[col][clast]
+						m.colIndex[col] = m.colIndex[col][:clast]
+						break
+					}
+				}
+			} else {
+				m.val[row][idx] = v
+			}
+			return
+		}
+	}
+	// 不存在：delta 非零则插入（尾部 append，行序不变）
+	if delta != zero {
+		m.colInd[row] = append(m.colInd[row], col)
+		m.val[row] = append(m.val[row], delta)
+		m.colIndex[col] = append(m.colIndex[col], row)
+	}
+}
+
 // GetRow 返回该行非零元素（列索引 + 值向量）的独立拷贝。
 func (m *rowSparseMatrix[T]) GetRow(row int) ([]int, Vector[T]) {
 	if row < 0 || row >= m.rows {

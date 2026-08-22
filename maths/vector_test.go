@@ -119,8 +119,8 @@ func TestUpdateVector(t *testing.T) {
 func BenchmarkDenseVectorSet(b *testing.B) {
 	size := 1000
 	v := NewDenseVector[float64](size)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for i := 0; b.Loop(); i++ {
 		// 通过循环索引来避免因重复设置同一元素而产生的缓存效应
 		index := i % size
 		v.Set(index, rand.Float64())
@@ -133,8 +133,8 @@ func BenchmarkUpdateVectorSet(b *testing.B) {
 	size := 1000
 	base := NewDenseVector[float64](size)
 	uv := NewUpdateVector(base)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for i := 0; b.Loop(); i++ {
 		index := i % size
 		uv.Set(index, rand.Float64())
 	}

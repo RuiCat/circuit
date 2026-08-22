@@ -166,7 +166,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 				return err
 			}
 			// 求解MNA方程（使用均衡化LU分解以处理混合域）
-			rowScale, colScale, err := equilibrateDecompose(luSolver, con.GetA(), sparseLU, gminForLU(con, naturalGmin, globalGmin))
+			rowScale, colScale, err := equilibrateDecompose(luSolver, con.GetA(), sparseLU, gminForLU(naturalGmin, globalGmin))
 			if err != nil {
 				newStep := con.CurrentStep() / 2
 				if newStep < con.MinTimeStep() {
@@ -220,7 +220,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 					return err
 				}
 				// 重新求解MNA方程（使用均衡化LU分解以处理混合域）
-				rowScale, colScale, err := equilibrateDecompose(luSolver, con.GetA(), sparseLU, gminForLU(con, naturalGmin, globalGmin))
+				rowScale, colScale, err := equilibrateDecompose(luSolver, con.GetA(), sparseLU, gminForLU(naturalGmin, globalGmin))
 				if err != nil {
 					newStep := con.CurrentStep() / 2
 					if newStep < con.MinTimeStep() {
@@ -276,6 +276,14 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 					if con.Time.RecoverGmin() {
 						continue
 					}
+				}
+				// 残差已收敛（MNA 方程满足）但元件级电压仍在临界点附近
+				// 来回抖动（|ΔV|>0.01 触发 NoConverged）→ 接受当前解。
+				// 锁存器/RAM 单元在双稳态临界电压上会持续抖动，等待元件级
+				// 收敛会耗尽迭代后强制推进（结果相同且浪费 20 次 LU 分解）。
+				if con.IsResidualConverged() {
+					newtonConverged = true
+					break
 				}
 				log.Printf("警告: 时间 %.6e 元件次级迭代耗尽（%d 次），强制推进", con.CurrentTime(), con.MaxElemIter())
 				newtonConverged = true
@@ -393,7 +401,7 @@ func doStep(con *element.Context) error {
 // 若叠加到所有节点对角，会把 RTL 逻辑门（1kΩ 上拉）拉向中间电平，
 // 门失去增益、锁存器焊死中间态（见 2026-08-22 诊断）。延续阻尼只由
 // PN 结元件自身读取，不进入矩阵对角。
-func gminForLU(con *element.Context, naturalGmin, globalGmin float64) float64 {
+func gminForLU(naturalGmin, globalGmin float64) float64 {
 	g := naturalGmin
 	if globalGmin > g {
 		g = globalGmin

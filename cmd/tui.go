@@ -382,14 +382,15 @@ func (m *tuiModel) View() string {
 	// 触发
 	m.mu.RLock()
 	if m.triggerEnabled {
-		mainBuf.WriteString(triggerStyle.Render(
-			fmt.Sprintf("⚡ 触发: node_%d %s %v", m.triggerNode, m.triggerOp, m.triggerValue)) + "\n\n")
+		mainBuf.WriteString(triggerStyle.Render(fmt.Sprintf("⚡ 触发: node_%d %s %v", m.triggerNode, m.triggerOp, m.triggerValue)))
+		mainBuf.WriteString("\n\n")
 	}
 
 	// 输出历史
 	if len(m.output) > 0 {
 		for i := 0; i < len(m.output); i++ {
-			mainBuf.WriteString(m.output[i] + "\n")
+			mainBuf.WriteString(m.output[i])
+			mainBuf.WriteString("\n")
 		}
 	} else if !m.triggerEnabled {
 		mainBuf.WriteString("等待仿真数据...\n")

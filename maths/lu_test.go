@@ -148,8 +148,7 @@ func BenchmarkLuDenseDecompose(b *testing.B) {
 		b.Fatalf("NewLU failed: %v", err)
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		err := lu.Decompose(m)
 		if err != nil {
 			b.Fatalf("Decomposition failed during benchmark: %v", err)
@@ -186,9 +185,8 @@ func BenchmarkLuDenseSolve(b *testing.B) {
 		b.Fatalf("Decomposition failed during setup: %v", err)
 	}
 
-	b.ResetTimer()
 	// 重复执行求解过程
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		lu.SolveReuse(vecB, vecX)
 	}
 }

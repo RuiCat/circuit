@@ -73,9 +73,8 @@ func BenchmarkSparseMatrixPruner_RemoveZeroRows(b *testing.B) {
 	}
 
 	pruner := NewSparseMatrixPruner(mat)
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		pruner.RemoveZeroRows()
 	}
 }
@@ -95,9 +94,8 @@ func BenchmarkSparseMatrixPruner_RemoveZeroCols(b *testing.B) {
 	}
 
 	pruner := NewSparseMatrixPruner(mat)
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		pruner.RemoveZeroCols()
 	}
 }

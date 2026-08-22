@@ -115,13 +115,12 @@ func BenchmarkUpdateMatrix_GetRow(b *testing.B) {
 		updateMat.Set(row, col, rand.Float64())
 	}
 
-	b.ResetTimer()
 	b.ReportAllocs()
 
 	var cols []int
 	var vec Vector[float64]
 
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		// 循环遍历行以避免 CPU 缓存对数据本身的影响
 		cols, vec = updateMat.GetRow(i % 100)
 	}
