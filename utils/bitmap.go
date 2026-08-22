@@ -12,6 +12,7 @@ type Bitmap interface {
 	Get(bit BitmapFlag) (flag bool) // 获取标记
 	Size() int                      // 位图大小
 	FlagCount(flag bool) int        // 标记数量
+	ClearAll()                      // 整体清零（O(字数)，比逐位 Set(false) 快 64 倍）
 }
 
 // bitmapImpl 实现Bitmap接口
@@ -29,6 +30,13 @@ func NewBitmap(size int) Bitmap {
 	return &bitmapImpl{
 		bits:   make([]uint64, bitCount),
 		length: size,
+	}
+}
+
+// ClearAll 整体清零：把全部字置 0。
+func (b *bitmapImpl) ClearAll() {
+	for i := range b.bits {
+		b.bits[i] = 0
 	}
 }
 

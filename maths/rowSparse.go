@@ -8,7 +8,9 @@ import (
 // 针对 LU 分解的高频 fill-in 插入/删除优化：
 //   - Set 插入用 append（O(1) 摊还），删除用「末位交换 + 截断」（O(1)）
 //   - SwapRows 交换两个切片引用（O(1)）
-//   - Get / GetRow 线性扫描（O(该行非零数)）
+//   - Get / GetRow 线性扫描（O(该行非零数)，行短开销小）
+//   - 列索引 colIndex（列 → 行集合）供主元搜索等按列访问：O(该列非零数)，
+//     避免行存储下遍历全部行找一列（LU 部分主元搜索占 CPU 40%+ 的瓶颈）。
 //
 // 相比 sparseMatrix 的 CSR 单数组（insertElement/deleteElement 需 memmove 整个 colInd
 // 并逐行更新 rowPtr，O(nnz)），消除了 LU 分解 fill-in 插入退化为 O(n^4) 的瓶颈。
@@ -17,6 +19,7 @@ type rowSparseMatrix[T Number] struct {
 	rows, cols int
 	colInd     [][]int // 每行的列索引
 	val        [][]T   // 每行的值（与 colInd 对齐）
+	colIndex   [][]int // 每列的行索引（与 colInd 双向同步；仅供按列访问）
 }
 
 // newRowSparseMatrix 创建一个 rows×cols 的全零行切片稀疏矩阵。
@@ -25,10 +28,11 @@ func newRowSparseMatrix[T Number](rows, cols int) *rowSparseMatrix[T] {
 		panic("invalid matrix dimensions: cannot be negative")
 	}
 	return &rowSparseMatrix[T]{
-		rows:   rows,
-		cols:   cols,
-		colInd: make([][]int, rows),
-		val:    make([][]T, rows),
+		rows:     rows,
+		cols:     cols,
+		colInd:   make([][]int, rows),
+		val:      make([][]T, rows),
+		colIndex: make([][]int, cols),
 	}
 }
 
@@ -50,6 +54,7 @@ func (m *rowSparseMatrix[T]) String() string {
 }
 
 // Get 获取指定位置的元素值，不存在（结构零）则返回零值。
+// 行内线性扫描（行短，~13 元素）。
 func (m *rowSparseMatrix[T]) Get(row, col int) T {
 	if row < 0 || row >= m.rows || col < 0 || col >= m.cols {
 		panic(fmt.Sprintf("matrix index out of range: row=%d, col=%d (rows=%d, cols=%d)", row, col, m.rows, m.cols))
@@ -64,6 +69,7 @@ func (m *rowSparseMatrix[T]) Get(row, col int) T {
 }
 
 // Set 设置指定位置的元素值：非零且不存在则 append，存在则更新；值为零则删除。
+// 同步维护列索引 colIndex（新增元素 → 列成员 append；删除 → 末位交换+截断）。
 func (m *rowSparseMatrix[T]) Set(row, col int, value T) {
 	if row < 0 || row >= m.rows || col < 0 || col >= m.cols {
 		panic(fmt.Sprintf("matrix index out of range: row=%d, col=%d (rows=%d, cols=%d)", row, col, m.rows, m.cols))
@@ -78,6 +84,15 @@ func (m *rowSparseMatrix[T]) Set(row, col int, value T) {
 				m.val[row][idx] = m.val[row][last]
 				m.colInd[row] = m.colInd[row][:last]
 				m.val[row] = m.val[row][:last]
+				// 列索引同步删除：末位交换 + 截断
+				for ci, r := range m.colIndex[col] {
+					if r == row {
+						clast := len(m.colIndex[col]) - 1
+						m.colIndex[col][ci] = m.colIndex[col][clast]
+						m.colIndex[col] = m.colIndex[col][:clast]
+						break
+					}
+				}
 			} else {
 				m.val[row][idx] = value
 			}
@@ -87,7 +102,17 @@ func (m *rowSparseMatrix[T]) Set(row, col int, value T) {
 	if value != zero {
 		m.colInd[row] = append(m.colInd[row], col)
 		m.val[row] = append(m.val[row], value)
+		m.colIndex[col] = append(m.colIndex[col], row)
 	}
+}
+
+// ColumnRows 返回指定列的非零行集合（列索引，无序）。
+// 供 LU 部分主元搜索等按列访问：避免行存储下遍历全部行线性扫描。
+func (m *rowSparseMatrix[T]) ColumnRows(col int) []int {
+	if col < 0 || col >= m.cols {
+		panic(fmt.Sprintf("column index out of range: %d (cols: %d)", col, m.cols))
+	}
+	return m.colIndex[col]
 }
 
 // Increment 增量更新元素值。
@@ -116,13 +141,35 @@ func (m *rowSparseMatrix[T]) NonZeroCount() int {
 	return c
 }
 
-// SwapRows 交换两行（交换切片引用，O(1)）。
+// SwapRows 交换两行（交换切片引用，O(1)），并同步列索引。
 func (m *rowSparseMatrix[T]) SwapRows(r1, r2 int) {
 	if r1 < 0 || r1 >= m.rows || r2 < 0 || r2 >= m.rows {
 		panic(fmt.Sprintf("row index out of range: r1=%d, r2=%d (rows=%d)", r1, r2, m.rows))
 	}
+	if r1 == r2 {
+		return
+	}
 	m.colInd[r1], m.colInd[r2] = m.colInd[r2], m.colInd[r1]
 	m.val[r1], m.val[r2] = m.val[r2], m.val[r1]
+	// 列索引同步：两行的所有列成员互换行号。
+	// 遍历交换前的行集合（r1 旧 = r2 新，r2 旧 = r1 新），
+	// 在对应列的成员里把 r1↔r2 替换。
+	for _, c := range m.colInd[r1] {
+		for ci, r := range m.colIndex[c] {
+			if r == r2 {
+				m.colIndex[c][ci] = r1
+				break
+			}
+		}
+	}
+	for _, c := range m.colInd[r2] {
+		for ci, r := range m.colIndex[c] {
+			if r == r1 {
+				m.colIndex[c][ci] = r2
+				break
+			}
+		}
+	}
 }
 
 // Zero 清空矩阵为全零。
@@ -130,6 +177,9 @@ func (m *rowSparseMatrix[T]) Zero() {
 	for i := 0; i < m.rows; i++ {
 		m.colInd[i] = m.colInd[i][:0]
 		m.val[i] = m.val[i][:0]
+	}
+	for c := 0; c < m.cols; c++ {
+		m.colIndex[c] = m.colIndex[c][:0]
 	}
 }
 
@@ -154,6 +204,7 @@ func (m *rowSparseMatrix[T]) Resize(rows, cols int) {
 	m.cols = cols
 	m.colInd = make([][]int, rows)
 	m.val = make([][]T, rows)
+	m.colIndex = make([][]int, cols)
 }
 
 // ToDense 转换为稠密向量（行优先展开）。

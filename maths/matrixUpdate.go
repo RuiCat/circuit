@@ -173,11 +173,8 @@ func (um *updateMatrix[T]) Update() {
 // Rollback 丢弃缓存中的所有修改，恢复到上一次 `Update` 之后的状态。
 // 这个操作非常快速，因为它只清理缓存和位图，不涉及任何对底层矩阵的读写。
 func (um *updateMatrix[T]) Rollback() {
-	// 清空位图（所有标记置0）
-	totalElements := um.Rows() * um.Cols()
-	for i := 0; i < totalElements; i++ {
-		um.bitmap.Set(utils.BitmapFlag(i), false)
-	}
+	// 整体清零位图（O(字数)），而非逐位 Set(false)（O(元素数)，2250²=506 万次）
+	um.bitmap.ClearAll()
 	// 清空缓存
 	clear(um.cache)
 	um.dirtyRows = make(map[int]map[int]bool)

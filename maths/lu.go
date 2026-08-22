@@ -3,6 +3,7 @@ package maths
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -296,6 +297,9 @@ func (lu *luSparse[T]) decomposeWithPerm(matrix Matrix[T]) error {
 
 	for k := 0; k < lu.n; k++ {
 		// --- 部分主元选择 ---
+		// 沿列 k 的非零行集合搜索（列索引），避免行存储下遍历全部行
+		// 线性扫描（CPU8 实测主元搜索占分解 40%+ CPU 的瓶颈）。
+		us := lu.U.(*rowSparseMatrix[T])
 		maxRow := k
 		pivotVal := lu.U.Get(k, k)
 		// 防止 NaN/Inf 主元绕过奇异矩阵检测，污染解向量
@@ -303,7 +307,14 @@ func (lu *luSparse[T]) decomposeWithPerm(matrix Matrix[T]) error {
 			return fmt.Errorf("lu sparse decompose: pivot contains NaN/Inf at k=%d", k)
 		}
 		maxAbsVal := Abs(pivotVal)
-		for i := k + 1; i < lu.n; i++ {
+		// 拷贝并按行号排序：保持与行序扫描一致的主元选择（平局时选最小行号），
+		// 避免 colIndex 无序成员顺序改变数值路径（时序电路对舍入敏感）。
+		pivotRows := append([]int(nil), us.ColumnRows(k)...)
+		sort.Ints(pivotRows)
+		for _, i := range pivotRows {
+			if i <= k {
+				continue
+			}
 			if v := Abs(lu.U.Get(i, k)); v > maxAbsVal {
 				maxAbsVal = v
 				maxRow = i
@@ -334,7 +345,15 @@ func (lu *luSparse[T]) decomposeWithPerm(matrix Matrix[T]) error {
 		// 获取主元所在行的非零元素，以减少不必要的计算
 		pivotCols, pivotVals := lu.U.GetRow(k)
 
-		for i := k + 1; i < lu.n; i++ {
+		// 沿列 k 的非零行集合消元（列索引），避免行存储下遍历全部行
+		// 线性扫描找列 k 的非零行（消元主循环另一处 O(n) 扫描）。
+		// 注意：消元中 Set(i,k,0) 会从 colIndex[k] 删除成员，必须拷贝后遍历。
+		colRows := append([]int(nil), us.ColumnRows(k)...)
+		sort.Ints(colRows)
+		for _, i := range colRows {
+			if i <= k {
+				continue
+			}
 			valIK := lu.U.Get(i, k)
 			if valIK == 0 { // 结构零（该列无此行元素），跳过
 				continue
