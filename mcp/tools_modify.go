@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	etime "circuit/element/time"
 	"circuit/mna"
 	"fmt"
 	"strconv"
@@ -11,14 +12,25 @@ import (
 
 // handleSetElementParam circuit_set_element_param：修改元件参数。
 // 参数: sessionId(必填), instance(必填), param(必填, 参数名或索引), value(必填, 与参数类型匹配)
-// 注意：仿真运行中引擎会读取/回滚元件状态，参数修改仅在无运行中任务时可用。
+// 注意：仿真运行中引擎会读取/回滚元件状态。参数修改仅在以下时机可用：
+//   - 无运行中任务；或
+//   - 连续模式任务已暂停（circuit_pause）——引擎阻塞在每步开头的同步点，不触碰元件状态，
+//     修改后恢复仿真会自动按新参数重新加盖线性元件。
 func (h *Handler) handleSetElementParam(args map[string]any) (any, error) {
 	sess, err := h.ensureSession(args)
 	if err != nil {
 		return nil, err
 	}
 	if j := sess.RunningJob(); j != nil {
-		return nil, fmt.Errorf("会话 %s 有运行中的任务 %s，请等待完成或取消后再修改参数", sess.ID, j.ID)
+		paused := false
+		if j.Continuous {
+			if tm, ok := sess.Con.Time.(*etime.TimeMNA); ok {
+				paused = tm.Status() == mna.StatusPaused
+			}
+		}
+		if !paused {
+			return nil, fmt.Errorf("会话 %s 有运行中的任务 %s，请先暂停（circuit_pause）或取消后再修改参数", sess.ID, j.ID)
+		}
 	}
 	inst := argStr(args, "instance")
 	if inst == "" {
@@ -72,6 +84,12 @@ func (h *Handler) handleSetElementParam(args map[string]any) (any, error) {
 	}
 	if err := elem.Set(idx, newTyped); err != nil {
 		return nil, err
+	}
+	// 连续模式暂停中修改参数：请求恢复仿真时重新加盖线性元件（矩阵用新参数）。
+	if j := sess.RunningJob(); j != nil && j.Continuous {
+		if tm, ok := sess.Con.Time.(*etime.TimeMNA); ok {
+			tm.InvalidateLinearStamp()
+		}
 	}
 	return map[string]any{
 		"instance": inst,

@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	etime "circuit/element/time"
 	"fmt"
 	"time"
 )
@@ -12,6 +13,8 @@ type jobResult struct {
 	SessionID   string         `json:"sessionId"`
 	JobID       string         `json:"jobId"`
 	Kind        string         `json:"kind"`
+	Continuous  bool           `json:"continuous,omitempty"` // 连续模式任务
+	SimStatus   string         `json:"simStatus,omitempty"`  // 引擎运行状态（连续模式: running/paused/stepping/stopped）
 	State       JobState       `json:"state"`
 	Steps       int64          `json:"steps"`
 	CurrentTime float64        `json:"currentTime"`
@@ -20,15 +23,18 @@ type jobResult struct {
 	StartedAt   time.Time      `json:"startedAt"`
 	FinishedAt  time.Time      `json:"finishedAt,omitempty"`
 	Probes      []ProbeSummary `json:"probes"`
+	StepCount   int            `json:"stepCount,omitempty"` // step 实际执行步数
+	TimedOut    bool           `json:"timedOut,omitempty"`  // step/advance 同步等待超时
 }
 
 func jobToResult(sess *Session, j *Job) jobResult {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	return jobResult{
+	r := jobResult{
 		SessionID:   sess.ID,
 		JobID:       j.ID,
 		Kind:        j.Kind,
+		Continuous:  j.Continuous,
 		State:       j.State,
 		Steps:       j.Steps,
 		CurrentTime: j.CurrentTime,
@@ -38,6 +44,12 @@ func jobToResult(sess *Session, j *Job) jobResult {
 		FinishedAt:  j.FinishedAt,
 		Probes:      append([]ProbeSummary(nil), j.Probes...),
 	}
+	if sess.Con != nil {
+		if tm, ok := sess.Con.Time.(*etime.TimeMNA); ok {
+			r.SimStatus = simStatusName(tm.Status())
+		}
+	}
+	return r
 }
 
 // parseSimCfgArgs 从工具参数解析仿真配置（未提供的字段沿用会话默认）。

@@ -141,6 +141,23 @@ type TimeMNA struct {
 	// 消除 IsSimulationFinished 判定旧目标与 AdvanceFor 设置新目标之间的竞态窗口
 	status   atomic.Int32 // 运行状态（SimStatus），并发安全
 	notifier func()       // 状态改变通知回调，当状态从 Paused 离开时调用
+
+	// forceStamp：外部（如 MCP 暂停中修改元件参数后）请求强制重新加盖线性元件。
+	// 仿真循环每步消费一次（ConsumeForceStamp），置位时把局部 needLinearStamp 置 true。
+	forceStamp atomic.Bool
+}
+
+// InvalidateLinearStamp 请求下一步重新加盖全部线性元件。
+// 用于暂停期间外部修改元件参数（电阻/电容值等）后，确保恢复仿真时矩阵使用新参数。
+// 可从任意 goroutine 安全调用。
+func (t *TimeMNA) InvalidateLinearStamp() {
+	t.forceStamp.Store(true)
+}
+
+// ConsumeForceStamp 消费强制重盖请求：返回 true 表示本步需要重新加盖线性元件。
+// 仅供仿真循环调用（与 needLinearStamp 同 goroutine）。
+func (t *TimeMNA) ConsumeForceStamp() bool {
+	return t.forceStamp.CompareAndSwap(true, false)
 }
 
 // NewTimeMNA 创建通用的 TimeMNA 实例

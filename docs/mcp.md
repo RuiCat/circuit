@@ -33,7 +33,7 @@ go run ./cmd mcpserver -session-ttl 30m
 }
 ```
 
-## 工具列表（25 个）
+## 工具列表（30 个）
 
 ### A 组 · 会话与网表管理
 
@@ -60,7 +60,7 @@ go run ./cmd mcpserver -session-ttl 30m
 
 | 工具 | 功能 | 关键参数 |
 |---|---|---|
-| `circuit_set_element_param` | 修改元件参数（类型校验） | `sessionId`, `instance`, `param`, `value` |
+| `circuit_set_element_param` | 修改元件参数（类型校验；无任务运行或连续仿真**已暂停**时可用） | `sessionId`, `instance`, `param`, `value` |
 | `circuit_set_event` | 设置事件值（运行中可用） | `sessionId`, `event`, `value` |
 | `circuit_set_sim_params` | 设置默认仿真参数 | `sessionId`, 各数值字段 |
 | `circuit_set_trigger` | 设置时间触发点 | `sessionId`, `triggers[]` |
@@ -70,6 +70,11 @@ go run ./cmd mcpserver -session-ttl 30m
 | 工具 | 功能 | 关键参数 |
 |---|---|---|
 | `circuit_run_transient` | 启动瞬态仿真（后台） | `sessionId`, `targetTime`, 探针/容差等 |
+| `circuit_run_continuous` | 启动**连续模式**仿真（永不自动结束，配合控制工具逐步驱动） | `sessionId`, 探针/容差等 |
+| `circuit_pause` | 暂停连续仿真（暂停后可安全修改元件参数） | `sessionId`, `jobId?` |
+| `circuit_resume` | 恢复已暂停的连续仿真 | `sessionId`, `jobId?` |
+| `circuit_step` | 单步推进（引擎自适应时间步，同步等待完成后回到暂停） | `sessionId`, `count?`, `jobId?` |
+| `circuit_advance` | 推进指定时间后自动暂停 | `sessionId`, `duration`, `wait?`, `waitTimeout?`, `jobId?` |
 | `circuit_run_dc` | DC 工作点分析 | `sessionId`, `nodes[]?`, `elements[]?` |
 | `circuit_job_status` | 查询任务进度 | `sessionId`, `jobId?` |
 | `circuit_wait_job` | 阻塞等待完成（上限 120s） | `sessionId`, `jobId?`, `timeoutSeconds?` |
@@ -126,7 +131,32 @@ circuit_set_event      sessionId=s1  event=SB1  value=1    # 运行中注入
 circuit_wait_job       sessionId=s1
 ```
 
-### 4. 子电路与层级节点
+### 4. 连续仿真交互（暂停 → 改元件 → 步进）
+
+`circuit_run_continuous` 启动永不自动结束的连续仿真，配合 `pause`/`resume`/`step`/`advance`
+逐步驱动，实现"跑一段 → 停下观察 → 改参数 → 继续跑"的交互式调试：
+
+```
+circuit_run_continuous  sessionId=s1  maxStep=1e-4          # 启动连续仿真
+circuit_advance         sessionId=s1  duration=0.001        # 推进 1ms 后自动暂停
+circuit_get_node_values sessionId=s1  nodes=[2]             # 观察当前节点电压
+circuit_pause           sessionId=s1                        # 显式暂停（advance 后已暂停，幂等）
+circuit_set_element_param sessionId=s1 instance=R1 param=R value=2000   # 暂停中改参数
+circuit_step            sessionId=s1  count=3               # 单步 ×3（每步同步完成后回到暂停）
+circuit_advance         sessionId=s1  duration=0.002        # 再推进 2ms（恢复+跑+自动暂停）
+circuit_get_results     sessionId=s1                        # 取已采样的部分波形
+circuit_cancel_job      sessionId=s1                        # 结束连续仿真
+```
+
+要点：
+- 暂停时引擎停在每步开头的同步点，**不触碰元件状态**——此时 `set_element_param` 才被放行
+  （普通 `run_transient` 运行中仍拒绝改参）；恢复仿真会自动按新参数重新加盖线性元件。
+- `step` 的"一步"是引擎的一个**自适应时间步**（步长由引擎决定，用 `maxStep` 限制粒度）；
+  `advance` 按固定时长推进并在到达后自动暂停，`wait=false` 可异步返回后用 `job_status`
+  轮询 `simStatus`（`running`/`paused`/`stepping`/`stopped`）。
+- `job_status`/`get_results` 在连续仿真运行或暂停中均可调用，返回已采样的部分数据。
+
+### 5. 子电路与层级节点
 
 ```
 .subckt div in out
@@ -139,7 +169,7 @@ X1 [1,2] div          # 注意：子电路名不带方括号
 
 查询子电路内部节点：`circuit_get_node_values` 的 `paths` 参数传 `["X1.out"]`。
 
-### 5. AC 相量分析（RC 低通）
+### 6. AC 相量分析（RC 低通）
 
 ```
 circuit_new_session
@@ -154,7 +184,7 @@ circuit_sweep_ac   sessionId=s1  fMin=100  fMax=10000  points=200  logScale=true
 # → frequencies[] + 各节点 mag/phase 曲线
 ```
 
-### 6. 潮流计算（2 母线）
+### 7. 潮流计算（2 母线）
 
 ```
 circuit_run_powerflow
@@ -169,10 +199,12 @@ circuit_run_powerflow
 
 - **地节点是 `-1`**（不是 0）：`V1 [1,-1] ...`。节点 0 是普通节点，电路必须接地否则矩阵奇异。
 - 仿真为**异步任务模型**：`run_transient` 立即返回 `jobId`，用 `job_status`/`wait_job` 跟进；
-  同一会话同时只能有一个运行中任务。
+  同一会话同时只能有一个运行中任务。连续仿真（`run_continuous`）永不自动结束，
+  需 `cancel_job` 显式终止，`wait_job` 会等到超时。
 - 结果默认**抽稀到 10000 点**（`maxPoints` 可调），探针 `nodes`/`elements` 可过滤输出列。
 - 结果列名：节点电压 `node_<原始ID>`；电流 `I(<实例名>)` 或 `I(<实例名>.<槽名>)`。
-- 元件参数按**参数名**（如电阻 `R`、电容 `C`）或索引修改，值类型须与参数一致。
+- 元件参数按**参数名**（如电阻 `R`、电容 `C`）或索引修改，值类型须与参数一致；
+  修改时机仅限无运行任务或连续仿真已暂停（`circuit_pause`）——运行中修改会被拒绝。
 - 会话空闲默认 1 小时自动清理（`-session-ttl` 可调），或手动 `circuit_delete_session`。
 - **AC/潮流限制**：AC 分析仅支持 R/C/L/V/I（小信号另支持 D/U），不支持子电路；
   小信号工作点要求纯 DC 电路（无 C/L）；潮流母线为标幺值、`theta` 按度接收。

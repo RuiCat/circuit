@@ -115,6 +115,11 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 				}
 			}
 		}
+		// 外部强制重盖请求（暂停中修改元件参数后）：置位 needLinearStamp，
+		// 恢复仿真时线性元件按新参数重新加盖。
+		if tm, ok := con.Time.(*TimeMNA); ok && tm.ConsumeForceStamp() {
+			needLinearStamp = true
+		}
 		// 线性元件处理
 		if needLinearStamp {
 			// 需要重新加盖线性元件

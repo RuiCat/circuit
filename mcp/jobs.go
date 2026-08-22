@@ -37,7 +37,8 @@ type Probe struct {
 type Job struct {
 	ID          string         `json:"id"`
 	SessionID   string         `json:"sessionId"`
-	Kind        string         `json:"kind"` // "transient" | "dc"
+	Kind        string         `json:"kind"`                 // "transient" | "dc"
+	Continuous  bool           `json:"continuous,omitempty"` // 连续模式（circuit_run_continuous 启动）：永不自动结束，由控制工具驱动
 	State       JobState       `json:"state"`
 	Error       string         `json:"error,omitempty"`
 	Steps       int64          `json:"steps"`
@@ -398,6 +399,30 @@ func buildProbes(con *element.Context, nodeIDs []int, instances []string) ([]Pro
 
 // RunTransient 启动瞬态仿真任务（异步）。targetTime<=0 时使用配置的初始步长。
 func (s *Session) RunTransient(targetTime float64, nodeIDs []int, instances []string, cfg *SimConfig) (*Job, error) {
+	if targetTime <= 0 {
+		s.mu.Lock()
+		c := s.SimCfg
+		s.mu.Unlock()
+		targetTime = c.InitialStep
+	}
+	return s.runJob(targetTime, false, nodeIDs, instances, cfg)
+}
+
+// RunContinuous 启动连续模式仿真任务（异步）：永不自动结束，
+// 由 pause/resume/step/advance 控制工具驱动，Stop/Cancel 优雅退出。
+// 连续模式下一旦 Paused，可安全修改元件参数（引擎阻塞在每步开头的事件同步点）。
+func (s *Session) RunContinuous(nodeIDs []int, instances []string, cfg *SimConfig) (*Job, error) {
+	if cfg == nil {
+		s.mu.Lock()
+		c := s.SimCfg
+		s.mu.Unlock()
+		cfg = &c
+	}
+	return s.runJob(cfg.InitialStep, true, nodeIDs, instances, cfg)
+}
+
+// runJob 启动仿真任务（transient/continuous 公共实现）。
+func (s *Session) runJob(targetTime float64, continuous bool, nodeIDs []int, instances []string, cfg *SimConfig) (*Job, error) {
 	s.mu.Lock()
 	if s.Con == nil {
 		s.mu.Unlock()
@@ -416,14 +441,12 @@ func (s *Session) RunTransient(targetTime float64, nodeIDs []int, instances []st
 		s.mu.Unlock()
 		cfg = &c
 	}
-	if targetTime <= 0 {
-		targetTime = cfg.InitialStep
-	}
 	probes, err := buildProbes(con, nodeIDs, instances)
 	if err != nil {
 		return nil, err
 	}
 	job := NewJob(s, "transient")
+	job.Continuous = continuous
 	job.probes = probes
 	for _, p := range probes {
 		job.Probes = append(job.Probes, ProbeSummary{Name: p.Name, Kind: p.Kind, Unit: p.Unit})
@@ -441,6 +464,9 @@ func (s *Session) RunTransient(targetTime float64, nodeIDs []int, instances []st
 	s.mu.Unlock()
 	if len(triggers) > 0 {
 		tm.SetTriggers(triggers)
+	}
+	if continuous {
+		tm.SetContinuousMode()
 	}
 	con.InitResumeCond()
 	tm.SetNotifier(func() {

@@ -199,6 +199,59 @@ func NewMCPServer(store *SessionStore) *server.MCPServer {
 		h.handleRunDC,
 	)
 	register(
+		mcp.NewTool("circuit_run_continuous",
+			mcp.WithDescription("启动连续模式仿真（后台，永不自动结束）：配合 circuit_pause / circuit_resume / circuit_step / circuit_advance 逐步驱动，实现「暂停-改元件-步进」交互。用 circuit_cancel_job 结束。"),
+			mcp.WithString("sessionId", mcp.Description("会话 ID"), mcp.Required()),
+			mcp.WithNumber("initialStep", mcp.Description("初始步长（秒，可选）")),
+			mcp.WithNumber("minStep", mcp.Description("最小步长（秒，可选）")),
+			mcp.WithNumber("maxStep", mcp.Description("最大步长（秒，可选）")),
+			mcp.WithNumber("absTol", mcp.Description("绝对容差（可选）")),
+			mcp.WithNumber("relTol", mcp.Description("相对容差（可选）")),
+			mcp.WithInteger("maxIter", mcp.Description("最大非线性迭代次数（可选）")),
+			mcp.WithInteger("maxSteps", mcp.Description("最大时间步数（可选）")),
+			mcp.WithInteger("parallel", mcp.Description("并行 worker 数（可选）")),
+			mcp.WithArray("nodes", mcp.Description("输出探针：原始节点 ID 列表，如 [1,2]"), mcp.Items(map[string]any{"type": "integer"})),
+			mcp.WithArray("elements", mcp.Description("输出探针：元件实例名列表（输出其电流），如 [\"V1\",\"R1\"]"), mcp.Items(map[string]any{"type": "string"})),
+		),
+		h.handleRunContinuous,
+	)
+	register(
+		mcp.NewTool("circuit_pause",
+			mcp.WithDescription("暂停连续模式仿真（幂等）。暂停后引擎停在每步开头的同步点，可安全调用 circuit_set_element_param 修改元件参数。"),
+			mcp.WithString("sessionId", mcp.Description("会话 ID"), mcp.Required()),
+			mcp.WithString("jobId", mcp.Description("任务 ID（可选，默认最近任务）")),
+		),
+		h.handlePause,
+	)
+	register(
+		mcp.NewTool("circuit_resume",
+			mcp.WithDescription("恢复已暂停的连续模式仿真。"),
+			mcp.WithString("sessionId", mcp.Description("会话 ID"), mcp.Required()),
+			mcp.WithString("jobId", mcp.Description("任务 ID（可选，默认最近任务）")),
+		),
+		h.handleResume,
+	)
+	register(
+		mcp.NewTool("circuit_step",
+			mcp.WithDescription("单步推进连续模式仿真（每步为引擎的一个自适应时间步，同步等待完成后回到 paused）。"),
+			mcp.WithString("sessionId", mcp.Description("会话 ID"), mcp.Required()),
+			mcp.WithInteger("count", mcp.Description("步数（可选，默认 1）")),
+			mcp.WithString("jobId", mcp.Description("任务 ID（可选，默认最近任务）")),
+		),
+		h.handleStep,
+	)
+	register(
+		mcp.NewTool("circuit_advance",
+			mcp.WithDescription("推进指定时间后自动暂停（连续模式）。"),
+			mcp.WithString("sessionId", mcp.Description("会话 ID"), mcp.Required()),
+			mcp.WithNumber("duration", mcp.Description("推进时长（秒），必须 > 0"), mcp.Required()),
+			mcp.WithBoolean("wait", mcp.Description("是否同步等待推进完成（可选，默认 true）")),
+			mcp.WithNumber("waitTimeout", mcp.Description("同步等待超时（秒，可选，默认 30）")),
+			mcp.WithString("jobId", mcp.Description("任务 ID（可选，默认最近任务）")),
+		),
+		h.handleAdvance,
+	)
+	register(
 		mcp.NewTool("circuit_job_status",
 			mcp.WithDescription("查询仿真任务状态与进度（步数/当前时间/错误）。"),
 			mcp.WithString("sessionId", mcp.Description("会话 ID"), mcp.Required()),

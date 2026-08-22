@@ -46,6 +46,16 @@ func callTool(t *testing.T, h *Handler, name string, args map[string]any) map[st
 		fn = h.handleSetTrigger
 	case "circuit_run_transient":
 		fn = h.handleRunTransient
+	case "circuit_run_continuous":
+		fn = h.handleRunContinuous
+	case "circuit_pause":
+		fn = h.handlePause
+	case "circuit_resume":
+		fn = h.handleResume
+	case "circuit_step":
+		fn = h.handleStep
+	case "circuit_advance":
+		fn = h.handleAdvance
 	case "circuit_run_dc":
 		fn = h.handleRunDC
 	case "circuit_job_status":

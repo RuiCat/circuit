@@ -125,7 +125,11 @@ func (con *Context) CallMark(mark Mark) error {
 		con.MnaUpdateType.MnaType.A.Zero()
 		con.MnaUpdateType.MnaType.Z.Zero()
 		con.Update()
-		con.eventValues.Clear()
+		// 注意：不再 Clear eventValues——事件值跨仿真任务保留。
+		// 交互式控制（TUI/MCP 的 `set <事件> <值>` 后 `step`/`run`）依赖：
+		// 若每次任务启动清空，先 set 后 run 的事件会被丢弃（开关永远不闭合）。
+		// 新网表加载（LoadString）创建新 Context，eventValues 天然为空；
+		// PushEvents 消费后置 nil，任务间事件值保持为最后一次消费值。
 		con.rebuildEventTargets()
 	case MarkUpdateElements:
 		con.UpdateX()
@@ -199,13 +203,21 @@ func (con *Context) GetEvent(name string) any {
 }
 
 // InitResumeCond 初始化恢复条件变量（由 load 或 cmd 在创建 Context 后调用）。
+// 幂等：已在 resumeMu 保护下判 nil，可安全地被仿真协程（resumeOnce）重复调用，
+// 不会与外部 ResumeCond() 读取产生数据竞争。
 func (con *Context) InitResumeCond() {
-	con.resumeCond = sync.NewCond(&con.resumeMu)
+	con.resumeMu.Lock()
+	if con.resumeCond == nil {
+		con.resumeCond = sync.NewCond(&con.resumeMu)
+	}
+	con.resumeMu.Unlock()
 }
 
 // ResumeCond 返回恢复条件变量，供外部设置 notifier 使用。
-// 若未初始化则返回 nil。
+// 若未初始化则返回 nil。加锁读取，与 InitResumeCond 的惰性初始化并发安全。
 func (con *Context) ResumeCond() *sync.Cond {
+	con.resumeMu.Lock()
+	defer con.resumeMu.Unlock()
 	return con.resumeCond
 }
 
