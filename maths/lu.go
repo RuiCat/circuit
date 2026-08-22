@@ -3,7 +3,6 @@ package maths
 import (
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 )
 
@@ -191,35 +190,57 @@ func (lu *luDense[T]) SolveReuse(b, x Vector[T]) error {
 // luSparse 实现稀疏矩阵的 LU 分解。
 type luSparse[T Number] struct {
 	baseLU[T]
-	perm []int // 静态最小度重排序：U 的第 i 行 = 原矩阵 perm[i] 行（宽行排最后，抑制 fill-in）
+	perm    []int  // 静态最小度重排序：U 的第 i 行 = 原矩阵 perm[i] 行（宽行排最后，抑制 fill-in）
+	permSig uint64 // 矩阵结构签名（每行非零数的 FNV hash）：结构不变时复用 perm，避免每步重复最小度排序
 }
 
-// computeStaticPerm 计算静态最小度置换：按行非零数升序排列。
-// MNA 矩阵中电源/地等宽行（上千连接）若提前参与消元会使 fill-in 爆炸，
-// 把它们排到最后可大幅抑制非零元增长。稀疏度相同时保持原顺序（稳定）。
+// computeStaticPerm 计算静态重排置换，按矩阵结构自适应选择：
+//   - 度数均匀（局部带状/低连接，maxDeg ≲ 10×avgDeg）：保持自然顺序。
+//     带状结构 fill-in 仅 ~1.5x；强行最小度会打乱带宽且被部分主元破坏，反而 fill-in 爆炸。
+//   - 存在 hub 节点（如电源/时钟总线，maxDeg >> avgDeg）：最小度重排，
+//     避免高连接密度矩阵（如 RTL CPU）的 fill-in 爆炸。
 func (lu *luSparse[T]) computeStaticPerm(matrix Matrix[T]) []int {
 	// 小矩阵（<500 节点）fill-in 温和，保持原顺序以维持既有数值路径
 	// （消元顺序改变会引入不同舍入误差，破坏边沿敏感的时序电路行为）。
 	if lu.n < 500 {
-		perm := make([]int, lu.n)
-		for i := range perm {
-			perm[i] = i
-		}
-		return perm
+		return identityPerm(lu.n)
 	}
-	type rowDeg struct {
-		deg int
-		idx int
-	}
-	rows := make([]rowDeg, lu.n)
+	// 结构签名：每行非零数的 FNV hash（电路每步矩阵结构不变，值变化不影响签名）。
+	sig := uint64(14695981039346656037)
+	adj := make([][]int, lu.n)
+	total := 0
+	maxDeg := 0
 	for i := 0; i < lu.n; i++ {
 		cols, _ := matrix.GetRow(i)
-		rows[i] = rowDeg{deg: len(cols), idx: i}
+		adj[i] = cols
+		d := len(cols)
+		sig = (sig ^ uint64(d)) * 1099511628211
+		total += d
+		if d > maxDeg {
+			maxDeg = d
+		}
 	}
-	sort.SliceStable(rows, func(a, b int) bool { return rows[a].deg < rows[b].deg })
-	perm := make([]int, lu.n)
-	for i, r := range rows {
-		perm[i] = r.idx
+	// 结构未变：复用缓存的 perm，避免每步重复最小度排序（CPU8 实测占 22% CPU）。
+	if sig == lu.permSig && lu.perm != nil {
+		return lu.perm
+	}
+	var perm []int
+	avgDeg := float64(total) / float64(lu.n)
+	if float64(maxDeg) > 10*avgDeg {
+		perm = MinimumDegreeOrder(lu.n, adj)
+	} else {
+		perm = identityPerm(lu.n)
+	}
+	lu.perm = perm
+	lu.permSig = sig
+	return perm
+}
+
+// identityPerm 返回恒等置换 [0,1,...,n-1]。
+func identityPerm(n int) []int {
+	perm := make([]int, n)
+	for i := range perm {
+		perm[i] = i
 	}
 	return perm
 }

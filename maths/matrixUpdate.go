@@ -3,6 +3,7 @@ package maths
 import (
 	"circuit/utils"
 	"fmt"
+	"sort"
 )
 
 // updateMatrix 为任矩阵实现提供了一个带缓存的装饰器，以优化频繁、临时的修改操作。
@@ -18,6 +19,7 @@ type updateMatrix[T Number] struct {
 	rowResultCols []int           // rowResultCols 是 GetRow 方法的列索引缓冲区，用于避免重复内存分配。
 	rowResultVals []T             // rowResultVals 是 GetRow 方法的值缓冲区。
 	rowResultVec  *denseVector[T] // rowResultVec 是 GetRow 方法返回的向量，重用此实例以减少GC压力。
+	dirtyRows     map[int]map[int]bool // 每行被缓存修改的列集合，加速 GetRow 的稀疏合并。
 }
 
 // NewUpdateMatrix 基于一个现有的矩阵创建一个新的 updateMatrix。
@@ -36,6 +38,7 @@ func NewUpdateMatrix[T Number](base Matrix[T]) UpdateMatrix[T] {
 		rowResultCols: make([]int, 0, cols),
 		rowResultVals: make([]T, 0, cols),
 		rowResultVec:  NewDenseVector[T](0).(*denseVector[T]),
+		dirtyRows:     make(map[int]map[int]bool),
 	}
 }
 
@@ -52,6 +55,7 @@ func NewUpdateMatrixPtr[T Number](ptr Matrix[T]) UpdateMatrix[T] {
 		rowResultCols: make([]int, 0, cols),
 		rowResultVals: make([]T, 0, cols),
 		rowResultVec:  NewDenseVector[T](0).(*denseVector[T]),
+		dirtyRows:     make(map[int]map[int]bool),
 	}
 }
 
@@ -114,6 +118,10 @@ func (um *updateMatrix[T]) Set(row, col int, value T) {
 	block[pos] = value
 	um.cache[blockIdx] = block
 	um.setBit(row, col)
+	if um.dirtyRows[row] == nil {
+		um.dirtyRows[row] = make(map[int]bool)
+	}
+	um.dirtyRows[row][col] = true
 }
 
 // Increment 增量更新指定位置的元素值。这是一个“读-改-写”操作，但被优化为只写缓存。
@@ -136,6 +144,10 @@ func (um *updateMatrix[T]) Increment(row, col int, value T) {
 		block[pos] = um.Matrix.Get(row, col) + value
 		um.cache[blockIdx] = block
 		um.setBit(row, col)
+		if um.dirtyRows[row] == nil {
+			um.dirtyRows[row] = make(map[int]bool)
+		}
+		um.dirtyRows[row][col] = true
 	}
 }
 
@@ -155,6 +167,7 @@ func (um *updateMatrix[T]) Update() {
 		}
 	}
 	clear(um.cache)
+	um.dirtyRows = make(map[int]map[int]bool)
 }
 
 // Rollback 丢弃缓存中的所有修改，恢复到上一次 `Update` 之后的状态。
@@ -167,6 +180,7 @@ func (um *updateMatrix[T]) Rollback() {
 	}
 	// 清空缓存
 	clear(um.cache)
+	um.dirtyRows = make(map[int]map[int]bool)
 }
 
 // BuildFromDense 从一个二维切片重新构建矩阵。
@@ -232,28 +246,65 @@ func (um *updateMatrix[T]) GetRow(row int) ([]int, Vector[T]) {
 	um.rowResultCols = um.rowResultCols[:0]
 	um.rowResultVals = um.rowResultVals[:0]
 
-	// 2. 遍历该行的所有列，合并缓存和底层数据
-	for j := 0; j < um.Cols(); j++ {
-		var val T
-		// 优先从缓存读取
-		if um.isBitSet(row, j) {
+	// 2. 稀疏合并：只遍历底层行非零 + 缓存脏列，避免 O(Cols) 全列扫描。
+	//    电路 MNA 矩阵每行非零 ~10 个（Cols 可达数千），全列扫描会令
+	//    LU 分解/残差计算退化为 O(n³)（GetRow 占 CPU8 仿真实测 72%）。
+	baseCols, baseVals := um.Matrix.GetRow(row)
+	dirty := um.dirtyRows[row]
+	// 底层行（dirty 覆盖同名列）
+	for idx, j := range baseCols {
+		if dirty != nil && dirty[j] {
 			blockIdx, pos := um.getBlockIndexAndPosition(row, j)
-			// 位图标记与缓存不一致时回退到底层矩阵，避免静默读取零值。
 			if block, exists := um.cache[blockIdx]; exists {
-				val = block[pos]
-			} else {
-				val = um.Matrix.Get(row, j)
+				val := block[pos]
+				if val != 0 {
+					um.rowResultCols = append(um.rowResultCols, j)
+					um.rowResultVals = append(um.rowResultVals, val)
+				}
 			}
-		} else {
-			// 缓存未命中，从底层矩阵读取
-			val = um.Matrix.Get(row, j)
+			continue
 		}
-
-		// 仅添加非零元素到结果中
-		if val != 0 {
+		v := baseVals.Get(idx)
+		if v != 0 {
 			um.rowResultCols = append(um.rowResultCols, j)
-			um.rowResultVals = append(um.rowResultVals, val)
+			um.rowResultVals = append(um.rowResultVals, v)
 		}
+	}
+	// 缓存中不在底层的新列
+	if dirty != nil {
+		for j := range dirty {
+			// 已在底层行处理过（baseCols 有序，二分查找判存在）
+			if len(baseCols) > 0 {
+				pos := sort.SearchInts(baseCols, j)
+				if pos < len(baseCols) && baseCols[pos] == j {
+					continue
+				}
+			}
+			blockIdx, pos := um.getBlockIndexAndPosition(row, j)
+			if block, exists := um.cache[blockIdx]; exists {
+				val := block[pos]
+				if val != 0 {
+					um.rowResultCols = append(um.rowResultCols, j)
+					um.rowResultVals = append(um.rowResultVals, val)
+				}
+			}
+		}
+	}
+	// 3. 按列号排序（base 行有序 + 脏列无序）
+	if len(um.rowResultCols) > 1 {
+		idx := make([]int, len(um.rowResultCols))
+		for i := range idx {
+			idx[i] = i
+		}
+		sort.Slice(idx, func(a, b int) bool { return um.rowResultCols[idx[a]] < um.rowResultCols[idx[b]] })
+		colsTmp := make([]int, len(um.rowResultCols))
+		valsTmp := make([]T, len(um.rowResultVals))
+		for i, j := range idx {
+			colsTmp[i] = um.rowResultCols[j]
+			valsTmp[i] = um.rowResultVals[j]
+		}
+		um.rowResultCols = colsTmp
+		um.rowResultVals = valsTmp
 	}
 
 	valsCopy := make([]T, len(um.rowResultVals))
