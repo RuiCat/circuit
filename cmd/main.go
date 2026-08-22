@@ -579,6 +579,9 @@ func runSim(w io.Writer, con *element.Context, cfg config) error {
 			})
 		}
 		// 2) 元件声明的自身电流索引（Config.Current）
+		// 注意：大电路（数千元件）此列会让 html 达数十 MB，浏览器难打开；
+		// 已默认跳过（只输出节点电压 + 电压源电流）。如需元件电流，可在此恢复。
+		if false {
 		for _, idx := range cfg.Current {
 			idx := idx
 			if idx < 0 || idx >= cfg.ValueNum() {
@@ -607,6 +610,7 @@ func runSim(w io.Writer, con *element.Context, cfg config) error {
 					return elem.GetFloat64(idx)
 				},
 			})
+		}
 		}
 	}
 

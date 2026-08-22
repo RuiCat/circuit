@@ -33,7 +33,7 @@ const (
 	defaultRelTol  = 1e-4  // 默认相对误差容差
 	defaultSafety  = 0.85  // 默认步长调整安全系数
 	defaultMaxNonl = 200   // 默认最大非线性迭代次数
-	defaultMaxElem = 100  // 默认单个元件最大收敛迭代次数
+	defaultMaxElem = 20  // 默认单个元件最大收敛迭代次数
 )
 
 // Gmin 延续（Gmin stepping）参数：标准 SPICE 延续法。
@@ -113,6 +113,8 @@ type TimeMNA struct {
 	continuationGmin float64 // Gmin 延续值（t=0 阻尼用；0 = 关闭）
 	gminFinal        float64 // 延续终值（默认 gminStepFinal；CIRCUIT_GMINFINAL 可覆盖，用于病态电路提前终止）
 	gminRecoveries   int     // 当前步 Gmin 再阻尼恢复次数（防止病态电路在阻尼循环中空转）
+	gminPrevRecover  float64 // 上次 RecoverGmin 恢复到的档位（震荡检测用）
+	gminStuck        bool    // Gmin 在相邻两档间来回震荡（RecoverGmin↔StepGminDown）：接受当前阻尼解，不再下调
 	maxNonlinIter    int     // 全局最大非线性迭代次数
 	currNonlinIter   int     // 当前非线性迭代计数
 	maxElemIter      int     // 单个元件最大收敛迭代次数
@@ -209,11 +211,13 @@ func (t *TimeMNA) SetGminFinal(v float64) {
 	t.gminFinal = v
 }
 
-// BeginGminStepping 启动 Gmin 延续：延续值设为起始大值，并复位恢复计数。
-// 由仿真循环在 t=0 直流求解（GoodIterations==0）且开启延续时调用。
+// BeginGminStepping 启动 Gmin 延续：延续值设为起始大值，并复位恢复计数与震荡标记。
+// 由仿真循环在每个时间步开始（开启延续）时调用。
 func (t *TimeMNA) BeginGminStepping() {
 	t.continuationGmin = gminStepStart
 	t.gminRecoveries = 0
+	t.gminPrevRecover = 0
+	t.gminStuck = false
 }
 
 // EndGminStepping 结束 Gmin 延续：恢复自然 gmin（0 = 关闭延续）。
@@ -229,7 +233,11 @@ func (t *TimeMNA) GminSteppingActive() bool {
 
 // StepGminDown 把延续 Gmin 下调一档（×gminStepScale），到达终值后钳位到 gminStepFinal。
 // 返回是否仍需继续步进（true = 尚未到达终值，需以更小 gmin 重新迭代）。
+// 若已检测到 Gmin 震荡（临界档位无法继续下调），返回 false 接受当前阻尼解。
 func (t *TimeMNA) StepGminDown() bool {
+	if t.gminStuck {
+		return false
+	}
 	final := t.gminFinal
 	if final <= 0 {
 		final = gminStepFinal
@@ -251,6 +259,8 @@ func (t *TimeMNA) StepGminDown() bool {
 
 // RecoverGmin 牛顿未收敛（元件子迭代耗尽）时增大阻尼一档（回退上一级），
 // 返回是否还有恢复额度（false = 已在起始阻尼或恢复次数超限）。
+// 若恢复回「上次恢复过的档位」（即 Gmin 在相邻两档间来回），标记震荡：
+// 后续 StepGminDown 将返回 false，接受当前阻尼解，避免无限恢复-下调循环。
 func (t *TimeMNA) RecoverGmin() bool {
 	if t.continuationGmin >= gminStepStart || t.gminRecoveries >= gminMaxRecover {
 		return false
@@ -261,6 +271,10 @@ func (t *TimeMNA) RecoverGmin() bool {
 	if next >= gminStepStart*(1-gminFinalEps) {
 		next = gminStepStart
 	}
+	if t.gminPrevRecover > 0 && next <= t.gminPrevRecover*(1+gminFinalEps) {
+		t.gminStuck = true
+	}
+	t.gminPrevRecover = next
 	t.continuationGmin = math.Min(gminStepStart, next)
 	return true
 }

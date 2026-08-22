@@ -78,13 +78,11 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 		if !con.PushEvents() {
 			return nil // 优雅停止
 		}
-		// Gmin 延续调度：仅在 t=0 直流求解步启用；t=0 完成后立即释放，后续步用自然 gmin。
+		// Gmin 延续调度：启用时每个时间步都从大 Gmin 开始步进。
+		// t=0 直流求解与后续步的锁存器（双稳态）都需要阻尼收敛；
+		// 步进完成（gmin 降到终值）后本步解即真实工作点，下一步重新步进。
 		if gminContEnabled {
-			if con.Time.GoodIterations() == 0 {
-				con.Time.BeginGminStepping()
-			} else if con.Time.GminSteppingActive() {
-				con.Time.EndGminStepping()
-			}
+			con.Time.BeginGminStepping()
 		}
 		// 重置X更新状态，允许本时间步内重新调用UpdateX/RollbackX
 		con.MnaUpdateType.ResetXUpdate()
@@ -312,8 +310,11 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 		if con.ShouldAdjustStepSize() {
 			needLinearStamp = true // 步长变化较大，需要重新加盖线性元件
 		}
-		// 检查残差是否可接受并推进时间
-		if con.IsResidualConverged() {
+		// 检查残差是否可接受并推进时间。
+		// Gmin 延续激活时跳过残差检查：延续解的残差包含 gmin 泄漏电流分量，
+		// 在真实系统下天然不为 0，若按常规判据会导致步长反复减半死循环。
+		// 阻尼解（gmin 已降至终值附近）作为本步解，下一步重新步进。
+		if con.IsResidualConverged() || con.Time.GminSteppingActive() {
 			// 残差可接受，推进时间
 			if err := con.Time.AdvanceTimeSimple(); err != nil {
 				return fmt.Errorf("时间推进失败: %v", err)
