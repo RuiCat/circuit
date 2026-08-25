@@ -114,13 +114,13 @@ func TestStdioEndToEnd(t *testing.T) {
 		t.Fatalf("服务器名称不符: %v", initRes.ServerInfo.Name)
 	}
 
-	// 工具列表：应包含全部 30 个工具
+	// 工具列表：应包含全部 33 个工具
 	toolsRes, err := c.ListTools(ctx, mcp.ListToolsRequest{})
 	if err != nil {
 		t.Fatalf("ListTools 失败: %v", err)
 	}
-	if len(toolsRes.Tools) != 30 {
-		t.Fatalf("工具数量应为 30，实际 %d", len(toolsRes.Tools))
+	if len(toolsRes.Tools) != 33 {
+		t.Fatalf("工具数量应为 33，实际 %d", len(toolsRes.Tools))
 	}
 	names := map[string]bool{}
 	for _, tool := range toolsRes.Tools {
@@ -132,6 +132,7 @@ func TestStdioEndToEnd(t *testing.T) {
 		"circuit_list_component_types", "circuit_component_help",
 		"circuit_list_elements", "circuit_list_nodes",
 		"circuit_get_element", "circuit_get_node_values",
+		"circuit_debug_matrix", "circuit_debug_element", "circuit_debug_node_voltages",
 		"circuit_set_element_param", "circuit_set_event",
 		"circuit_set_sim_params", "circuit_set_trigger",
 		"circuit_run_transient", "circuit_run_continuous",

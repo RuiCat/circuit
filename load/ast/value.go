@@ -149,10 +149,15 @@ func (value Value) ParseFloat64(defaultValue float64) float64 {
 }
 
 // ParseString 安全获取字符串值。若 Value 为空字符串则返回 str，否则返回原始字符串值。
+// 若 Value 为双引号包裹的字符串字面量（如 "642C0916"），剥离首尾引号返回内容。
 // 成功时返回解析结果，失败时返回 defaultValue。
 func (value Value) ParseString(str string) string {
 	if value.Value != "" {
-		return value.Value
+		v := value.Value
+		if len(v) >= 2 && v[0] == '"' && v[len(v)-1] == '"' {
+			return v[1 : len(v)-1]
+		}
+		return v
 	}
 	return str
 }

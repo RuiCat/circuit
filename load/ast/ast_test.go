@@ -362,3 +362,39 @@ X2 [a,cout,sum] nand
 		}
 	}
 }
+
+// TestParseQuotedStringValues 验证双引号字符串字面量被整体解析（不切碎）。
+// 回归：SplitTokens 原先把 "642C0916" 切成 "、642、C0916、" 四个碎片，
+// 导致 RAM 元件的 init_hex/mem_hex 参数错位。
+func TestParseQuotedStringValues(t *testing.T) {
+	input := `RAM1 [A0,A1,D0,D1,WE,Q0,Q1] [256, "642C0916"]`
+
+	tree, err := NewParseTree(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	if len(tree.ElementNodes) != 1 {
+		t.Fatalf("期望 1 个元件，得到 %d", len(tree.ElementNodes))
+	}
+	elem := tree.ElementNodes[0]
+	if elem.Type != "RAM" {
+		t.Fatalf("元件类型期望 'RAM'，得到 '%s'", elem.Type)
+	}
+	if len(elem.Values) != 2 {
+		t.Fatalf("期望 2 个值，得到 %d: %v", len(elem.Values), elem.Values)
+	}
+	if elem.Values[0].Value != "256" {
+		t.Fatalf("值 0 期望 '256'，得到 '%s'", elem.Values[0].Value)
+	}
+	if elem.Values[1].Value != `"642C0916"` {
+		t.Fatalf("值 1 期望完整字符串字面量 %q，得到 %q", `"642C0916"`, elem.Values[1].Value)
+	}
+	if got := elem.Values[1].ParseString(""); got != "642C0916" {
+		t.Fatalf("ParseString 期望剥离引号得 '642C0916'，得到 '%s'", got)
+	}
+
+	// 未闭合字符串字面量应报错
+	if _, err := NewParseTree(strings.NewReader(`RAM1 [A0,A1,D0,D1,WE,Q0,Q1] [256, "642C0916]`)); err == nil {
+		t.Fatal("期望未闭合字符串字面量报错，但解析成功")
+	}
+}

@@ -121,6 +121,32 @@ func NewMCPServer(store *SessionStore) *server.MCPServer {
 		),
 		h.handleGetNodeValues,
 	)
+	register(
+		mcp.NewTool("circuit_debug_matrix",
+			mcp.WithDescription("查看 MNA 矩阵行（A 系数 / Z 右侧 / X 解）：节点行与电压源约束行。用于排查运行中数值异常。"),
+			mcp.WithString("sessionId", mcp.Description("会话 ID"), mcp.Required()),
+			mcp.WithArray("rows", mcp.Description("行号数组（可选；0..NodeNum-1=节点行，≥NodeNum=电压源约束行；默认全部节点行）"), mcp.Items(map[string]any{"type": "integer"})),
+			mcp.WithBoolean("all", mcp.Description("true=包含全部电压源约束行（可选）")),
+		),
+		h.handleDebugMatrix,
+	)
+	register(
+		mcp.NewTool("circuit_debug_element",
+			mcp.WithDescription("查看元件全部内部状态：NodeValue 原值（含 DFF 状态/事件值/回滚备份）、引脚、电压源目标值。与 circuit_get_element 相比不裁剪参数。"),
+			mcp.WithString("sessionId", mcp.Description("会话 ID"), mcp.Required()),
+			mcp.WithString("instance", mcp.Description("元件实例名，如 X1.X3.X1.DFF1"), mcp.Required()),
+		),
+		h.handleDebugElement,
+	)
+	register(
+		mcp.NewTool("circuit_debug_node_voltages",
+			mcp.WithDescription("按紧凑索引读全部节点电压（与 get_node_values 的原始 ID 互补），附原始 ID 与层级路径标签。"),
+			mcp.WithString("sessionId", mcp.Description("会话 ID"), mcp.Required()),
+			mcp.WithArray("compact", mcp.Description("紧凑索引列表（可选）"), mcp.Items(map[string]any{"type": "integer"})),
+			mcp.WithBoolean("all", mcp.Description("true=全部节点（可选）")),
+		),
+		h.handleDebugNodeVoltages,
+	)
 
 	// ---------- C 组 · 电路修改 ----------
 	register(

@@ -624,6 +624,19 @@ func SplitTokens(data []byte, atEOF bool) (advance int, token []byte, err error)
 				return i, data[:i], nil
 			}
 			return i + 1, data[0 : i+1], nil
+		case '"':
+			// 双引号字符串字面量：整体作为一个 token（含引号），
+			// 避免 "642C0916" 被切碎为 "、642、C0916、" 等碎片。
+			// 支持内部空格与逗号（如 "08 19 2A"），遇 EOF 未闭合则报错。
+			for j := i + 1; j < len(data); j++ {
+				if data[j] == '"' {
+					return j + 1, data[i : j+1], nil
+				}
+			}
+			if atEOF {
+				return len(data), data, fmt.Errorf("未闭合的字符串字面量（缺少结束引号）")
+			}
+			return 0, nil, nil
 		}
 	}
 	if atEOF {

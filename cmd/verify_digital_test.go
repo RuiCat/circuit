@@ -1,12 +1,14 @@
 package main_test
 
 import (
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"circuit/element"
+	"circuit/element/logic"
 	_ "circuit/element/register"
 	etime "circuit/element/time"
 	"circuit/load"
@@ -612,3 +614,57 @@ func TestCPU8(t *testing.T) {
 // TestRAM16x8 41：16×8 RAM 模块（总线+时钟+地址+读写控制接口）。
 // 写地址 0 = 0x5A，读回验证；写地址 5 = 0xFF 再读。
 // 128 个 SR 锁存器 t=0 需 GMCONT（同 CPU8）。
+
+// TestCPU8v3Regfile 55：4×8 寄存器组 CPU + RAM 元件（冯·诺依曼）+ 动态装载。
+// 程序经 RAM 元件 SetString 直接装载（绕过顶层 B 开关事件，事件装载由 MCP 验证）：
+//   NOT R1→FF, SUB R3,R0→00, MOV R2,R1→FF, ADD R1,R2→FE, AND→FE, OR→FF,
+//   XOR→00, SHL→00, SHR→00, ST [R0],R1→RAM[0]=00, LD R1,[R0]→00, MOV R0,R2→FF
+// 最终 R0=FF R1=00 R2=FF R3=00。
+func TestCPU8v3Regfile(t *testing.T) {
+	t.Setenv("CIRCUIT_LUSPARSE", "1")
+	t.Setenv("CIRCUIT_GMCONT", "1")
+	t.Setenv("CIRCUIT_GMINFINAL", "1e-5")
+	t.Setenv("CIRCUIT_GLOBALGMIN", "1e-3")
+	nl := readNetlist(t, "55_cpu8_regfile.net")
+	con, err := load.LoadString(nl)
+	if err != nil {
+		t.Fatalf("加载失败: %v", err)
+	}
+	prog := []int{0x64, 0x2C, 0x09, 0x16, 0x36, 0x46, 0x56, 0x74, 0x84, 0xA4, 0x94, 0x02}
+	memHex := make([]byte, 256)
+	for i, v := range prog {
+		memHex[i] = byte(v)
+	}
+	for _, elem := range con.Nodelist {
+		if elem.Base().InstanceName == "X1.RAM1" {
+			(&logic.RAM{}).InitFromHex(elem.Base(), hex.EncodeToString(memHex))
+		}
+	}
+	con.Time, err = etime.NewTimeMNA(24e-3)
+	if err != nil {
+		t.Fatalf("time: %v", err)
+	}
+	con.Time.SetStepLimits(1e-6, 5e-5)
+	var trigs []mna.Trigger
+	for tms := 0.5; tms <= 23.5; tms++ {
+		trigs = append(trigs, mna.Trigger{Time: tms * 1e-3})
+	}
+	con.Time.SetTriggers(trigs)
+	if err := etime.TransientSimulation(con, func([]float64) {}); err != nil {
+		t.Fatalf("仿真失败: %v", err)
+	}
+	rd := func(base string) int {
+		v := 0
+		for i := 0; i < 8; i++ {
+			if con.GetHierarchicalNodeVoltage(base+string(rune('0'+i))) >= 3.0 {
+				v |= 1 << i
+			}
+		}
+		return v
+	}
+	r0, r1, r2, r3 := rd("X1.R0_"), rd("X1.R1_"), rd("X1.R2_"), rd("X1.R3_")
+	t.Logf("运行后: R0=%02X R1=%02X R2=%02X R3=%02X（期望 FF 00 FF 00）", r0, r1, r2, r3)
+	if r0 != 0xFF || r1 != 0x00 || r2 != 0xFF || r3 != 0x00 {
+		t.Errorf("指令集验证失败: R0=%02X R1=%02X R2=%02X R3=%02X", r0, r1, r2, r3)
+	}
+}
