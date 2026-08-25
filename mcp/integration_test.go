@@ -114,13 +114,13 @@ func TestStdioEndToEnd(t *testing.T) {
 		t.Fatalf("服务器名称不符: %v", initRes.ServerInfo.Name)
 	}
 
-	// 工具列表：应包含全部 33 个工具
+	// 工具列表：应包含全部 34 个工具
 	toolsRes, err := c.ListTools(ctx, mcp.ListToolsRequest{})
 	if err != nil {
 		t.Fatalf("ListTools 失败: %v", err)
 	}
-	if len(toolsRes.Tools) != 33 {
-		t.Fatalf("工具数量应为 33，实际 %d", len(toolsRes.Tools))
+	if len(toolsRes.Tools) != 34 {
+		t.Fatalf("工具数量应为 34，实际 %d", len(toolsRes.Tools))
 	}
 	names := map[string]bool{}
 	for _, tool := range toolsRes.Tools {
@@ -134,7 +134,7 @@ func TestStdioEndToEnd(t *testing.T) {
 		"circuit_get_element", "circuit_get_node_values",
 		"circuit_debug_matrix", "circuit_debug_element", "circuit_debug_node_voltages",
 		"circuit_set_element_param", "circuit_set_event",
-		"circuit_set_sim_params", "circuit_set_trigger",
+		"circuit_set_sim_params", "circuit_set_engine_config", "circuit_set_trigger",
 		"circuit_run_transient", "circuit_run_continuous",
 		"circuit_pause", "circuit_resume", "circuit_step", "circuit_advance",
 		"circuit_run_dc",
@@ -223,6 +223,99 @@ func TestStdioToolErrorPropagation(t *testing.T) {
 	txt := extractText(t, res)
 	if !strings.Contains(txt, "不存在") {
 		t.Fatalf("错误信息不符: %s", txt)
+	}
+}
+
+// TestToolLoadNetlistFromFile 验证 file 参数：从文件路径装载网表
+// （new_session / load_netlist / validate_netlist 三工具共用 readNetlistArg）。
+func TestToolLoadNetlistFromFile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("短模式跳过集成测试")
+	}
+	bin := buildServerBinary(t)
+	c, err := client.NewStdioMCPClient(bin, nil, "mcpserver")
+	if err != nil {
+		t.Fatalf("启动 stdio 客户端失败: %v", err)
+	}
+	defer c.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if _, err := c.Initialize(ctx, mcp.InitializeRequest{Params: mcp.InitializeParams{
+		ProtocolVersion: mcp.LATEST_PROTOCOL_VERSION,
+		ClientInfo:      mcp.Implementation{Name: "integration-test", Version: "1.0.0"},
+	}}); err != nil {
+		t.Fatalf("Initialize 失败: %v", err)
+	}
+
+	// 写临时网表文件
+	file := filepath.Join(t.TempDir(), "rc.net")
+	if err := os.WriteFile(file, []byte(rcNetlist), 0o644); err != nil {
+		t.Fatalf("写临时网表失败: %v", err)
+	}
+
+	// 1) validate_netlist 用 file
+	val := toolCall(t, c, "circuit_validate_netlist", map[string]any{"file": file})
+	if ok, _ := val["valid"].(bool); !ok {
+		t.Fatalf("文件校验应通过: %v", val)
+	}
+
+	// 2) new_session 用 file
+	sess := toolCall(t, c, "circuit_new_session", map[string]any{"file": file, "name": "from-file"})
+	sid, _ := sess["sessionId"].(string)
+	if sid == "" {
+		t.Fatalf("new_session 未返回 sessionId: %v", sess)
+	}
+	if stats, ok := sess["stats"].(map[string]any); ok {
+		if n, _ := stats["elements"].(float64); n != 3 {
+			t.Fatalf("文件装载元件数应为 3，实际 %v", n)
+		}
+	}
+
+	// 3) load_netlist 用 file 替换
+	if err := os.WriteFile(file, []byte(dividerNetlist), 0o644); err != nil {
+		t.Fatalf("写临时网表失败: %v", err)
+	}
+	rep := toolCall(t, c, "circuit_load_netlist", map[string]any{"sessionId": sid, "file": file})
+	if stats, ok := rep["stats"].(map[string]any); ok {
+		if n, _ := stats["elements"].(float64); n != 3 {
+			t.Fatalf("替换后元件数应为 3，实际 %v", n)
+		}
+	}
+
+	// 4) file 优先于 netlist
+	sess2 := toolCall(t, c, "circuit_new_session", map[string]any{
+		"file":    file,
+		"netlist": rcNetlist,
+	})
+	if stats, ok := sess2["stats"].(map[string]any); ok {
+		if n, _ := stats["elements"].(float64); n != 3 {
+			t.Fatalf("file 优先时元件数应为 3（divider），实际 %v", n)
+		}
+	}
+
+	// 5) 不存在的文件应报错（MCP 以 isError 结果返回）
+	resBad, err := c.CallTool(ctx, mcp.CallToolRequest{Params: mcp.CallToolParams{
+		Name: "circuit_validate_netlist", Arguments: map[string]any{"file": "/nonexistent/x.net"},
+	}})
+	if err != nil {
+		t.Fatalf("CallTool 失败: %v", err)
+	}
+	if !resBad.IsError {
+		t.Fatalf("不存在的文件应返回 isError: %v", extractText(t, resBad))
+	}
+	if !strings.Contains(extractText(t, resBad), "读取网表文件失败") {
+		t.Fatalf("错误信息不符: %s", extractText(t, resBad))
+	}
+
+	// 6) 两参数都缺应报错
+	resEmpty, err := c.CallTool(ctx, mcp.CallToolRequest{Params: mcp.CallToolParams{
+		Name: "circuit_validate_netlist", Arguments: map[string]any{},
+	}})
+	if err != nil {
+		t.Fatalf("CallTool 失败: %v", err)
+	}
+	if !resEmpty.IsError {
+		t.Fatalf("缺参数应返回 isError: %v", extractText(t, resEmpty))
 	}
 }
 

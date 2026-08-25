@@ -234,3 +234,112 @@ func (h *Handler) handleSetTrigger(args map[string]any) (any, error) {
 	sess.mu.Unlock()
 	return map[string]any{"triggers": triggers, "count": len(triggers)}, nil
 }
+
+// handleSetEngineConfig circuit_set_engine_config：设置引擎仿真配置（EngineCfg）。
+// 参数: sessionId(必填), 各配置项可选:
+//   sparseLU?(bool)    强制稀疏 LU（CIRCUIT_LUSPARSE）
+//   forceDense?(bool)  强制稠密 LU（CIRCUIT_LUSDENSE，覆盖自动选择；与 sparseLU 互斥）
+//   gminCont?(bool)    Gmin 延续步进（CIRCUIT_GMCONT，解决大数字电路 t=0 奇异）
+//   naturalGmin?(float64) 自然 gmin（CIRCUIT_NATGMIN）
+//   gminFinal?(float64)   延续终值（CIRCUIT_GMINFINAL，<=0 用默认）
+//   globalGmin?(float64)  全局对角 gmin（CIRCUIT_GLOBALGMIN，0=关闭）
+//   gminDbg?(bool)     打印 gmin 步进轨迹（CIRCUIT_GMIN_DBG）
+//   noEq?(bool)        跳过行/列均衡化（CIRCUIT_NOEQ）
+// 生效时机：下次仿真任务启动时读取（TransientSimulation 每次调用时从 con.EngineCfg 读取）。
+// 与 circuit_set_sim_params（步长/容差等数值仿真参数）互补。
+func (h *Handler) handleSetEngineConfig(args map[string]any) (any, error) {
+	sess, err := h.ensureSession(args)
+	if err != nil {
+		return nil, err
+	}
+	if j := sess.RunningJob(); j != nil {
+		return nil, fmt.Errorf("会话 %s 有运行中的任务 %s，请等待完成或取消后再设置引擎配置", sess.ID, j.ID)
+	}
+	sess.mu.Lock()
+	defer sess.mu.Unlock()
+	if sess.Con == nil {
+		return nil, fmt.Errorf("会话 %s 尚未加载网表", sess.ID)
+	}
+	cfg := sess.Con.EngineCfg
+	old := cfg
+	set := map[string]bool{}
+	if v, ok := argBool(args, "sparseLU"); ok {
+		cfg.SparseLU = v
+		set["sparseLU"] = true
+	}
+	if v, ok := argBool(args, "forceDense"); ok {
+		cfg.ForceDense = v
+		set["forceDense"] = true
+	}
+	if v, ok := argBool(args, "gminCont"); ok {
+		cfg.GminCont = v
+		set["gminCont"] = true
+	}
+	if v, ok := argFloat(args, "naturalGmin"); ok {
+		if v < 0 {
+			return nil, fmt.Errorf("naturalGmin 不能为负")
+		}
+		cfg.NaturalGmin = v
+		set["naturalGmin"] = true
+	}
+	if v, ok := argFloat(args, "gminFinal"); ok {
+		if v < 0 {
+			return nil, fmt.Errorf("gminFinal 不能为负")
+		}
+		cfg.GminFinal = v
+		set["gminFinal"] = true
+	}
+	if v, ok := argFloat(args, "globalGmin"); ok {
+		if v < 0 {
+			return nil, fmt.Errorf("globalGmin 不能为负")
+		}
+		cfg.GlobalGmin = v
+		set["globalGmin"] = true
+	}
+	if v, ok := argBool(args, "gminDbg"); ok {
+		cfg.GminDbg = v
+		set["gminDbg"] = true
+	}
+	if v, ok := argBool(args, "noEq"); ok {
+		cfg.NoEq = v
+		set["noEq"] = true
+	}
+	sess.Con.EngineCfg = cfg
+	changed := map[string]any{}
+	if cfg != old {
+		for _, k := range sortedKeys(set) {
+			switch k {
+			case "sparseLU":
+				changed[k] = cfg.SparseLU
+			case "forceDense":
+				changed[k] = cfg.ForceDense
+			case "gminCont":
+				changed[k] = cfg.GminCont
+			case "naturalGmin":
+				changed[k] = cfg.NaturalGmin
+			case "gminFinal":
+				changed[k] = cfg.GminFinal
+			case "globalGmin":
+				changed[k] = cfg.GlobalGmin
+			case "gminDbg":
+				changed[k] = cfg.GminDbg
+			case "noEq":
+				changed[k] = cfg.NoEq
+			}
+		}
+	}
+	return map[string]any{
+		"engineConfig": map[string]any{
+			"sparseLU":    cfg.SparseLU,
+			"forceDense":  cfg.ForceDense,
+			"gminCont":    cfg.GminCont,
+			"naturalGmin": cfg.NaturalGmin,
+			"gminFinal":   cfg.GminFinal,
+			"globalGmin":  cfg.GlobalGmin,
+			"gminDbg":     cfg.GminDbg,
+			"noEq":        cfg.NoEq,
+		},
+		"updated": sortedKeys(set),
+		"changed": changed,
+	}, nil
+}

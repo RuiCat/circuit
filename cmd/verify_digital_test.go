@@ -668,3 +668,61 @@ func TestCPU8v3Regfile(t *testing.T) {
 		t.Errorf("指令集验证失败: R0=%02X R1=%02X R2=%02X R3=%02X", r0, r1, r2, r3)
 	}
 }
+
+// TestCPU8v3MemLoadAdd 55：内存装载加法——A、B 存 RAM，程序 LD 装入寄存器后 ADD。
+// 回归：LD_SEL 译码链曾缺 nIRQ5 的 NOT 门（U91），LD 指令 WB 总线错走 ALU 通道
+// （输出恒 0），旧测试程序 LD 恰好读到 0 掩盖了该 bug。本测试读非零数据验证 LD。
+// 程序：RAM[0]=0x94 LD R1,[R0]（R1←RAM[0]=0x94=A=148，R0 初始 0）
+//       RAM[1]=0x90 LD R0,[R0]（R0←RAM[0]=0x94=148，作数据地址）
+//       RAM[2]=0x9C LD R3,[R0]（R3←RAM[148]=0x24=B=36，数据预置）
+//       RAM[3]=0x13 ADD R3,R1（R3 = 36+148 = 184 = 0xB8）
+// 期望 R3=B8（A+B）。
+func TestCPU8v3MemLoadAdd(t *testing.T) {
+	t.Setenv("CIRCUIT_LUSPARSE", "1")
+	t.Setenv("CIRCUIT_GMCONT", "1")
+	t.Setenv("CIRCUIT_GMINFINAL", "1e-5")
+	t.Setenv("CIRCUIT_GLOBALGMIN", "1e-3")
+	nl := readNetlist(t, "55_cpu8_regfile.net")
+	con, err := load.LoadString(nl)
+	if err != nil {
+		t.Fatalf("加载失败: %v", err)
+	}
+	prog := []int{0x94, 0x90, 0x9C, 0x13, 0x0C}
+	mem := make([]byte, 256)
+	for i, v := range prog {
+		mem[i] = byte(v)
+	}
+	mem[148] = 0x24 // B=36 预置在数据区
+	for _, elem := range con.Nodelist {
+		if elem.Base().InstanceName == "X1.RAM1" {
+			(&logic.RAM{}).InitFromHex(elem.Base(), hex.EncodeToString(mem))
+		}
+	}
+	con.Time, err = etime.NewTimeMNA(12e-3)
+	if err != nil {
+		t.Fatalf("time: %v", err)
+	}
+	con.Time.SetStepLimits(1e-6, 5e-5)
+	var trigs []mna.Trigger
+	for tms := 0.5; tms <= 11.5; tms++ {
+		trigs = append(trigs, mna.Trigger{Time: tms * 1e-3})
+	}
+	con.Time.SetTriggers(trigs)
+	if err := etime.TransientSimulation(con, func([]float64) {}); err != nil {
+		t.Fatalf("仿真失败: %v", err)
+	}
+	rd := func(base string) int {
+		v := 0
+		for i := 0; i < 8; i++ {
+			if con.GetHierarchicalNodeVoltage(base+string(rune('0'+i))) >= 3.0 {
+				v |= 1 << i
+			}
+		}
+		return v
+	}
+	r3 := rd("X1.R3_")
+	t.Logf("A=0x94(148) B=0x24(36) → R3=%02X（期望 B8）", r3)
+	if r3 != 0xB8 {
+		t.Errorf("内存装载加法失败: R3=%02X 期望 B8", r3)
+	}
+}

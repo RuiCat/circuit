@@ -42,6 +42,8 @@ func callTool(t *testing.T, h *Handler, name string, args map[string]any) map[st
 		fn = h.handleSetEvent
 	case "circuit_set_sim_params":
 		fn = h.handleSetSimParams
+	case "circuit_set_engine_config":
+		fn = h.handleSetEngineConfig
 	case "circuit_set_trigger":
 		fn = h.handleSetTrigger
 	case "circuit_run_transient":
@@ -470,6 +472,47 @@ func TestToolSimParamsAndTrigger(t *testing.T) {
 	})
 	if tr["count"].(float64) != 2 {
 		t.Fatalf("触发点设置失败: %v", tr)
+	}
+}
+
+// TestToolSetEngineConfig 验证 circuit_set_engine_config：
+// 设置 GMCONT/LUSPARSE 等引擎配置（EngineCfg），下次仿真生效。
+func TestToolSetEngineConfig(t *testing.T) {
+	h, _ := newTestHandler()
+	sid := newSession(t, h, rcNetlist)
+
+	res := callTool(t, h, "circuit_set_engine_config", map[string]any{
+		"sessionId": sid, "gminCont": true, "sparseLU": true,
+		"gminFinal": 1e-5, "globalGmin": 1e-3,
+	})
+	cfg := res["engineConfig"].(map[string]any)
+	if cfg["gminCont"] != true || cfg["sparseLU"] != true {
+		t.Fatalf("引擎配置未生效: %v", cfg)
+	}
+	if cfg["gminFinal"].(float64) != 1e-5 || cfg["globalGmin"].(float64) != 1e-3 {
+		t.Fatalf("数值配置未生效: %v", cfg)
+	}
+	if up, ok := res["updated"].([]any); !ok || len(up) != 4 {
+		t.Fatalf("updated 应为 4 项: %v", res["updated"])
+	}
+
+	// 部分更新：只改一个布尔，其余保持
+	res2 := callTool(t, h, "circuit_set_engine_config", map[string]any{
+		"sessionId": sid, "gminDbg": true,
+	})
+	cfg2 := res2["engineConfig"].(map[string]any)
+	if cfg2["gminDbg"] != true || cfg2["gminCont"] != true {
+		t.Fatalf("部分更新应保留旧值: %v", cfg2)
+	}
+	if up, ok := res2["updated"].([]any); !ok || len(up) != 1 {
+		t.Fatalf("updated 应为 1 项: %v", res2["updated"])
+	}
+
+	// 非法参数
+	if msg := callToolErr(t, h, "circuit_set_engine_config", map[string]any{
+		"sessionId": sid, "globalGmin": -1.0,
+	}); !strings.Contains(msg, "不能为负") {
+		t.Fatalf("非法参数应报错: %s", msg)
 	}
 }
 

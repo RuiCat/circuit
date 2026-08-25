@@ -38,24 +38,27 @@ func NewMCPServer(store *SessionStore) *server.MCPServer {
 	// ---------- A 组 · 会话与网表管理 ----------
 	register(
 		mcp.NewTool("circuit_new_session",
-			mcp.WithDescription("创建电路仿真会话。可附带初始网表文本（SPICE 风格），返回会话 ID 与电路统计。"),
+			mcp.WithDescription("创建电路仿真会话。可附带初始网表（文本或文件路径），返回会话 ID 与电路统计。"),
 			mcp.WithString("netlist", mcp.Description("网表文本（可选）。例如: R1 [1,0] [1000]")),
+			mcp.WithString("file", mcp.Description("网表文件路径（可选，与 netlist 二选一，优先于 netlist）")),
 			mcp.WithString("name", mcp.Description("会话名称（可选）")),
 		),
 		h.handleNewSession,
 	)
 	register(
 		mcp.NewTool("circuit_load_netlist",
-			mcp.WithDescription("加载或替换会话的网表。失败时保留旧网表。"),
+			mcp.WithDescription("加载或替换会话的网表（文本或文件路径）。失败时保留旧网表。"),
 			mcp.WithString("sessionId", mcp.Description("会话 ID"), mcp.Required()),
-			mcp.WithString("netlist", mcp.Description("网表文本"), mcp.Required()),
+			mcp.WithString("netlist", mcp.Description("网表文本（可选，与 file 二选一）")),
+			mcp.WithString("file", mcp.Description("网表文件路径（可选，与 netlist 二选一，优先于 netlist）")),
 		),
 		h.handleLoadNetlist,
 	)
 	register(
 		mcp.NewTool("circuit_validate_netlist",
-			mcp.WithDescription("校验网表语法与语义，不创建会话。返回错误列表或电路统计。"),
-			mcp.WithString("netlist", mcp.Description("网表文本"), mcp.Required()),
+			mcp.WithDescription("校验网表语法与语义（文本或文件路径），不创建会话。返回错误列表或电路统计。"),
+			mcp.WithString("netlist", mcp.Description("网表文本（可选，与 file 二选一）")),
+			mcp.WithString("file", mcp.Description("网表文件路径（可选，与 netlist 二选一，优先于 netlist）")),
 		),
 		h.handleValidateNetlist,
 	)
@@ -182,6 +185,21 @@ func NewMCPServer(store *SessionStore) *server.MCPServer {
 			mcp.WithInteger("parallel", mcp.Description("并行 worker 数（0=串行）")),
 		),
 		h.handleSetSimParams,
+	)
+	register(
+		mcp.NewTool("circuit_set_engine_config",
+			mcp.WithDescription("设置引擎仿真配置（EngineCfg：GMCONT/LUSPARSE 等），下次仿真任务启动时生效。与 circuit_set_sim_params（步长/容差）互补。"),
+			mcp.WithString("sessionId", mcp.Description("会话 ID"), mcp.Required()),
+			mcp.WithBoolean("sparseLU", mcp.Description("强制稀疏 LU（CIRCUIT_LUSPARSE）")),
+			mcp.WithBoolean("forceDense", mcp.Description("强制稠密 LU（CIRCUIT_LUSDENSE，覆盖自动选择）")),
+			mcp.WithBoolean("gminCont", mcp.Description("Gmin 延续步进（CIRCUIT_GMCONT，解决大数字电路 t=0 奇异）")),
+			mcp.WithNumber("naturalGmin", mcp.Description("自然 gmin（CIRCUIT_NATGMIN）")),
+			mcp.WithNumber("gminFinal", mcp.Description("延续终值（CIRCUIT_GMINFINAL，<=0 用默认）")),
+			mcp.WithNumber("globalGmin", mcp.Description("全局对角 gmin（CIRCUIT_GLOBALGMIN，0=关闭）")),
+			mcp.WithBoolean("gminDbg", mcp.Description("打印 gmin 步进轨迹（CIRCUIT_GMIN_DBG）")),
+			mcp.WithBoolean("noEq", mcp.Description("跳过行/列均衡化（CIRCUIT_NOEQ）")),
+		),
+		h.handleSetEngineConfig,
 	)
 	register(
 		mcp.NewTool("circuit_set_trigger",

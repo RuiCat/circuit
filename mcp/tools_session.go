@@ -1,6 +1,9 @@
 package mcp
 
 import (
+	"fmt"
+	"os"
+
 	"circuit/load"
 )
 
@@ -13,10 +16,31 @@ type sessionResult struct {
 	Stats     NetlistStats `json:"stats"`
 }
 
+// readNetlistArg 解析网表参数：优先 file（文件路径，从磁盘读取），
+// 回退 netlist（内联文本）。两者都提供时 file 优先。
+// 返回网表文本与错误（文件不存在/读取失败时返回错误）。
+func readNetlistArg(args map[string]any) (string, error) {
+	if f := argStr(args, "file"); f != "" {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			return "", fmt.Errorf("读取网表文件失败: %w", err)
+		}
+		return string(b), nil
+	}
+	n := argStr(args, "netlist")
+	if n == "" {
+		return "", fmt.Errorf("缺少网表: 请提供 file(文件路径) 或 netlist(网表文本) 参数")
+	}
+	return n, nil
+}
+
 // handleNewSession circuit_new_session：创建仿真会话（可带初始网表）。
-// 参数: netlist(可选), name(可选)
+// 参数: netlist(可选，网表文本), file(可选，网表文件路径), name(可选)
 func (h *Handler) handleNewSession(args map[string]any) (any, error) {
-	netlist := argStr(args, "netlist")
+	netlist, err := readNetlistArg(args)
+	if err != nil {
+		return nil, err
+	}
 	name := argStr(args, "name")
 	sess, err := h.store.New(name, netlist)
 	if err != nil {
@@ -30,15 +54,15 @@ func (h *Handler) handleNewSession(args map[string]any) (any, error) {
 }
 
 // handleLoadNetlist circuit_load_netlist：加载/替换会话网表。
-// 参数: sessionId(必填), netlist(必填)
+// 参数: sessionId(必填), netlist(可选，网表文本), file(可选，网表文件路径)
 func (h *Handler) handleLoadNetlist(args map[string]any) (any, error) {
 	id := argStr(args, "sessionId")
 	if id == "" {
 		return nil, errMissing("sessionId")
 	}
-	netlist := argStr(args, "netlist")
-	if netlist == "" {
-		return nil, errMissing("netlist")
+	netlist, err := readNetlistArg(args)
+	if err != nil {
+		return nil, err
 	}
 	sess, err := h.store.Get(id)
 	if err != nil {
@@ -53,11 +77,11 @@ func (h *Handler) handleLoadNetlist(args map[string]any) (any, error) {
 }
 
 // handleValidateNetlist circuit_validate_netlist：校验网表，不创建会话。
-// 参数: netlist(必填)
+// 参数: netlist(可选，网表文本), file(可选，网表文件路径)
 func (h *Handler) handleValidateNetlist(args map[string]any) (any, error) {
-	netlist := argStr(args, "netlist")
-	if netlist == "" {
-		return nil, errMissing("netlist")
+	netlist, err := readNetlistArg(args)
+	if err != nil {
+		return nil, err
 	}
 	con, err := load.LoadString(netlist)
 	if err != nil {
