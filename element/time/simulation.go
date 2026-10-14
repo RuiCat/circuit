@@ -46,21 +46,34 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 		return fmt.Errorf("元件状态重置失败: %v", err)
 	}
 	con.ResetTimeStepCount()
+	// 策略同步（契约 K3/K4/C5）：每次 TransientSimulation 启动**无条件**按当前配置
+	// 同步一次 TimeMNA 的策略状态（GminFinal<=0 即回默认值）。旧的
+	// "仅当 GminFinal>0 才推送"写法会让同一 Context 的第二次运行沿用上一次的终值，
+	// 结果依赖运行历史——这是 C5 明令取消的隐式行为。
+	tm, isTimeMNA := con.Time.(*TimeMNA)
+	if isTimeMNA {
+		if err := ApplyStrategy(tm, StrategyBindingOf(con)); err != nil {
+			return fmt.Errorf("策略同步失败: %w", err)
+		}
+		// 有界牛顿事件计数（K4）：每次仿真启动重置（计数只增不减，见 strategy.go）。
+		tm.BeginBoundedNewtonEvents()
+	}
+	// 牛顿迭代计数（K4 的迭代数出口之一）：本时间步内的轮数，跨步累加进 totalNewtonIters。
+	newtonIterCount := 0
 	// Gmin 延续（标准 SPICE Gmin stepping）：t=0 直流求解启动延续步进。
 	// 大 Gmin 把交叉耦合双稳态阻尼成单稳态，随迭代收敛逐级下调至自然 gmin，
-	// 解决锁存器/触发器在 t=0 的对称振荡不收敛问题。默认关闭（con.EngineCfg.GminCont，
-	// load 从 CIRCUIT_GMCONT 解析），不影响普通电路的既有行为。
-	gminContEnabled := con.EngineCfg.GminCont
-	naturalGmin := con.EngineCfg.NaturalGmin
-	if con.EngineCfg.GminFinal > 0 {
-		con.Time.SetGminFinal(con.EngineCfg.GminFinal)
-	}
-	// 全局 gmin（con.EngineCfg.GlobalGmin，load 解析 CIRCUIT_GLOBALGMIN）：
+	// 解决锁存器/触发器在 t=0 的对称振荡不收敛问题。默认关闭（策略字段 gminCont，
+	// load 从 CIRCUIT_GMCONT 解析，经 ApplyStrategy 同步），不影响普通电路的既有行为。
+	gminContEnabled := isTimeMNA && tm.GminCont()
+	// 全局 gmin（策略字段 globalGmin，load 解析 CIRCUIT_GLOBALGMIN）：
 	// 到地电导，仅给弱连接节点（如只接截止晶体管基极的控制线）接地。
 	// 值必须远小于 RTL 上拉电导（1kΩ=1e-3 S），否则会把逻辑节点拉到中间电平、
 	// 门失去增益、锁存器焊死中间态；不叠加 continuationGmin（延续阻尼只由
 	// PN 结元件自身读取，不进入矩阵对角）。
-	globalGmin := con.EngineCfg.GlobalGmin
+	naturalGmin, globalGmin := 0.0, 0.0
+	if isTimeMNA {
+		naturalGmin, globalGmin = tm.NaturalGmin(), tm.GlobalGmin()
+	}
 	for !con.IsSimulationFinished() {
 		// 将事件值同步到元件 NodeValue
 		if !con.PushEvents() {
@@ -142,7 +155,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 		}
 		// 非线性迭代（牛顿-拉夫逊法）
 		newtonConverged := false
-		newtonIterCount := 0
+		newtonIterCount = 0
 		refillConverged := false // 显式补轮后是否收敛（P3：收敛则外层立即终止，避免重复触发采样）
 		var luRetry bool
 		for con.NextNonlinearIter() {
@@ -157,24 +170,16 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 			// 求解MNA方程（使用均衡化LU分解以处理混合域）
 			rowScale, colScale, err := equilibrateDecompose(luSolver, con.GetA(), sparseLU, gminForLU(naturalGmin, globalGmin), con.EngineCfg.NoEq)
 			if err != nil {
-				newStep := con.CurrentStep() / 2
-				if newStep < con.MinTimeStep() {
-					return fmt.Errorf("矩阵分解失败且步长已最小（时间=%.6e）: %v", con.CurrentTime(), err)
+				if err := halveStepOnFailure(con, &needLinearStamp, &luRetry); err != nil {
+					return err
 				}
-				con.SetTimeStep(newStep)
-				needLinearStamp = true
-				luRetry = true
 				break
 			}
 			// 执行前向替换和后向替换
 			if err := maths.SolveEquilibrated(luSolver, con.GetZ(), con.GetX(), rowScale, colScale); err != nil {
-				newStep := con.CurrentStep() / 2
-				if newStep < con.MinTimeStep() {
-					return fmt.Errorf("方程求解失败且步长已最小（时间=%.6e）: %v", con.CurrentTime(), err)
+				if err := halveStepOnFailure(con, &needLinearStamp, &luRetry); err != nil {
+					return err
 				}
-				con.SetTimeStep(newStep)
-				needLinearStamp = true
-				luRetry = true
 				break
 			}
 			// 计算残差并检查收敛
@@ -211,23 +216,15 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 				// 重新求解MNA方程（使用均衡化LU分解以处理混合域）
 				rowScale, colScale, err := equilibrateDecompose(luSolver, con.GetA(), sparseLU, gminForLU(naturalGmin, globalGmin), con.EngineCfg.NoEq)
 				if err != nil {
-					newStep := con.CurrentStep() / 2
-					if newStep < con.MinTimeStep() {
-						return fmt.Errorf("元件迭代中矩阵分解失败且步长已最小（时间=%.6e）: %v", con.CurrentTime(), err)
+					if err := halveStepOnFailure(con, &needLinearStamp, &luRetry); err != nil {
+						return err
 					}
-					con.SetTimeStep(newStep)
-					needLinearStamp = true
-					luRetry = true
 					break
 				}
 				if err := maths.SolveEquilibrated(luSolver, con.GetZ(), con.GetX(), rowScale, colScale); err != nil {
-					newStep := con.CurrentStep() / 2
-					if newStep < con.MinTimeStep() {
-						return fmt.Errorf("元件迭代中方程求解失败且步长已最小（时间=%.6e）: %v", con.CurrentTime(), err)
+					if err := halveStepOnFailure(con, &needLinearStamp, &luRetry); err != nil {
+						return err
 					}
-					con.SetTimeStep(newStep)
-					needLinearStamp = true
-					luRetry = true
 					break
 				}
 				// 重新计算残差并检查收敛
@@ -261,23 +258,15 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 					}
 					rowScale, colScale, err := equilibrateDecompose(luSolver, con.GetA(), sparseLU, gminForLU(naturalGmin, globalGmin), con.EngineCfg.NoEq)
 					if err != nil {
-						newStep := con.CurrentStep() / 2
-						if newStep < con.MinTimeStep() {
-							return fmt.Errorf("补轮矩阵分解失败且步长已最小（时间=%.6e）: %v", con.CurrentTime(), err)
+						if err := halveStepOnFailure(con, &needLinearStamp, &luRetry); err != nil {
+							return err
 						}
-						con.SetTimeStep(newStep)
-						needLinearStamp = true
-						luRetry = true
 						break
 					}
 					if err := maths.SolveEquilibrated(luSolver, con.GetZ(), con.GetX(), rowScale, colScale); err != nil {
-						newStep := con.CurrentStep() / 2
-						if newStep < con.MinTimeStep() {
-							return fmt.Errorf("补轮方程求解失败且步长已最小（时间=%.6e）: %v", con.CurrentTime(), err)
+						if err := halveStepOnFailure(con, &needLinearStamp, &luRetry); err != nil {
+							return err
 						}
-						con.SetTimeStep(newStep)
-						needLinearStamp = true
-						luRetry = true
 						break
 					}
 					if err := con.CalculateMNAResidual(con); err != nil {
@@ -307,6 +296,9 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 			// 如果循环结束，意味着即使经过额外的迭代也未能收敛
 			// 交叉耦合门可能永远无法收敛；继续牛顿外循环而非失败
 			if con.IsElemIterExhausted() {
+				if isTimeMNA {
+					tm.boundedEvents.AddIterExhausted()
+				}
 				// 标准 Gmin 步进：当前阻尼水平下元件子迭代耗尽（振荡）→
 				// 增大阻尼一档重试；若已到起始阻尼或恢复超限，回退原有强制推进。
 				if con.Time.GminSteppingActive() {
@@ -336,7 +328,13 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 			}
 		}
 		if luRetry {
+			if isTimeMNA {
+				tm.AddNewtonIters(newtonIterCount)
+			}
 			continue
+		}
+		if isTimeMNA {
+			tm.AddNewtonIters(newtonIterCount)
 		}
 		// 检查牛顿迭代是否成功收敛
 		if !newtonConverged {
@@ -351,6 +349,10 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 		}
 		// 提取并验证节点电压
 		if !extractAndValidateVoltages(con, nodesNum, voltageSourcesNum, voltages) {
+			// K4 计数：NaN/Inf 拒绝。此处不新增恢复路径——既有语义仍是终止仿真。
+			if isTimeMNA {
+				tm.boundedEvents.AddNaNRejected()
+			}
 			return fmt.Errorf("检测到无效电压值（NaN/Inf）在时间 %.6e，停止仿真", con.CurrentTime())
 		}
 		// 积分误差估计与步长自适应
@@ -410,7 +412,12 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 			call(voltages)
 			con.PullEvents() // 将生产者元件的状态回写到事件系统
 		} else {
-			// 残差不可接受，减小步长并重新计算当前步
+			// 残差不可接受，减小步长并重新计算当前步。
+			// K4 计数：该解被拒绝（StepRejected），随后减半步长重试（StepHalved）。
+			if isTimeMNA {
+				tm.boundedEvents.AddStepRejected()
+				tm.boundedEvents.AddStepHalved()
+			}
 			newStep := con.CurrentStep() / 2
 			if newStep < con.MinTimeStep() {
 				return fmt.Errorf("步长已降至最小限制 %.6e，仿真在时间 %.6e 无法收敛", con.MinTimeStep(), con.CurrentTime())
@@ -440,43 +447,48 @@ func doStep(con *element.Context) error {
 	return con.CallMark(element.MarkDoStep)
 }
 
-// autoSparseDensity 自动选择阈值：矩阵非零密度低于此值用稀疏 LU。
-// 基准（2026-08-22）：RTL 稀疏矩阵（每行 ~10 非零）稀疏 LU 全面占优
-// （n=50 起即不慢于稠密，n=300 快 25 倍）；稠密矩阵（nnz~80%）稀疏退化
-// 2~5 倍（fill-in 开销）。阈值 0.3 分隔两种形态。
-const autoSparseDensity = 0.3
+// autoSparseDensity 自动选择阈值已随 BackendBinding 移到 element 包
+// （element/context.go，D11 挂载层裁决）：本文件只调用 ResolveBackend。
 
 // chooseLUSolver 根据显式配置或矩阵非零密度选择 LU 分解器：
 //
 //	CIRCUIT_LUSPARSE=1 → 强制稀疏；CIRCUIT_LUSDENSE=1 → 强制稠密；
 //	并行（StampWorkers>1）→ 并行稠密；否则按首次加盖后矩阵密度自动选择。
 //
+// 后端判定（含 SparseLU/ForceDense 互斥与"载入期绑定不可改写"）统一走
+// element.BackendBinding.ResolveBackend（契约 K3）：非法绑定返回错误，
+// 不再按 switch 顺序隐含裁决。
+//
 // 返回 luSolver 与 sparseLU 标志（供均衡化路径 equilibrateDecompose 选择）。
 func chooseLUSolver(con *element.Context, systemSize int) (maths.LU[float64], bool, error) {
-	switch {
-	case con.EngineCfg.SparseLU:
+	workers := 0
+	if con.ParallelOpts != nil {
+		workers = con.ParallelOpts.StampWorkers
+	}
+	sparse, err := con.CurrentBackend().ResolveBackend(matrixDensity(con, systemSize), workers)
+	if err != nil {
+		return nil, false, err
+	}
+	if sparse {
 		lu, err := maths.NewLUSparse[float64](systemSize)
 		return lu, true, err
-	case con.EngineCfg.ForceDense:
-		lu, err := maths.NewLU[float64](systemSize)
-		return lu, false, err
-	case con.ParallelOpts != nil && con.ParallelOpts.StampWorkers > 1:
-		lu, err := maths.NewParallelLU[float64](systemSize, con.ParallelOpts.StampWorkers)
-		return lu, false, err
 	}
-	// 自动：按矩阵非零密度（首次线性加盖完成后统计）
-	n := systemSize
-	nnz := con.GetA().NonZeroCount()
-	density := 0.0
-	if n > 0 {
-		density = float64(nnz) / float64(n*n)
-	}
-	if density < autoSparseDensity {
-		lu, err := maths.NewLUSparse[float64](systemSize)
-		return lu, true, err
+	if workers > 1 {
+		lu, err := maths.NewParallelLU[float64](systemSize, workers)
+		return lu, false, err
 	}
 	lu, err := maths.NewLU[float64](systemSize)
 	return lu, false, err
+}
+
+// matrixDensity 返回 MNA 矩阵的非零密度（首次线性加盖完成后统计）。
+// n<=0 时返回 0（与原自动分支一致：密度 0 < autoSparseDensity ⇒ 稀疏）。
+func matrixDensity(con *element.Context, systemSize int) float64 {
+	n := systemSize
+	if n <= 0 {
+		return 0
+	}
+	return float64(con.GetA().NonZeroCount()) / float64(n*n)
 }
 
 // gminForLU 计算本次 LU 分解的对角 gmin：
@@ -564,4 +576,122 @@ func TransientSimulationContinuous(con *element.Context, call func([]float64)) e
 	}
 	tm.SetContinuousMode()
 	return TransientSimulation(con, call)
+}
+
+// ------------------------------
+// Gmin 延续（Gmin stepping）策略状态机
+// ------------------------------
+// 本段自 time.go 原样搬移（m6 拆分，纯搬移、无行为变化）：Gmin 延续的档位参数
+// 与 TimeMNA 上的状态机。调用点全部在本文件的瞬态主循环
+// （BeginGminStepping / StepGminDown / RecoverGmin / GminSteppingActive），
+// 半导体元件经 GetContinuationGmin 读取延续阻尼。
+
+// Gmin 延续（Gmin stepping）参数：标准 SPICE 延续法。
+// 从大 Gmin 开始，把双稳态电路（锁存器/触发器/RAM 单元）阻尼成单稳态，
+// 随牛顿收敛逐级下调至自然 gmin，解决交叉耦合锁存器在 t=0 直流求解时的对称振荡不收敛。
+const (
+	gminStepStart = 1e-3  // 起始（最大）延续 Gmin (S)：每结并联 ~1kΩ，把双稳态阻尼成单稳态
+	gminStepFinal = 1e-12 // 终值：RTL 数字电路在 1e-5（100kΩ 对地泄漏）下残差判据即可通过，
+	// 且泄漏对 5V 摆幅/0.7V 阈值的工作点影响 <5%；更小的终值会让弱连接节点
+	// （如只接截止晶体管基极的控制线）进入耗尽-恢复-步长重置死循环
+	gminStepScale  = 0.1  // 每级衰减比例（收敛后 ×0.1）
+	gminMaxRecover = 9    // 单步再阻尼恢复次数上限（1e-3→1e-12 共 9 级）
+	gminFinalEps   = 1e-6 // 终值判定相对容差：吸收 1e-11*0.1 等浮点误差，避免多出一级无效步进
+)
+
+// GetContinuationGmin 返回当前 Gmin 延续值。
+func (t *TimeMNA) GetContinuationGmin() float64 {
+	return t.continuationGmin
+}
+
+// SetContinuationGmin 设置 Gmin 延续值。
+func (t *TimeMNA) SetContinuationGmin(v float64) {
+	t.continuationGmin = v
+}
+
+// SetGminFinal 设置 Gmin 延续终值（CIRCUIT_GMINFINAL 覆盖用；<=0 恢复默认）。
+func (t *TimeMNA) SetGminFinal(v float64) {
+	if v <= 0 {
+		v = gminStepFinal
+	}
+	t.gminFinal = v
+}
+
+// BeginGminStepping 启动 Gmin 延续：延续值设为起始大值，并复位恢复计数、震荡标记
+// 与本步完成标志。由仿真循环在每个时间步开始（开启延续）时调用：
+// 每步从大 Gmin 重新步进（锁存器等双稳态在每步的直流求解都需要阻尼收敛）。
+func (t *TimeMNA) BeginGminStepping() {
+	t.continuationGmin = gminStepStart
+	t.gminRecoveries = 0
+	t.gminPrevRecover = 0
+	t.gminStuck = false
+	t.gminStepDone = false
+}
+
+// EndGminStepping 结束 Gmin 延续：恢复自然 gmin（0 = 关闭延续）。
+// 由外部（如连续仿真结束）显式调用；仿真循环内不调用——
+// 每步由 BeginGminStepping 重新启动步进，StepGminDown 降到终值后
+// gminStepDone 置位（延续值保留在终值，供 PN 结元件读取），
+// GminSteppingActive 返回 false，恢复时间步级残差检查。
+func (t *TimeMNA) EndGminStepping() {
+	t.continuationGmin = 0
+	t.gminStepDone = true
+}
+
+// GminSteppingActive 返回延续是否处于"步进中"（>0 且未到终值）。
+// 注意：延续值已降到终值（gminStepDone）后返回 false——此时本步解已是
+// 真实工作点，时间步级残差检查应恢复生效（见 simulation.go 残差判据）。
+func (t *TimeMNA) GminSteppingActive() bool {
+	return t.continuationGmin > 0 && !t.gminStepDone
+}
+
+// StepGminDown 把延续 Gmin 下调一档（×gminStepScale），到达终值后钳位到终值
+// 并置 gminStepDone（延续完成）。
+// 返回是否仍需继续步进（true = 尚未到达终值，需以更小 gmin 重新迭代）。
+// 若已检测到 Gmin 震荡（临界档位无法继续下调），返回 false 接受当前阻尼解。
+func (t *TimeMNA) StepGminDown() bool {
+	if t.gminStuck {
+		return false
+	}
+	final := t.gminFinal
+	if final <= 0 {
+		final = gminStepFinal
+	}
+	if t.continuationGmin <= final {
+		t.continuationGmin = final
+		t.gminStepDone = true
+		return false
+	}
+	next := t.continuationGmin * gminStepScale
+	// 浮点误差下 next 可能略高于终值（如 1e-11*0.1 = 1.0000000000000001e-12），
+	// 用相对容差判定「到达终值」，避免多出一级无效步进。
+	if next <= final*(1+gminFinalEps) {
+		t.continuationGmin = final
+		t.gminStepDone = true
+		return false
+	}
+	t.continuationGmin = next
+	return true
+}
+
+// RecoverGmin 牛顿未收敛（元件子迭代耗尽）时增大阻尼一档（回退上一级），
+// 返回是否还有恢复额度（false = 已在起始阻尼或恢复次数超限）。
+// 若恢复回「上次恢复过的档位」（即 Gmin 在相邻两档间来回），标记震荡：
+// 后续 StepGminDown 将返回 false，接受当前阻尼解，避免无限恢复-下调循环。
+func (t *TimeMNA) RecoverGmin() bool {
+	if t.continuationGmin >= gminStepStart || t.gminRecoveries >= gminMaxRecover {
+		return false
+	}
+	t.gminRecoveries++
+	next := t.continuationGmin / gminStepScale
+	// 与 StepGminDown 对称：浮点误差下 next 可能略低于起始值，钳位到起始值。
+	if next >= gminStepStart*(1-gminFinalEps) {
+		next = gminStepStart
+	}
+	if t.gminPrevRecover > 0 && next <= t.gminPrevRecover*(1+gminFinalEps) {
+		t.gminStuck = true
+	}
+	t.gminPrevRecover = next
+	t.continuationGmin = math.Min(gminStepStart, next)
+	return true
 }

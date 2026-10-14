@@ -692,6 +692,15 @@ func runSim(w io.Writer, con *element.Context, cfg config) error {
 		return fmt.Errorf("仿真失败: %w", err)
 	}
 
+	// 仿真统计出口（K4/C11）：stderr 追加一行统计，不改退出码与 CSV 列（追加输出）。
+	// 计数来自 TimeMNA 的有界牛顿事件计数与迭代计数，二者都在每次
+	// TransientSimulation 启动时重置，故不携带上一次运行的残留。
+	if !cfg.quiet {
+		counts := timeMNA.NewtonEvents()
+		fmt.Fprintf(os.Stderr, "仿真统计: 步数=%d 牛顿迭代=%d 减半步长=%d 迭代耗尽=%d\n",
+			timeMNA.GoodSteps(), timeMNA.NewtonIterations(), counts.StepHalved, counts.IterExhausted)
+	}
+
 	if ew.err != nil {
 		return fmt.Errorf("输出写入失败: %w", ew.err)
 	}

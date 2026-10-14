@@ -3,6 +3,7 @@ package element
 import (
 	"circuit/mna"
 	"fmt"
+	"math"
 	"reflect"
 	"sync"
 )
@@ -10,15 +11,125 @@ import (
 // EngineConfig 引擎仿真配置：由 load 包在创建 Context 时从环境变量解析注入，
 // 供瞬态引擎（element/time/simulation.go）与 MNA 存储选择读取，
 // 避免引擎内部直接 os.Getenv（配置集中、可测试、可程序化设置）。
+//
+// 过渡期职责（契约 K3/C13）：本结构仍是唯一数据源；element/time/engineConfig.go 提供两个
+// 绑定视图——BackendBinding（载入期绑定，不可变）与 StrategyBinding（运行期，每次仿真实读）。
+// 每个字段的绑定时刻见行尾标注，两者不可混用：后端开关的运行期改写必须报错。
 type EngineConfig struct {
-	SparseLU    bool    // CIRCUIT_LUSPARSE：强制稀疏 LU（未设置时按矩阵密度自动选择）
-	ForceDense  bool    // CIRCUIT_LUSDENSE：强制稠密 LU（覆盖自动选择；与 SparseLU 互斥）
-	GminCont    bool    // CIRCUIT_GMCONT：Gmin 延续步进
-	NaturalGmin float64 // CIRCUIT_NATGMIN：自然 gmin（对角叠加）
-	GminFinal   float64 // CIRCUIT_GMINFINAL：延续终值（<=0 用默认）
-	GlobalGmin  float64 // CIRCUIT_GLOBALGMIN：全局对角 gmin（0=关闭；支持显式数值）
-	GminDbg     bool    // CIRCUIT_GMIN_DBG：打印 gmin 步进轨迹
-	NoEq        bool    // CIRCUIT_NOEQ：跳过行/列均衡化
+	SparseLU    bool    // CIRCUIT_LUSPARSE：强制稀疏 LU（未设置时按矩阵密度自动选择）[载入期绑定]
+	ForceDense  bool    // CIRCUIT_LUSDENSE：强制稠密 LU（覆盖自动选择；与 SparseLU 互斥）[载入期绑定]
+	GminCont    bool    // CIRCUIT_GMCONT：Gmin 延续步进 [运行期·每次仿真实读]
+	NaturalGmin float64 // CIRCUIT_NATGMIN：自然 gmin（对角叠加）[运行期·每次仿真实读]
+	GminFinal   float64 // CIRCUIT_GMINFINAL：延续终值（<=0 用默认）[运行期·每次仿真实读]
+	GlobalGmin  float64 // CIRCUIT_GLOBALGMIN：全局对角 gmin（0=关闭；支持显式数值）[运行期·每次仿真实读]
+	GminDbg     bool    // CIRCUIT_GMIN_DBG：打印 gmin 步进轨迹 [运行期·每次仿真实读]
+	NoEq        bool    // CIRCUIT_NOEQ：跳过行/列均衡化 [运行期·每次仿真实读]
+}
+
+// BackendBinding 引擎求解后端的绑定（契约 K4/K3）：稀疏/稠密 LU 的存储与求解后端选择。
+//
+// 绑定时刻是**载入期**（load.LoadString 调 Bind），创建后不可变：运行期改写
+// 会改变已绑定后端时 Validate 报错（文案含"载入期绑定"），禁止静默成功、禁止部分生效。
+// 未绑定的零值（Bound=false）只做互斥校验，供不经过 load 的构造路径使用。
+//
+// 定义在 element 包内以避免 element ↔ element/time 循环导入
+// （element/time 的内部测试依赖 load，load 不能再依赖 element/time）；
+// element/time/engineConfig.go 以类型别名转发本类型，契约里的 `time.BackendBinding` 仍可用。
+type BackendBinding struct {
+	SparseLU    bool // CIRCUIT_LUSPARSE：强制稀疏 LU
+	ForceDense  bool // CIRCUIT_LUSDENSE：强制稠密 LU（与 SparseLU 互斥）
+	Bound       bool // 是否已完成载入期绑定
+	BoundSparse bool // 载入期实际绑定的矩阵存储（稀疏=true；判据 SparseLU || !ForceDense）
+
+	boundExplicit   bool // 载入期是否由环境变量显式绑定（两个开关都未设=按密度自动）
+	boundSparseLU   bool // 载入期绑定的 SparseLU
+	boundForceDense bool // 载入期绑定的 ForceDense
+}
+
+// autoSparseDensity 自动选择阈值：矩阵非零密度低于此值用稀疏 LU。
+// 基准（2026-08-22）：RTL 稀疏矩阵（每行 ~10 非零）稀疏 LU 全面占优
+// （n=50 起即不慢于稠密，n=300 快 25 倍）；稠密矩阵（nnz~80%）稀疏退化
+// 2~5 倍（fill-in 开销）。阈值 0.3 分隔两种形态。ResolveBackend 的唯一出处。
+const autoSparseDensity = 0.3
+
+// storageSparseOf 返回给定开关组合对应的矩阵存储：稀疏=true。
+// 判据与 load.LoadContext 载入期选择存储时逐字一致（SparseLU || !ForceDense）。
+func storageSparseOf(sparseLU, forceDense bool) bool {
+	return sparseLU || !forceDense
+}
+
+// Bind 载入期绑定（由 load.LoadContext 在创建 Context 后调用一次）：
+// 冻结后端值与"是否显式绑定"的事实，并以同一判据记录实际存储后端。
+//
+// 刻意**不**在此拒绝 SparseLU && ForceDense 同时为真：那是"CIRCUIT_LUSPARSE 与
+// CIRCUIT_LUSDENSE 两个环境变量同时设置"的既存组合（本轮只登记，不改载入行为），
+// 互斥校验由 Validate / ResolveBackend 在显式绑定路径与求解路径上执行。
+func (b *BackendBinding) Bind(sparseLU, forceDense bool) {
+	b.SparseLU, b.ForceDense = sparseLU, forceDense
+	b.Bound = true
+	b.BoundSparse = storageSparseOf(sparseLU, forceDense)
+	b.boundExplicit = sparseLU || forceDense
+	b.boundSparseLU, b.boundForceDense = sparseLU, forceDense
+}
+
+// Validate 校验后端绑定：
+//  1. SparseLU 与 ForceDense 互斥（原注释声称互斥但代码不校验，靠 switch 顺序隐含裁决）；
+//  2. 载入期绑定后（Bind 已调用）改写后端 → 报错，文案含"载入期绑定"，禁止部分生效：
+//     - 载入期由环境变量显式绑定时，任何后端开关改动都算改写；
+//     - 载入期未显式绑定（自动模式）时，只拒绝会改变已绑定**矩阵存储**的写入
+//     （默认载入即稀疏存储，故 forceDense=true 报错；sparseLU=true 是无操作，按原语义放行）。
+func (b *BackendBinding) Validate() error {
+	if b.SparseLU && b.ForceDense {
+		return fmt.Errorf("引擎后端绑定非法：SparseLU 与 ForceDense 互斥（CIRCUIT_LUSPARSE 与 CIRCUIT_LUSDENSE 不可同时为真）")
+	}
+	if !b.Bound {
+		return nil
+	}
+	if b.boundExplicit {
+		if b.SparseLU != b.boundSparseLU || b.ForceDense != b.boundForceDense {
+			return fmt.Errorf("引擎后端为载入期绑定（载入时 CIRCUIT_LUSPARSE=%v / CIRCUIT_LUSDENSE=%v），运行期不可改写：sparseLU %v→%v，forceDense %v→%v",
+				b.boundSparseLU, b.boundForceDense, b.boundSparseLU, b.SparseLU, b.boundForceDense, b.ForceDense)
+		}
+		return nil
+	}
+	if storageSparseOf(b.SparseLU, b.ForceDense) != b.BoundSparse {
+		return fmt.Errorf("引擎后端存储为载入期绑定（载入时已按 SparseLU||!ForceDense 绑定存储=稀疏%v），运行期改写会改变已绑定后端：稀疏 %v→%v",
+			b.BoundSparse, b.BoundSparse, storageSparseOf(b.SparseLU, b.ForceDense))
+	}
+	return nil
+}
+
+// ResolveBackend 返回该绑定下**实际生效**的稀疏标志（与 simulation.go 的 chooseLUSolver
+// 逐分支一致）：SparseLU → 稀疏；ForceDense → 稠密；workers>1 → 并行稠密；
+// 否则按矩阵非零密度 density 自动选择（< autoSparseDensity 用稀疏）。
+//
+// 先过 Validate：非法绑定（两个开关同时为真 / 运行期改写）报错，
+// 而不是像原 switch 那样按顺序隐含裁决。
+func (b BackendBinding) ResolveBackend(density float64, workers int) (sparse bool, err error) {
+	if err := b.Validate(); err != nil {
+		return false, err
+	}
+	switch {
+	case b.SparseLU:
+		return true, nil
+	case b.ForceDense:
+		return false, nil
+	case workers > 1:
+		return false, nil
+	}
+	if math.IsNaN(density) || density < 0 {
+		return false, fmt.Errorf("矩阵非零密度非法：%v（无法据此选择 LU 后端）", density)
+	}
+	return density < autoSparseDensity, nil
+}
+
+// CurrentBackend 返回"当前后端值 + 载入期冻结记录"的绑定视图：
+// 当前值取自 EngineCfg（运行期运行期写入点改的是它），冻结记录取自 con.Backend。
+// 求解期（chooseLUSolver）与运行期试写（MCP）都用这个视图做校验。
+func (con *Context) CurrentBackend() BackendBinding {
+	b := con.Backend
+	b.SparseLU, b.ForceDense = con.EngineCfg.SparseLU, con.EngineCfg.ForceDense
+	return b
 }
 
 // Context 上下文。
@@ -31,6 +142,7 @@ type Context struct {
 	HierarchicalNodeID          map[string]mna.NodeID        // 层级路径(如"X1.out")→紧凑节点ID的映射。
 	ParallelOpts                *ParallelOptions             // 并行仿真选项，nil=串行模式。
 	EngineCfg                   EngineConfig                 // 引擎仿真配置（load 解析环境变量注入）。
+	Backend                     BackendBinding               // 求解后端的载入期绑定记录（不可变；当前值见 CurrentBackend）。
 	stampCaches                 map[NodeFace]*mna.StampCache // 元件盖章缓存。
 	cacheTime                   float64                      // 缓存时间戳。
 	cacheMu                     sync.Mutex                   // 缓存访问互斥锁。

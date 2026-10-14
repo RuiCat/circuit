@@ -237,15 +237,22 @@ func (h *Handler) handleSetTrigger(args map[string]any) (any, error) {
 
 // handleSetEngineConfig circuit_set_engine_config：设置引擎仿真配置（EngineCfg）。
 // 参数: sessionId(必填), 各配置项可选:
-//   sparseLU?(bool)    强制稀疏 LU（CIRCUIT_LUSPARSE）
-//   forceDense?(bool)  强制稠密 LU（CIRCUIT_LUSDENSE，覆盖自动选择；与 sparseLU 互斥）
-//   gminCont?(bool)    Gmin 延续步进（CIRCUIT_GMCONT，解决大数字电路 t=0 奇异）
-//   naturalGmin?(float64) 自然 gmin（CIRCUIT_NATGMIN）
-//   gminFinal?(float64)   延续终值（CIRCUIT_GMINFINAL，<=0 用默认）
-//   globalGmin?(float64)  全局对角 gmin（CIRCUIT_GLOBALGMIN，0=关闭）
-//   gminDbg?(bool)     打印 gmin 步进轨迹（CIRCUIT_GMIN_DBG）
-//   noEq?(bool)        跳过行/列均衡化（CIRCUIT_NOEQ）
-// 生效时机：下次仿真任务启动时读取（TransientSimulation 每次调用时从 con.EngineCfg 读取）。
+//
+//	sparseLU?(bool)    强制稀疏 LU（CIRCUIT_LUSPARSE）
+//	forceDense?(bool)  强制稠密 LU（CIRCUIT_LUSDENSE，覆盖自动选择；与 sparseLU 互斥）
+//
+// 注意：sparseLU / forceDense 属**载入期绑定**（契约 K3），运行期改写会改变已绑定的
+// 矩阵存储/求解后端时**返回错误**（文案含"载入期绑定"），不静默成功、不部分生效；
+//
+//	gminCont?(bool)    Gmin 延续步进（CIRCUIT_GMCONT，解决大数字电路 t=0 奇异）
+//	naturalGmin?(float64) 自然 gmin（CIRCUIT_NATGMIN）
+//	gminFinal?(float64)   延续终值（CIRCUIT_GMINFINAL，<=0 用默认）
+//	globalGmin?(float64)  全局对角 gmin（CIRCUIT_GLOBALGMIN，0=关闭）
+//	gminDbg?(bool)     打印 gmin 步进轨迹（CIRCUIT_GMIN_DBG）
+//	noEq?(bool)        跳过行/列均衡化（CIRCUIT_NOEQ）
+//
+// 生效时机：策略开关与数值在下次仿真任务启动时读取（TransientSimulation 每次调用时从
+// con.EngineCfg 读取）；后端开关只在载入期生效。
 // 与 circuit_set_sim_params（步长/容差等数值仿真参数）互补。
 func (h *Handler) handleSetEngineConfig(args map[string]any) (any, error) {
 	sess, err := h.ensureSession(args)
@@ -260,15 +267,30 @@ func (h *Handler) handleSetEngineConfig(args map[string]any) (any, error) {
 	if sess.Con == nil {
 		return nil, fmt.Errorf("会话 %s 尚未加载网表", sess.ID)
 	}
+	// 后端开关（载入期绑定）先试写再校验：校验失败即整体报错且不动 Context。
+	reqSparseLU, hasSparseLU := argBool(args, "sparseLU")
+	reqForceDense, hasForceDense := argBool(args, "forceDense")
+	if hasSparseLU || hasForceDense {
+		backend := etime.BackendBindingOf(sess.Con)
+		if hasSparseLU {
+			backend.SparseLU = reqSparseLU
+		}
+		if hasForceDense {
+			backend.ForceDense = reqForceDense
+		}
+		if err := backend.Validate(); err != nil {
+			return nil, err
+		}
+	}
 	cfg := sess.Con.EngineCfg
 	old := cfg
 	set := map[string]bool{}
-	if v, ok := argBool(args, "sparseLU"); ok {
-		cfg.SparseLU = v
+	if hasSparseLU {
+		cfg.SparseLU = reqSparseLU
 		set["sparseLU"] = true
 	}
-	if v, ok := argBool(args, "forceDense"); ok {
-		cfg.ForceDense = v
+	if hasForceDense {
+		cfg.ForceDense = reqForceDense
 		set["forceDense"] = true
 	}
 	if v, ok := argBool(args, "gminCont"); ok {

@@ -305,12 +305,17 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 	// 不再直接 os.Getenv。
 	con.EngineCfg = loadEngineConfig()
 
+	// 后端绑定：矩阵存储与 LU 求解后端在载入期一次性绑定（契约 K3，不可变；
+	// 运行期改写由 element.BackendBinding.Validate 报错，文案含"载入期绑定"）。
+	// 下面对存储的选择直接取绑定记录，保证"绑定"与"实际存储"同一判据。
+	con.Backend.Bind(con.EngineCfg.SparseLU, con.EngineCfg.ForceDense)
+
 	mnaUpdate := mna.NewMnaUpdate(nodesNum, voltageSourcesNum)
 	// 稀疏存储：显式 CIRCUIT_LUSPARSE=1 强制；自动模式（未设 CIRCUIT_LUSDENSE
 	// 强制稠密）默认用稀疏存储——稀疏 LU 分解器需要稀疏存储才完整生效
 	// （自动选择见 element/time/simulation.go chooseLUSolver，按矩阵密度）。
 	// 稀疏存储对稠密小电路仅 GetRow/Get 微开销，数值等价。
-	if con.EngineCfg.SparseLU || !con.EngineCfg.ForceDense {
+	if con.Backend.BoundSparse {
 		mnaUpdate = mna.NewMnaUpdateSparse(nodesNum, voltageSourcesNum)
 	}
 	if mnaUpdateType, ok := mnaUpdate.(*mna.MnaUpdateType[float64]); ok {

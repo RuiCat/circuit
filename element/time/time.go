@@ -39,19 +39,6 @@ const (
 	defaultMaxElem = 20   // 默认单个元件最大收敛迭代次数
 )
 
-// Gmin 延续（Gmin stepping）参数：标准 SPICE 延续法。
-// 从大 Gmin 开始，把双稳态电路（锁存器/触发器/RAM 单元）阻尼成单稳态，
-// 随牛顿收敛逐级下调至自然 gmin，解决交叉耦合锁存器在 t=0 直流求解时的对称振荡不收敛。
-const (
-	gminStepStart = 1e-3  // 起始（最大）延续 Gmin (S)：每结并联 ~1kΩ，把双稳态阻尼成单稳态
-	gminStepFinal = 1e-12 // 终值：RTL 数字电路在 1e-5（100kΩ 对地泄漏）下残差判据即可通过，
-	// 且泄漏对 5V 摆幅/0.7V 阈值的工作点影响 <5%；更小的终值会让弱连接节点
-	// （如只接截止晶体管基极的控制线）进入耗尽-恢复-步长重置死循环
-	gminStepScale  = 0.1  // 每级衰减比例（收敛后 ×0.1）
-	gminMaxRecover = 9    // 单步再阻尼恢复次数上限（1e-3→1e-12 共 9 级）
-	gminFinalEps   = 1e-6 // 终值判定相对容差：吸收 1e-11*0.1 等浮点误差，避免多出一级无效步进
-)
-
 // 3阶Adams方法系数常量
 const (
 	// Adams-Bashford预测器系数 (3阶)
@@ -113,16 +100,26 @@ type TimeMNA struct {
 	residualHist [3]float64 // 残差历史（用于趋势分析）
 
 	// 非线性迭代控制
-	continuationGmin float64 // Gmin 延续值（t=0 阻尼用；0 = 关闭）
-	gminFinal        float64 // 延续终值（默认 gminStepFinal；CIRCUIT_GMINFINAL 可覆盖，用于病态电路提前终止）
-	gminRecoveries   int     // 当前步 Gmin 再阻尼恢复次数（防止病态电路在阻尼循环中空转）
-	gminPrevRecover  float64 // 上次 RecoverGmin 恢复到的档位（震荡检测用）
-	gminStuck        bool    // Gmin 在相邻两档间来回震荡（RecoverGmin↔StepGminDown）：接受当前阻尼解，不再下调
-	gminStepDone     bool    // 本步 Gmin 延续是否已完成（延续值已降到终值）：完成后恢复时间步级残差检查
-	maxNonlinIter    int     // 全局最大非线性迭代次数
-	currNonlinIter   int     // 当前非线性迭代计数
-	maxElemIter      int     // 单个元件最大收敛迭代次数
-	currElemIter     int     // 当前元件收敛迭代计数
+	continuationGmin float64      // Gmin 延续值（t=0 阻尼用；0 = 关闭）
+	gminFinal        float64      // 延续终值（默认 gminStepFinal；CIRCUIT_GMINFINAL 可覆盖，用于病态电路提前终止）
+	gminRecoveries   int          // 当前步 Gmin 再阻尼恢复次数（防止病态电路在阻尼循环中空转）
+	gminPrevRecover  float64      // 上次 RecoverGmin 恢复到的档位（震荡检测用）
+	gminStuck        bool         // Gmin 在相邻两档间来回震荡（RecoverGmin↔StepGminDown）：接受当前阻尼解，不再下调
+	gminStepDone     bool         // 本步 Gmin 延续是否已完成（延续值已降到终值）：完成后恢复时间步级残差检查
+	maxNonlinIter    int          // 全局最大非线性迭代次数
+	currNonlinIter   int          // 当前非线性迭代计数
+	maxElemIter      int          // 单个元件最大收敛迭代次数
+	currElemIter     int          // 当前元件收敛迭代计数
+	totalNewtonIters atomic.Int64 // 本次仿真的牛顿迭代总数（跨时间步/重试累加，启动时重置）
+
+	// 策略状态（契约 K3/K4，由 strategy.go 的 ApplyStrategy 每次仿真启动无条件同步）
+	strategy      StrategyBinding     // 最近一次 ApplyStrategy 写入的策略绑定
+	gminCont      bool                // Gmin 延续开关（CIRCUIT_GMCONT）
+	naturalGmin   float64             // 自然 gmin（CIRCUIT_NATGMIN，对角叠加）
+	globalGmin    float64             // 全局对角 gmin（CIRCUIT_GLOBALGMIN，0=关闭）
+	gminDbg       bool                // 打印 gmin 步进轨迹（CIRCUIT_GMIN_DBG）
+	noEq          bool                // 跳过行/列均衡化（CIRCUIT_NOEQ）
+	boundedEvents BoundedNewtonEvents // 有界牛顿事件计数（K4，启动时重置）
 
 	// 局部截断误差（LTE）相关
 	localTruncError float64 // 局部截断误差估计
@@ -181,17 +178,10 @@ func NewTimeMNA(targetTime float64) (*TimeMNA, error) {
 		absTol:            defaultAbsTol,
 		relTol:            defaultRelTol,
 		safety:            defaultSafety,
-		historyInited:     false,
-		residualNorm:      0.0,
-		solutionNorm:      0.0,
 		residualTol:       0.0,
 		residualHist:      [3]float64{0, 0, 0},
 		maxNonlinIter:     defaultMaxNonl,
-		currNonlinIter:    0,
 		maxElemIter:       defaultMaxElem,
-		currElemIter:      0,
-		localTruncError:   0.0,
-		triggers:          nil,
 	}
 	tm.currentTime.Store(0.0)
 	tm.targetTime.Store(targetTime)
@@ -215,103 +205,6 @@ func (t *TimeMNA) SetTolerances(absTol, relTol float64) error {
 // ------------------------------
 // TransientSimulation 支持方法
 // ------------------------------
-
-// GetContinuationGmin 返回当前 Gmin 延续值。
-func (t *TimeMNA) GetContinuationGmin() float64 {
-	return t.continuationGmin
-}
-
-// SetContinuationGmin 设置 Gmin 延续值。
-func (t *TimeMNA) SetContinuationGmin(v float64) {
-	t.continuationGmin = v
-}
-
-// SetGminFinal 设置 Gmin 延续终值（CIRCUIT_GMINFINAL 覆盖用；<=0 恢复默认）。
-func (t *TimeMNA) SetGminFinal(v float64) {
-	if v <= 0 {
-		v = gminStepFinal
-	}
-	t.gminFinal = v
-}
-
-// BeginGminStepping 启动 Gmin 延续：延续值设为起始大值，并复位恢复计数、震荡标记
-// 与本步完成标志。由仿真循环在每个时间步开始（开启延续）时调用：
-// 每步从大 Gmin 重新步进（锁存器等双稳态在每步的直流求解都需要阻尼收敛）。
-func (t *TimeMNA) BeginGminStepping() {
-	t.continuationGmin = gminStepStart
-	t.gminRecoveries = 0
-	t.gminPrevRecover = 0
-	t.gminStuck = false
-	t.gminStepDone = false
-}
-
-// EndGminStepping 结束 Gmin 延续：恢复自然 gmin（0 = 关闭延续）。
-// 由外部（如连续仿真结束）显式调用；仿真循环内不调用——
-// 每步由 BeginGminStepping 重新启动步进，StepGminDown 降到终值后
-// gminStepDone 置位（延续值保留在终值，供 PN 结元件读取），
-// GminSteppingActive 返回 false，恢复时间步级残差检查。
-func (t *TimeMNA) EndGminStepping() {
-	t.continuationGmin = 0
-	t.gminStepDone = true
-}
-
-// GminSteppingActive 返回延续是否处于"步进中"（>0 且未到终值）。
-// 注意：延续值已降到终值（gminStepDone）后返回 false——此时本步解已是
-// 真实工作点，时间步级残差检查应恢复生效（见 simulation.go 残差判据）。
-func (t *TimeMNA) GminSteppingActive() bool {
-	return t.continuationGmin > 0 && !t.gminStepDone
-}
-
-// StepGminDown 把延续 Gmin 下调一档（×gminStepScale），到达终值后钳位到终值
-// 并置 gminStepDone（延续完成）。
-// 返回是否仍需继续步进（true = 尚未到达终值，需以更小 gmin 重新迭代）。
-// 若已检测到 Gmin 震荡（临界档位无法继续下调），返回 false 接受当前阻尼解。
-func (t *TimeMNA) StepGminDown() bool {
-	if t.gminStuck {
-		return false
-	}
-	final := t.gminFinal
-	if final <= 0 {
-		final = gminStepFinal
-	}
-	if t.continuationGmin <= final {
-		t.continuationGmin = final
-		t.gminStepDone = true
-		return false
-	}
-	next := t.continuationGmin * gminStepScale
-	// 浮点误差下 next 可能略高于终值（如 1e-11*0.1 = 1.0000000000000001e-12），
-	// 用相对容差判定「到达终值」，避免多出一级无效步进。
-	if next <= final*(1+gminFinalEps) {
-		t.continuationGmin = final
-		t.gminStepDone = true
-		return false
-	}
-	t.continuationGmin = next
-	return true
-}
-
-// RecoverGmin 牛顿未收敛（元件子迭代耗尽）时增大阻尼一档（回退上一级），
-// 返回是否还有恢复额度（false = 已在起始阻尼或恢复次数超限）。
-// 若恢复回「上次恢复过的档位」（即 Gmin 在相邻两档间来回），标记震荡：
-// 后续 StepGminDown 将返回 false，接受当前阻尼解，避免无限恢复-下调循环。
-func (t *TimeMNA) RecoverGmin() bool {
-	if t.continuationGmin >= gminStepStart || t.gminRecoveries >= gminMaxRecover {
-		return false
-	}
-	t.gminRecoveries++
-	next := t.continuationGmin / gminStepScale
-	// 与 StepGminDown 对称：浮点误差下 next 可能略低于起始值，钳位到起始值。
-	if next >= gminStepStart*(1-gminFinalEps) {
-		next = gminStepStart
-	}
-	if t.gminPrevRecover > 0 && next <= t.gminPrevRecover*(1+gminFinalEps) {
-		t.gminStuck = true
-	}
-	t.gminPrevRecover = next
-	t.continuationGmin = math.Min(gminStepStart, next)
-	return true
-}
 
 // MaxNonlinearIter 返回最大非线性迭代次数
 func (t *TimeMNA) MaxNonlinearIter() int {
@@ -989,6 +882,15 @@ func (t *TimeMNA) NextNonlinearIter() bool {
 // ResetElemIter 重置单个元件的收敛迭代计数
 func (t *TimeMNA) ResetElemIter() {
 	t.currElemIter = 0
+}
+
+// CurrentElemIter 实现 mna.Time.CurrentElemIter：返回当前时间步内的元件次级迭代计数。
+//
+// 语义与策略出口 CurrentStepElemIterations 一致（同一字段 currElemIter）；
+// 之所以在 mna.Time 接口上另立此名，是因为 mna 包不能反向依赖 element/time
+// （会成环），而器件层需要经接口读取该计数（缺陷 D18 的修正出口）。
+func (t *TimeMNA) CurrentElemIter() int {
+	return t.CurrentStepElemIterations()
 }
 
 // NextElemIter 推进单个元件迭代计数，返回是否未超限。

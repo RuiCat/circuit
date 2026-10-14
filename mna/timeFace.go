@@ -46,6 +46,15 @@ type Time interface {
 	IsResidualConverged() bool
 	// IsElemIterExhausted 检查元件迭代是否耗尽
 	IsElemIterExhausted() bool
+	// CurrentElemIter 返回**当前时间步**内的元件次级迭代计数（不是累计时间步数）。
+	//
+	// 器件侧（如 element/semiconductor 的 PN 结模型）用它判断"本次迭代是否困难到
+	// 需要并联加性 gmin"；历史缺陷 D18 曾误用 GoodIterations()（累计成功步数、
+	// 仿真内从不重置），使长仿真下该判断恒成立、加性 gmin 恒被钳到上界。
+	//
+	// 归零时刻：每轮牛顿外循环开始时归零，读到的是最近一次外循环的迭代数。
+	// 之所以在 mna 接口上另立此名，是因为 mna 不能反向依赖 element/time（会成环）。
+	CurrentElemIter() int
 	// SetTime 设置当前仿真时间
 	SetTime(time float64)
 	// SetTimeStep 设置当前步长
