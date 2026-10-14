@@ -37,8 +37,15 @@ BASELINE_DIR="${BENCH_BASELINE_DIR:-$RUNS_DIR/baselines}"
 HISTORY_DIR="$BASELINE_DIR/history"
 THRESHOLDS="${BENCH_THRESHOLDS_FILE:-$BASELINE_DIR/thresholds.md}"
 THRESHOLDS_PY="$SCRIPT_DIR/benchThresholds.py"
-CORPUS="$BASELINE_DIR/corpus.txt"
-CORPUS_EXCLUDED="$BASELINE_DIR/corpus-excluded.txt"
+# 语料清单（C15）：输入随仓库走，标定产物留在本机 runs/。
+# 解析顺序：环境变量覆盖 → runs/ 工作副本（若存在）→ 仓库内 scripts/（全新克隆的默认）。
+_resolve_input() { # $1=env 值 $2=runs 副本 $3=仓库副本
+  if [ -n "$1" ]; then printf '%s' "$1"; return; fi
+  if [ -f "$2" ]; then printf '%s' "$2"; return; fi
+  printf '%s' "$3"
+}
+CORPUS="$(_resolve_input "${BENCH_CORPUS:-}" "$BASELINE_DIR/corpus.txt" "$SCRIPT_DIR/corpus.txt")"
+CORPUS_EXCLUDED="$(_resolve_input "${BENCH_CORPUS_EXCLUDED:-}" "$BASELINE_DIR/corpus-excluded.txt" "$SCRIPT_DIR/corpus-excluded.txt")"
 RESULTS_ROOT="$RUNS_DIR/_results"
 CLI_BIN="${BENCH_CLI:-$ROOT/.cache/m1-cli}"
 THRESHOLD_LIMIT=1.15
@@ -458,6 +465,15 @@ for g in "${groupsToRun[@]}"; do
 done
 if [ "$WRITE_BASELINE" -eq 1 ] && [ -n "$CALIB_CHANGES" ]; then
     # 基线是权威数值 → 同步 thresholds.md 数值区；并把「旧值→新值」追加进变更记录（C10）。
+    # 首次标定（全新克隆 / runs/ 被清理）时文档不存在：先从内置模板生成骨架，再走同步。
+    BOOTSTRAP_PY="$SCRIPT_DIR/benchThresholdsBootstrap.py"
+    if [ ! -f "$THRESHOLDS" ] && [ -f "$BOOTSTRAP_PY" ]; then
+        if python3 "$BOOTSTRAP_PY" "$THRESHOLDS" >/dev/null 2>&1; then
+            echo "[benchCompare] 已生成阈值文档骨架: $THRESHOLDS"
+        else
+            echo "[benchCompare] 警告: 阈值文档骨架生成失败（--selfcheck 会报缺失）" >&2
+        fi
+    fi
     if [ -f "$THRESHOLDS_PY" ] && [ -f "$THRESHOLDS" ]; then
         if ! python3 "$THRESHOLDS_PY" sync --baselines "$BASELINE_DIR" --thresholds "$THRESHOLDS"; then
             echo "[benchCompare] 警告: thresholds.md 数值区同步失败（--selfcheck 会报不一致）" >&2

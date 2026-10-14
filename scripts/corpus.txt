@@ -1,0 +1,64 @@
+# corpus.txt —— K1 的显式语料清单（每行 <网表路径>\t<逐字运行参数>）
+# 判据（K1/C15）：`timeout 60 .cache/m1-cli -quiet <参数> <路径>` 退出码 0。
+# 参数说明：-t 1e-4 为固定目标时间（其它参数取 CLI 默认：-step 1e-6 -min-step 1e-9
+#   -max-step 5e-4 -abs-tol 1e-6 -rel-tol 1e-4 -max-iter 200 -max-steps 10000，串行）。
+# 同一份清单同时被 scripts/regressSnapshot.sh 与 scripts/benchCompare.sh --selfcheck 消费。
+# 实测：2026-10-12，go1.27.2，nproc=16，54 条全部 rc=0 且都能产出 K2 可规范化的节点电压 CSV。
+# 注：52_cpu8_module.net 与 54_cpu8_loadable.net 在 -t 0.1（CLI 默认）下 >120s，但在 -t 1e-4 下分别为
+#   0.86s / 2.86s，按 K1 判据（小目标时间）判为**可用**，故列入本清单而非排除清单。
+# 非时域用例：29_powerflow_3bus.net 走 CLI 的潮流路径，输出 B/BR 表（含 slack/pv/pq 文本），
+#   不产出节点电压 CSV（rc 仍为 0，但 K2 的 %.17g 规范化口径不适用）→ 已移入 corpus-excluded.txt（判据 k2-shape）。
+cmd/circuits/01_resistor_divider.net	-t 1e-4
+cmd/circuits/02_rc_filter.net	-t 1e-4
+cmd/circuits/03_diode_rectifier.net	-t 1e-4
+cmd/circuits/04_transistor_switch.net	-t 1e-4
+cmd/circuits/05_opamp_amplifier.net	-t 1e-4
+cmd/circuits/06_voltage_sources.net	-t 1e-4
+cmd/circuits/07_rlc_circuit.net	-t 1e-4
+cmd/circuits/08_subcircuit.net	-t 1e-4
+cmd/circuits/09_half_adder.net	-t 1e-4
+cmd/circuits/10_latch_self_hold.net	-t 1e-4
+cmd/circuits/11_mixed_domain.net	-t 1e-4
+cmd/circuits/12_current_source.net	-t 1e-4
+cmd/circuits/13_controlled_sources.net	-t 1e-4
+cmd/circuits/14_zener_regulator.net	-t 1e-4
+cmd/circuits/15_mosfet_switch.net	-t 1e-4
+cmd/circuits/16_led_driver.net	-t 1e-4
+cmd/circuits/17_logic_gates.net	-t 1e-4
+cmd/circuits/18_d_flipflop.net	-t 1e-4
+cmd/circuits/19_comparator_schmitt.net	-t 1e-4
+cmd/circuits/20_switches.net	-t 1e-4
+cmd/circuits/21_dc_motor.net	-t 1e-4
+cmd/circuits/22_transformer.net	-t 1e-4
+cmd/circuits/23_pneumatic_full.net	-t 1e-4
+cmd/circuits/24_hydraulic_circuit.net	-t 1e-4
+cmd/circuits/25_current_sensor.net	-t 1e-4
+cmd/circuits/26_eh_converter.net	-t 1e-4
+cmd/circuits/27_ac_filter.net	-t 1e-4
+cmd/circuits/28_small_signal.net	-t 1e-4
+cmd/circuits/30_logic_gates_interactive.net	-t 1e-4
+cmd/circuits/31_full_adder_interactive.net	-t 1e-4
+cmd/circuits/32_flipflops_interactive.net	-t 1e-4
+cmd/circuits/33_counter3_interactive.net	-t 1e-4
+cmd/circuits/33_jk_flipflop_test.net	-t 1e-4
+cmd/circuits/34_dlt_latch_logic.net	-t 1e-4
+cmd/circuits/35_msff_logic.net	-t 1e-4
+cmd/circuits/36_sram6t_logic.net	-t 1e-4
+cmd/circuits/37_mux2_logic.net	-t 1e-4
+cmd/circuits/38_decoder3to8_logic.net	-t 1e-4
+cmd/circuits/39_alu_adder4bit_logic.net	-t 1e-4
+cmd/circuits/40_diode_rom_logic.net	-t 1e-4
+cmd/circuits/41_ram16x8.net	-t 1e-4
+cmd/circuits/42_sram8_module.net	-t 1e-4
+cmd/circuits/44_decoder4to16_bus.net	-t 1e-4
+cmd/circuits/45_bus_switch8.net	-t 1e-4
+cmd/circuits/46_sram8_latch.net	-t 1e-4
+cmd/circuits/47_ram16x8_module.net	-t 1e-4
+cmd/circuits/48_adder8_logic.net	-t 1e-4
+cmd/circuits/49_counter8_adder_reg.net	-t 1e-4
+cmd/circuits/50_pc_module.net	-t 1e-4
+cmd/circuits/51_rom16x8_logic.net	-t 1e-4
+cmd/circuits/52_cpu8_module.net	-t 1e-4
+cmd/circuits/53_alu8_full.net	-t 1e-4
+cmd/circuits/54_cpu8_loadable.net	-t 1e-4
+cmd/circuits/55_cpu8_regfile.net	-t 1e-4

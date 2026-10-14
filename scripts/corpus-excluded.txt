@@ -1,0 +1,12 @@
+# corpus-excluded.txt —— K1 的不可用语料清单（每行 <网表路径>\t<判据>=<值>\t<原因与复现命令>）
+#
+# 判据（K1/C15 的可用性判据 + K2 的快照产出判据）：
+#   rc=<n>    可用性判据 `timeout 60 .cache/m1-cli -quiet <参数> <路径>` 实测退出码 n（非 0）；
+#   k2-shape  可用性判据 rc=0，但输出不是节点电压 CSV（K2 的 %.17g 规范化口径不适用）。
+# --selfcheck 会逐条复跑核验：rc 条目要求实测 rc 与登记一致；k2-shape 条目要求实测 rc=0 且 CSV 规范化确实失败。
+#
+# 与红队记录的关系：红队报的 52_cpu8_module/54_cpu8_loadable 超时（rc=124）发生在 -t 0.1；
+# 按 K1 的「-t <小目标时间>」判据实测两者可用（rc=0），已入 corpus.txt，故本清单不含这两条。
+cmd/circuits/41_sram16x8.net	rc=3	`timeout 60 .cache/m1-cli -quiet -t 1e-4 cmd/circuits/41_sram16x8.net` → 错误: 网表加载失败: 第 3 行: 元件 ID 必须是数字
+cmd/circuits/54b_cpu8_preloaded.net	rc=4	`timeout 60 .cache/m1-cli -quiet -t 1e-4 cmd/circuits/54b_cpu8_preloaded.net` → 错误: 仿真失败: 矩阵分解失败且步长已最小（时间=0.000000e+00）: lu sparse decompose: matrix is singular or nearly singular (k=1, maxAbs=0)
+cmd/circuits/29_powerflow_3bus.net	k2-shape	`timeout 60 .cache/m1-cli -quiet -t 1e-4 cmd/circuits/29_powerflow_3bus.net` rc=0，但输出是 B/BR 潮流表（首行 `# bus_voltage: id,type,mag,phase_deg`，含 slack/pv/pq 文本），不产出节点电压 CSV，K2 的 %.17g 规范化口径不适用（第 2 行单元格 'slack' 非数值）
