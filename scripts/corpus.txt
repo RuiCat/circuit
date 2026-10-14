@@ -3,7 +3,8 @@
 # 参数说明：-t 1e-4 为固定目标时间（其它参数取 CLI 默认：-step 1e-6 -min-step 1e-9
 #   -max-step 5e-4 -abs-tol 1e-6 -rel-tol 1e-4 -max-iter 200 -max-steps 10000，串行）。
 # 同一份清单同时被 scripts/regressSnapshot.sh 与 scripts/benchCompare.sh --selfcheck 消费。
-# 实测：2026-10-12，go1.27.2，nproc=16，54 条全部 rc=0 且都能产出 K2 可规范化的节点电压 CSV。
+# 实测：2026-10-12，go1.27.2，nproc=16，54 条全部 rc=0 且都能产出 K2 可规范化的节点电压 CSV；
+#   2026-10-14 增补 60–67 生产级模块 8 条（输入保护/LDO/POR/π 型 LC 滤波/低边开关/恒流 LED/桥式前端/4–20mA 接收），共 62 条。
 # 注：52_cpu8_module.net 与 54_cpu8_loadable.net 在 -t 0.1（CLI 默认）下 >120s，但在 -t 1e-4 下分别为
 #   0.86s / 2.86s，按 K1 判据（小目标时间）判为**可用**，故列入本清单而非排除清单。
 # 非时域用例：29_powerflow_3bus.net 走 CLI 的潮流路径，输出 B/BR 表（含 slack/pv/pq 文本），
@@ -62,3 +63,11 @@ cmd/circuits/52_cpu8_module.net	-t 1e-4
 cmd/circuits/53_alu8_full.net	-t 1e-4
 cmd/circuits/54_cpu8_loadable.net	-t 1e-4
 cmd/circuits/55_cpu8_regfile.net	-t 1e-4
+cmd/circuits/60_input_protection.net	-t 1e-4
+cmd/circuits/61_ldo_3v3.net	-t 1e-4
+cmd/circuits/62_power_on_reset.net	-t 1e-4
+cmd/circuits/63_lc_emi_filter.net	-t 1e-4
+cmd/circuits/64_low_side_switch.net	-t 1e-4
+cmd/circuits/65_led_constant_current.net	-t 1e-4
+cmd/circuits/66_bridge_amp.net	-t 1e-4
+cmd/circuits/67_current_loop_rx.net	-t 1e-4
