@@ -154,7 +154,7 @@ type updateVector[T Number] struct {
 	Vector[T]              // 嵌入稠密向量（底层存储）
 	bitmap    utils.Bitmap // 位图：标记哪些位置被缓存修改（1=缓存有效）
 	cache     []T          // 缓存：存储修改后的值（与底层向量同长度）
-	blockSize int          // 缓存块大小（固定16，对齐CPU缓存）
+	length    int          // 向量长度：构造后不变（Vector 接口无 Resize），缓存它可省掉每次操作的长度接口调用
 }
 
 // NewUpdateVector 从基础向量创建更新向量（复制基础向量数据）
@@ -164,10 +164,10 @@ func NewUpdateVector[T Number](base Vector[T]) UpdateVector[T] {
 	dv := NewDenseVector[T](length)
 	base.Copy(dv)
 	return &updateVector[T]{
-		Vector:    dv,
-		bitmap:    utils.NewBitmap(length), // 位图长度=向量长度
-		cache:     make([]T, length),
-		blockSize: 16,
+		Vector: dv,
+		bitmap: utils.NewBitmap(length), // 位图长度=向量长度
+		cache:  make([]T, length),
+		length: length,
 	}
 }
 
@@ -176,41 +176,34 @@ func NewUpdateVector[T Number](base Vector[T]) UpdateVector[T] {
 func NewUpdateVectorPtr[T Number](ptr Vector[T]) UpdateVector[T] {
 	length := ptr.Length()
 	return &updateVector[T]{
-		Vector:    ptr,
-		bitmap:    utils.NewBitmap(length), // 位图长度=向量长度
-		cache:     make([]T, length),
-		blockSize: 16,
+		Vector: ptr,
+		bitmap: utils.NewBitmap(length), // 位图长度=向量长度
+		cache:  make([]T, length),
+		length: length,
 	}
 }
 
-// getBlockIndexAndPosition 将一维向量索引转换为缓存块索引和块内偏移量。
-// 这种分块策略旨在提高CPU缓存的命中率。
-func (uv *updateVector[T]) getBlockIndexAndPosition(index int) (int, int) {
-	return index / uv.blockSize, index % uv.blockSize
-}
-
-// isBitSet 检查位图中指定索引是否被标记（缓存是否有效）
+// isBitSet 检查位图中指定索引是否被标记（缓存是否有效）。
+// 位图下标即向量下标：分块写法 (index/blockSize)*blockSize + index%blockSize 恒等于 index，
+// 故直接按下标读写位图，省掉每次操作的两次整数除法。
 func (uv *updateVector[T]) isBitSet(index int) bool {
-	blockIdx, pos := uv.getBlockIndexAndPosition(index)
-	return uv.bitmap.Get(utils.BitmapFlag(blockIdx*uv.blockSize + pos))
+	return uv.bitmap.Get(utils.BitmapFlag(index))
 }
 
 // setBit 标记位图中指定索引（缓存有效）
 func (uv *updateVector[T]) setBit(index int) {
-	blockIdx, pos := uv.getBlockIndexAndPosition(index)
-	uv.bitmap.Set(utils.BitmapFlag(blockIdx*uv.blockSize+pos), true)
+	uv.bitmap.Set(utils.BitmapFlag(index), true)
 }
 
 // clearBit 清除位图中指定索引（缓存无效）
 func (uv *updateVector[T]) clearBit(index int) {
-	blockIdx, pos := uv.getBlockIndexAndPosition(index)
-	uv.bitmap.Set(utils.BitmapFlag(blockIdx*uv.blockSize+pos), false)
+	uv.bitmap.Set(utils.BitmapFlag(index), false)
 }
 
 // Get 获取元素值（优先读缓存，缓存无效则读底层）
 func (uv *updateVector[T]) Get(index int) T {
-	if index < 0 || index >= uv.Length() {
-		panic(fmt.Sprintf("index out of range: %d (length: %d)", index, uv.Length()))
+	if uint(index) >= uint(uv.length) {
+		panic(fmt.Sprintf("index out of range: %d (length: %d)", index, uv.length))
 	}
 	if uv.isBitSet(index) {
 		return uv.cache[index] // 缓存有效：返回缓存值
@@ -220,8 +213,8 @@ func (uv *updateVector[T]) Get(index int) T {
 
 // Set 设置元素值（写缓存+标记位图）
 func (uv *updateVector[T]) Set(index int, value T) {
-	if index < 0 || index >= uv.Length() {
-		panic(fmt.Sprintf("index out of range: %d (length: %d)", index, uv.Length()))
+	if uint(index) >= uint(uv.length) {
+		panic(fmt.Sprintf("index out of range: %d (length: %d)", index, uv.length))
 	}
 	uv.cache[index] = value // 写入缓存
 	uv.setBit(index)        // 标记位图
@@ -229,8 +222,8 @@ func (uv *updateVector[T]) Set(index int, value T) {
 
 // Increment 增量更新元素（缓存有效则累加，否则读底层后累加）
 func (uv *updateVector[T]) Increment(index int, value T) {
-	if index < 0 || index >= uv.Length() {
-		panic(fmt.Sprintf("index out of range: %d (length: %d)", index, uv.Length()))
+	if uint(index) >= uint(uv.length) {
+		panic(fmt.Sprintf("index out of range: %d (length: %d)", index, uv.length))
 	}
 	if uv.isBitSet(index) {
 		uv.cache[index] += value // 缓存有效：直接累加
@@ -244,7 +237,7 @@ func (uv *updateVector[T]) Increment(index int, value T) {
 // Update 将缓存中的所有修改应用到底层的向量中。
 // 遍历位图，只处理被标记为已修改的元素。
 func (uv *updateVector[T]) Update() {
-	for i := 0; i < uv.Length(); i++ {
+	for i := 0; i < uv.length; i++ {
 		if uv.isBitSet(i) {
 			uv.Vector.Set(i, uv.cache[i]) // 缓存值刷到底层
 			uv.clearBit(i)                // 清除位图标记
@@ -255,10 +248,9 @@ func (uv *updateVector[T]) Update() {
 // Rollback 丢弃所有在缓存中的修改，恢复到底层向量的状态。
 // 它通过清除位图和缓存来实现，避免了昂贵的数据恢复操作。
 func (uv *updateVector[T]) Rollback() {
-	// 清空位图（所有标记置0）
-	for i := 0; i < uv.Length(); i++ {
-		uv.clearBit(i)
-	}
+	// 整体清零位图（O(字数)），而非逐位 Set(false)（O(元素数)）；位图长度=向量长度，
+	// 越界位从不被读写，故 ClearAll 与逐位 clearBit(0..length-1) 的可观察状态等价。
+	uv.bitmap.ClearAll()
 	// 清空缓存（置0，避免脏数据）
 	clear(uv.cache)
 }

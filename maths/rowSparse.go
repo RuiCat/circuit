@@ -2,6 +2,7 @@ package maths
 
 import (
 	"fmt"
+	"sort"
 )
 
 // rowSparseMatrix 行切片稀疏矩阵：每行一个独立的 (列索引, 值) 切片，无序存储。
@@ -281,6 +282,78 @@ func (m *rowSparseMatrix[T]) BuildFromDense(dense [][]T) {
 			}
 		}
 	}
+}
+
+// luSkeleton 是稀疏 LU 的符号骨架：一次分解成功后把「U 的槽位结构 + 消元计划」固化下来，
+// 使后续同结构分解的数值阶段只写值、不重建行列结构（结构变化时整体作废，见 lu.go 的复用判据）。
+//
+// 索引口径：行身份 = 初始（perm 后）行位置，不随行交换改变；槽位数组按身份索引，永久稳定，
+// 因此数值阶段不需要 SwapRows，也不会出现「保留零槽位导致行膨胀」——槽位数由符号阶段一次定死。
+type luSkeleton[T Number] struct {
+	n          int
+	rowCols    [][]int // 行身份 → 升序列槽位（符号上界：该行在本次消元计划中可能非零的列）
+	rowVals    [][]T   // 与 rowCols 对齐的值槽位（数值阶段只写这里）
+	searchRows [][]int // 第 k 步主元搜索候选（交换前位置 > k，按位置升序）
+	stepRows   [][]int // 第 k 步消元候选（交换后位置 > k，按位置升序）
+	stepStart  [][]int // 与 stepRows 对齐：该行槽位中第一个列号 > k 的下标
+	stepSlots  [][]int // 与 stepRows 对齐：列 k 在该行槽位中的下标
+	pivotID    []int   // 第 k 步主元行身份（行交换后位于位置 k 的行）
+	pivotFrom  []int   // 主元行槽位中第一个列号 > k 的下标
+	pivotSlot  []int   // 主元行中「列 k」的槽位下标；-1 表示结构性缺位（按 0 处理）
+	pivotStep  []int   // 行身份 → 它成为主元行的步号（即它最终落在的位置）
+}
+
+// newLuSkeleton 分配 n×n 的骨架容器；槽位内容由符号阶段填充。
+func newLuSkeleton[T Number](n int) *luSkeleton[T] {
+	return &luSkeleton[T]{
+		n:          n,
+		rowCols:    make([][]int, n),
+		rowVals:    make([][]T, n),
+		searchRows: make([][]int, n),
+		stepRows:   make([][]int, n),
+		stepStart:  make([][]int, n),
+		stepSlots:  make([][]int, n),
+		pivotID:    make([]int, n),
+		pivotFrom:  make([]int, n),
+		pivotSlot:  make([]int, n),
+		pivotStep:  make([]int, n),
+	}
+}
+
+// slotOfSorted 在升序槽位中查找 col 的下标；不存在返回 -1。
+func slotOfSorted(cols []int, col int) int {
+	idx := sort.SearchInts(cols, col)
+	if idx < len(cols) && cols[idx] == col {
+		return idx
+	}
+	return -1
+}
+
+// firstAboveSorted 返回升序槽位中第一个列号 > k 的下标（全部 ≤ k 时返回 len）。
+func firstAboveSorted(cols []int, k int) int {
+	return sort.SearchInts(cols, k+1)
+}
+
+// luSkeletonAxpyAbove 在固定槽位上做一次「归并式进位更新」dst += factor·src，只写值、
+// 不改结构：两行的列槽位都升序，从各自 dstFrom/srcFrom 起同步走，列号相等才写值。
+// 语义等价于对每个 src 列调用一次 rowSparseMatrix.SetAdd（每个元素每步只被写一次，
+// 故浮点累加顺序不变），但把「每列一次全行扫描」降为「两行各扫一遍」。
+// src 的某个列在 dst 没有槽位（符号上界被突破）→ 返回 false，调用方作废骨架回退动态路径。
+func luSkeletonAxpyAbove[T Number](dstVals []T, dstCols []int, dstFrom int,
+	srcVals []T, srcCols []int, srcFrom int, factor T) bool {
+	a, b := dstFrom, srcFrom
+	for b < len(srcCols) {
+		for a < len(dstCols) && dstCols[a] < srcCols[b] {
+			a++
+		}
+		if a >= len(dstCols) || dstCols[a] != srcCols[b] {
+			return false
+		}
+		dstVals[a] += factor * srcVals[b]
+		a++
+		b++
+	}
+	return true
 }
 
 // MatrixVectorMultiply 矩阵向量乘法 A·x。

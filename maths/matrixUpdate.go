@@ -12,14 +12,30 @@ import (
 // 或者“回滚”（Rollback），直接丢弃缓存中的所有更改。
 // 这种机制在需要进行探索性计算或需要撤销操作的场景下非常高效。
 type updateMatrix[T Number] struct {
-	Matrix[T]                          // Matrix 是底层的矩阵，存储着“已提交”的稳定数据。
-	bitmap        utils.Bitmap         // bitmap 用于标记哪些矩阵元素在缓存中被修改过。每一位对应一个元素。
-	cache         map[int][16]T        // cache 是一个分块缓存。key 是块索引，value 是一个固定大小的数组（块）。
-	blockSize     int                  // blockSize 定义了缓存块的大小，固定为16，这有助于利用CPU缓存行对齐。
-	rowResultCols []int                // rowResultCols 是 GetRow 方法的列索引缓冲区，用于避免重复内存分配。
-	rowResultVals []T                  // rowResultVals 是 GetRow 方法的值缓冲区。
-	rowResultVec  *denseVector[T]      // rowResultVec 是 GetRow 方法返回的向量，重用此实例以减少GC压力。
-	dirtyRows     map[int]map[int]bool // 每行被缓存修改的列集合，加速 GetRow 的稀疏合并。
+	Matrix[T]                      // Matrix 是底层的矩阵，存储着“已提交”的稳定数据。
+	bitmap    utils.Bitmap         // bitmap 用于标记哪些矩阵元素在缓存中被修改过。每一位对应一个元素，下标 = 行优先线性下标 row*Cols+col。
+	cache     map[int]T            // cache 是线性下标 → 缓存值的稀疏缓存（只存被改过的元素）。
+	rowSorter rowPairSorter[T]     // rowSorter 是 GetRow 原地排序用的成对视图（复用字段，避免每次排序为接口装箱分配）。
+	dirtyRows map[int]map[int]bool // 每行被缓存修改的列集合，加速 GetRow 的稀疏合并。
+}
+
+// rowPairSorter 把「列索引 + 值」两个切片当作可排序的成对视图：成对交换，
+// 排序不需要旧实现那样的 idx/colsTmp/valsTmp 三份临时切片。
+type rowPairSorter[T Number] struct {
+	cols []int
+	vals []T
+}
+
+// Len 返回待排序元素个数。
+func (s *rowPairSorter[T]) Len() int { return len(s.cols) }
+
+// Less 按列索引升序比较。
+func (s *rowPairSorter[T]) Less(i, j int) bool { return s.cols[i] < s.cols[j] }
+
+// Swap 成对交换列索引与对应值，保持两者对齐。
+func (s *rowPairSorter[T]) Swap(i, j int) {
+	s.cols[i], s.cols[j] = s.cols[j], s.cols[i]
+	s.vals[i], s.vals[j] = s.vals[j], s.vals[i]
 }
 
 // NewUpdateMatrix 基于一个现有的矩阵创建一个新的 updateMatrix。
@@ -31,14 +47,10 @@ func NewUpdateMatrix[T Number](base Matrix[T]) UpdateMatrix[T] {
 	dm := NewDenseMatrix[T](rows, cols)
 	base.Copy(dm)
 	return &updateMatrix[T]{
-		Matrix:        dm,
-		bitmap:        utils.NewBitmap(rows * cols), // 位图的大小等于矩阵元素的总数。
-		cache:         make(map[int][16]T),
-		blockSize:     16,
-		rowResultCols: make([]int, 0, cols),
-		rowResultVals: make([]T, 0, cols),
-		rowResultVec:  NewDenseVector[T](0).(*denseVector[T]),
-		dirtyRows:     make(map[int]map[int]bool),
+		Matrix:    dm,
+		bitmap:    utils.NewBitmap(rows * cols), // 位图的大小等于矩阵元素的总数。
+		cache:     make(map[int]T),
+		dirtyRows: make(map[int]map[int]bool),
 	}
 }
 
@@ -46,42 +58,41 @@ func NewUpdateMatrix[T Number](base Matrix[T]) UpdateMatrix[T] {
 // 与 NewUpdateMatrix 不同，此函数不复制底层数据，而是直接使用传入的矩阵指针。
 // 这意味着对 updateMatrix 的 `Update` 操作会直接修改原始矩阵。
 func NewUpdateMatrixPtr[T Number](ptr Matrix[T]) UpdateMatrix[T] {
-	cols := ptr.Cols()
 	return &updateMatrix[T]{
-		Matrix:        ptr,
-		bitmap:        utils.NewBitmap(ptr.Rows() * ptr.Cols()),
-		cache:         make(map[int][16]T),
-		blockSize:     16,
-		rowResultCols: make([]int, 0, cols),
-		rowResultVals: make([]T, 0, cols),
-		rowResultVec:  NewDenseVector[T](0).(*denseVector[T]),
-		dirtyRows:     make(map[int]map[int]bool),
+		Matrix:    ptr,
+		bitmap:    utils.NewBitmap(ptr.Rows() * ptr.Cols()),
+		cache:     make(map[int]T),
+		dirtyRows: make(map[int]map[int]bool),
 	}
 }
 
-// getBlockIndexAndPosition 是一个内部辅助函数，用于将二维的（行，列）索引转换为
-// 一维的缓存块索引和块内偏移量。
-func (um *updateMatrix[T]) getBlockIndexAndPosition(row, col int) (int, int) {
-	linearIndex := row*um.Cols() + col // 首先将二维索引转换为一维线性索引。
-	return linearIndex / um.blockSize, linearIndex % um.blockSize
+// linearIndex 把（行，列）转换为行优先线性下标；该下标同时是缓存键与位图位下标
+// （位图长度 = Rows×Cols），因此不再需要旧实现里的「块索引/块内偏移」两次整数除法。
+func (um *updateMatrix[T]) linearIndex(row, col int) int {
+	return row*um.Cols() + col
 }
 
 // isBitSet 检查给定（行，列）的元素是否在缓存中被修改过（即其在位图中的对应位是否被设置）。
 func (um *updateMatrix[T]) isBitSet(row, col int) bool {
-	blockIdx, pos := um.getBlockIndexAndPosition(row, col)
-	return um.bitmap.Get(utils.BitmapFlag(blockIdx*um.blockSize + pos))
+	return um.bitmap.Get(utils.BitmapFlag(um.linearIndex(row, col)))
 }
 
 // setBit 在位图中标记给定（行，列）的元素，表示其值已在缓存中更新。
 func (um *updateMatrix[T]) setBit(row, col int) {
-	blockIdx, pos := um.getBlockIndexAndPosition(row, col)
-	um.bitmap.Set(utils.BitmapFlag(blockIdx*um.blockSize+pos), true)
+	um.bitmap.Set(utils.BitmapFlag(um.linearIndex(row, col)), true)
 }
 
 // clearBit 清除给定（行，列）元素在位图中的标记，通常在缓存被提交或回滚后调用。
 func (um *updateMatrix[T]) clearBit(row, col int) {
-	blockIdx, pos := um.getBlockIndexAndPosition(row, col)
-	um.bitmap.Set(utils.BitmapFlag(blockIdx*um.blockSize+pos), false)
+	um.bitmap.Set(utils.BitmapFlag(um.linearIndex(row, col)), false)
+}
+
+// resetDirtyRows 清空每行的脏列集合内容，但保留（复用）内层 map：
+// 提交/回滚只丢弃标记，不必为同一批行反复分配新 map。
+func (um *updateMatrix[T]) resetDirtyRows() {
+	for row := range um.dirtyRows {
+		clear(um.dirtyRows[row])
+	}
 }
 
 // Get 获取指定位置的元素值。它实现了“读时合并”的逻辑：
@@ -89,35 +100,31 @@ func (um *updateMatrix[T]) clearBit(row, col int) {
 // 2. 如果是，则从缓存中读取最新值。
 // 3. 如果否，则从底层矩阵中读取稳定值。
 func (um *updateMatrix[T]) Get(row, col int) T {
-	if row < 0 || row >= um.Rows() || col < 0 || col >= um.Cols() {
-		panic(fmt.Sprintf("matrix index out of range: row=%d, col=%d (rows=%d, cols=%d)", row, col, um.Rows(), um.Cols()))
+	rows, cols := um.Rows(), um.Cols()
+	if row < 0 || row >= rows || col < 0 || col >= cols {
+		panic(fmt.Sprintf("matrix index out of range: row=%d, col=%d (rows=%d, cols=%d)", row, col, rows, cols))
 	}
-	blockIdx, pos := um.getBlockIndexAndPosition(row, col)
-	if um.isBitSet(row, col) {
-		if block, exists := um.cache[blockIdx]; exists {
-			return block[pos]
+	index := row*cols + col
+	if um.bitmap.Get(utils.BitmapFlag(index)) {
+		if value, exists := um.cache[index]; exists {
+			return value
 		}
 	}
 	return um.Matrix.Get(row, col)
 }
 
 // Set 设置指定位置的元素值。该操作只写缓存，不直接触及底层矩阵。
-// 1. 计算元素的缓存块索引和块内位置。
-// 2. 获取或创建对应的缓存块。
-// 3. 将新值写入缓存块。
-// 4. 在位图中标记该元素为“已修改”。
+// 1. 计算元素的线性下标（缓存键 = 位图位下标）。
+// 2. 把新值写入缓存。
+// 3. 在位图中标记该元素为“已修改”，并登记到该行的脏列集合。
 func (um *updateMatrix[T]) Set(row, col int, value T) {
-	if row < 0 || row >= um.Rows() || col < 0 || col >= um.Cols() {
-		panic(fmt.Sprintf("matrix index out of range: row=%d, col=%d (rows=%d, cols=%d)", row, col, um.Rows(), um.Cols()))
+	rows, cols := um.Rows(), um.Cols()
+	if row < 0 || row >= rows || col < 0 || col >= cols {
+		panic(fmt.Sprintf("matrix index out of range: row=%d, col=%d (rows=%d, cols=%d)", row, col, rows, cols))
 	}
-	blockIdx, pos := um.getBlockIndexAndPosition(row, col)
-	block, exists := um.cache[blockIdx]
-	if !exists {
-		block = [16]T{}
-	}
-	block[pos] = value
-	um.cache[blockIdx] = block
-	um.setBit(row, col)
+	index := row*cols + col
+	um.cache[index] = value
+	um.bitmap.Set(utils.BitmapFlag(index), true)
 	if um.dirtyRows[row] == nil {
 		um.dirtyRows[row] = make(map[int]bool)
 	}
@@ -128,46 +135,38 @@ func (um *updateMatrix[T]) Set(row, col int, value T) {
 // 1. 如果元素已在缓存中，直接在缓存值上进行累加。
 // 2. 如果元素不在缓存中，则先从底层矩阵读取原值，与增量相加后，将结果存入缓存，并标记该位置。
 func (um *updateMatrix[T]) Increment(row, col int, value T) {
-	if row < 0 || row >= um.Rows() || col < 0 || col >= um.Cols() {
-		panic(fmt.Sprintf("matrix index out of range: row=%d, col=%d (rows=%d, cols=%d)", row, col, um.Rows(), um.Cols()))
+	rows, cols := um.Rows(), um.Cols()
+	if row < 0 || row >= rows || col < 0 || col >= cols {
+		panic(fmt.Sprintf("matrix index out of range: row=%d, col=%d (rows=%d, cols=%d)", row, col, rows, cols))
 	}
-	blockIdx, pos := um.getBlockIndexAndPosition(row, col)
-	if um.isBitSet(row, col) {
-		block := um.cache[blockIdx]
-		block[pos] += value
-		um.cache[blockIdx] = block
-	} else {
-		block, exists := um.cache[blockIdx]
-		if !exists {
-			block = [16]T{}
-		}
-		block[pos] = um.Matrix.Get(row, col) + value
-		um.cache[blockIdx] = block
-		um.setBit(row, col)
-		if um.dirtyRows[row] == nil {
-			um.dirtyRows[row] = make(map[int]bool)
-		}
-		um.dirtyRows[row][col] = true
+	index := row*cols + col
+	if cached, exists := um.cache[index]; exists {
+		um.cache[index] = cached + value
+		return
 	}
+	um.cache[index] = um.Matrix.Get(row, col) + value
+	um.bitmap.Set(utils.BitmapFlag(index), true)
+	if um.dirtyRows[row] == nil {
+		um.dirtyRows[row] = make(map[int]bool)
+	}
+	um.dirtyRows[row][col] = true
 }
 
 // Update 将缓存中的所有修改“提交”到底层矩阵。
 // 这是一个批量操作，可以显著减少对底层矩阵的写操作次数。
-// 遍历所有缓存块，并将其中被标记为已修改的元素写回底层矩阵，然后清除标记和缓存。
+// 缓存条目一一对应「被修改过的元素」（写缓存与标记位图始终成对发生），
+// 故直接遍历缓存提交，随后整体清位图与缓存。
 func (um *updateMatrix[T]) Update() {
-	for blockIdx, block := range um.cache {
-		for pos := 0; pos < um.blockSize; pos++ {
-			linearIndex := blockIdx*um.blockSize + pos
-			row := linearIndex / um.Cols()
-			col := linearIndex % um.Cols()
-			if row < um.Rows() && col < um.Cols() && um.isBitSet(row, col) {
-				um.Matrix.Set(row, col, block[pos])
-				um.clearBit(row, col)
-			}
+	cols := um.Cols()
+	for index, value := range um.cache {
+		if !um.bitmap.Get(utils.BitmapFlag(index)) {
+			continue
 		}
+		um.Matrix.Set(index/cols, index%cols, value)
 	}
+	um.bitmap.ClearAll()
 	clear(um.cache)
-	um.dirtyRows = make(map[int]map[int]bool)
+	um.resetDirtyRows()
 }
 
 // Rollback 丢弃缓存中的所有修改，恢复到上一次 `Update` 之后的状态。
@@ -177,7 +176,8 @@ func (um *updateMatrix[T]) Rollback() {
 	um.bitmap.ClearAll()
 	// 清空缓存
 	clear(um.cache)
-	um.dirtyRows = make(map[int]map[int]bool)
+	// 复用内层脏列 map（只清内容），避免每次回滚都为脏行重新分配 map
+	um.resetDirtyRows()
 }
 
 // BuildFromDense 从一个二维切片重新构建矩阵。
@@ -206,9 +206,10 @@ func (um *updateMatrix[T]) Copy(a Matrix[T]) {
 			panic(fmt.Sprintf("dimension mismatch: source %dx%d, target %dx%d", um.Rows(), um.Cols(), target.Rows(), target.Cols()))
 		}
 		um.Matrix.Copy(target.Matrix)
-		target.cache = make(map[int][16]T)
-		for k := range um.cache {
-			target.cache[k] = um.cache[k]
+		// 缓存是「线性下标 → 值」的稀疏 map：逐键复制即可，值类型 T 无指针别名问题
+		target.cache = make(map[int]T, len(um.cache))
+		for k, v := range um.cache {
+			target.cache[k] = v
 		}
 		totalElements := um.Rows() * um.Cols()
 		for i := 0; i < totalElements; i++ {
@@ -237,35 +238,37 @@ func (um *updateMatrix[T]) Copy(a Matrix[T]) {
 // GetRow 获取指定行的非零元素列索引副本和值副本，合并缓存与底层数据。
 // 返回的切片和向量均为独立分配，与内部缓冲区无共享，修改不会影响矩阵状态。
 func (um *updateMatrix[T]) GetRow(row int) ([]int, Vector[T]) {
-	if row < 0 || row >= um.Rows() {
-		panic(fmt.Sprintf("row index out of range: %d (rows: %d)", row, um.Rows()))
+	rows := um.Rows()
+	if row < 0 || row >= rows {
+		panic(fmt.Sprintf("row index out of range: %d (rows: %d)", row, rows))
 	}
-	// 1. 清空并重用缓冲区
-	um.rowResultCols = um.rowResultCols[:0]
-	um.rowResultVals = um.rowResultVals[:0]
+	cols := um.Cols()
 
-	// 2. 稀疏合并：只遍历底层行非零 + 缓存脏列，避免 O(Cols) 全列扫描。
-	//    电路 MNA 矩阵每行非零 ~10 个（Cols 可达数千），全列扫描会令
-	//    LU 分解/残差计算退化为 O(n³)（GetRow 占 CPU8 仿真实测 72%）。
+	// 稀疏合并：只遍历底层行非零 + 缓存脏列，避免 O(Cols) 全列扫描。
+	// 电路 MNA 矩阵每行非零 ~10 个（Cols 可达数千），全列扫描会令
+	// LU 分解/残差计算退化为 O(n³)（GetRow 占 CPU8 仿真实测 72%）。
 	baseCols, baseVals := um.Matrix.GetRow(row)
 	dirty := um.dirtyRows[row]
+	// 结果直接写进新分配的切片：容量按「底层非零 + 脏列」上界一次分配，
+	// 省掉旧实现的持久缓冲 + 二次拷贝（旧路径每次调用 5 次分配，其中 3 次只用于排序）。
+	rowStart := row * cols
+	resultCols := make([]int, 0, len(baseCols)+len(dirty))
+	resultVals := make([]T, 0, len(baseCols)+len(dirty))
 	// 底层行（dirty 覆盖同名列）
 	for idx, j := range baseCols {
 		if dirty != nil && dirty[j] {
-			blockIdx, pos := um.getBlockIndexAndPosition(row, j)
-			if block, exists := um.cache[blockIdx]; exists {
-				val := block[pos]
+			if val, exists := um.cache[rowStart+j]; exists {
 				if val != 0 {
-					um.rowResultCols = append(um.rowResultCols, j)
-					um.rowResultVals = append(um.rowResultVals, val)
+					resultCols = append(resultCols, j)
+					resultVals = append(resultVals, val)
 				}
 			}
 			continue
 		}
 		v := baseVals.Get(idx)
 		if v != 0 {
-			um.rowResultCols = append(um.rowResultCols, j)
-			um.rowResultVals = append(um.rowResultVals, v)
+			resultCols = append(resultCols, j)
+			resultVals = append(resultVals, v)
 		}
 	}
 	// 缓存中不在底层的新列
@@ -277,43 +280,27 @@ func (um *updateMatrix[T]) GetRow(row int) ([]int, Vector[T]) {
 				continue
 			}
 		}
-		blockIdx, pos := um.getBlockIndexAndPosition(row, j)
-		if block, exists := um.cache[blockIdx]; exists {
-			val := block[pos]
+		if val, exists := um.cache[rowStart+j]; exists {
 			if val != 0 {
-				um.rowResultCols = append(um.rowResultCols, j)
-				um.rowResultVals = append(um.rowResultVals, val)
+				resultCols = append(resultCols, j)
+				resultVals = append(resultVals, val)
 			}
 		}
 	}
-	// 3. 按列号排序（base 行有序 + 脏列无序）
-	if len(um.rowResultCols) > 1 {
-		idx := make([]int, len(um.rowResultCols))
-		for i := range idx {
-			idx[i] = i
-		}
-		sort.Slice(idx, func(a, b int) bool { return um.rowResultCols[idx[a]] < um.rowResultCols[idx[b]] })
-		colsTmp := make([]int, len(um.rowResultCols))
-		valsTmp := make([]T, len(um.rowResultVals))
-		for i, j := range idx {
-			colsTmp[i] = um.rowResultCols[j]
-			valsTmp[i] = um.rowResultVals[j]
-		}
-		um.rowResultCols = colsTmp
-		um.rowResultVals = valsTmp
+	// 按列号升序排序（base 行有序 + 脏列无序）：成对原地排序，零额外分配
+	if len(resultCols) > 1 {
+		um.rowSorter.cols = resultCols
+		um.rowSorter.vals = resultVals
+		sort.Sort(&um.rowSorter)
+		um.rowSorter.cols = nil
+		um.rowSorter.vals = nil
 	}
 
-	valsCopy := make([]T, len(um.rowResultVals))
-	copy(valsCopy, um.rowResultVals)
-	colsCopy := make([]int, len(um.rowResultCols))
-	copy(colsCopy, um.rowResultCols)
-
-	resultVec := &denseVector[T]{
+	return resultCols, &denseVector[T]{
 		dataManager: &dataManager[T]{
-			data: valsCopy,
+			data: resultVals,
 		},
 	}
-	return colsCopy, resultVec
 }
 
 // MatrixVectorMultiply 矩阵向量乘法（使用当前可见数据：缓存+底层）
@@ -340,26 +327,22 @@ func (um *updateMatrix[T]) NonZeroCount() int {
 		cols, _ := um.Matrix.GetRow(i)
 		count += len(cols)
 	}
-	// 统计缓存中新增/修改的非零元素
-	for blockIdx := range um.cache {
-		for pos := 0; pos < um.blockSize; pos++ {
-			linearIndex := blockIdx*um.blockSize + pos
-			row := linearIndex / um.Cols()
-			col := linearIndex % um.Cols()
-			if row < um.Rows() && col < um.Cols() && um.isBitSet(row, col) {
-				baseVal := um.Matrix.Get(row, col)
-				cachedVal := um.cache[blockIdx][pos]
-				// 情况1：底层为零，缓存非零 → 新增非零
-				// 情况2：底层非零，缓存修改后仍非零 → 不重复统计
-				// 情况3：底层非零，缓存修改为零 → 减少统计
-				isBaseZero := Abs(baseVal) < epsilon
-				isCachedZero := Abs(cachedVal) < epsilon
-				if isBaseZero && !isCachedZero {
-					count++
-				} else if !isBaseZero && isCachedZero {
-					count--
-				}
-			}
+	// 统计缓存中新增/修改的非零元素（缓存键即线性下标，条目与已标记元素一一对应）
+	cols := um.Cols()
+	for linearIndex, cachedVal := range um.cache {
+		if !um.bitmap.Get(utils.BitmapFlag(linearIndex)) {
+			continue
+		}
+		baseVal := um.Matrix.Get(linearIndex/cols, linearIndex%cols)
+		// 情况1：底层为零，缓存非零 → 新增非零
+		// 情况2：底层非零，缓存修改后仍非零 → 不重复统计
+		// 情况3：底层非零，缓存修改为零 → 减少统计
+		isBaseZero := Abs(baseVal) < epsilon
+		isCachedZero := Abs(cachedVal) < epsilon
+		if isBaseZero && !isCachedZero {
+			count++
+		} else if !isBaseZero && isCachedZero {
+			count--
 		}
 	}
 	return max(count, 0) // 避免负计数

@@ -3,6 +3,7 @@ package maths
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -188,49 +189,73 @@ func (lu *luDense[T]) SolveReuse(b, x Vector[T]) error {
 	return nil
 }
 
+// luSparseMinDim 是符号骨架的启用维度下限：与 computeStaticPerm 的 n<500 → identityPerm 口径一致，
+// 小矩阵 fill-in 温和、复用收益不足，且既有数值路径依赖其原顺序。
+const luSparseMinDim = 500
+
+// luSparseStaleLimit 是骨架连续失效次数上限：达到即停用骨架（避免「重放 + 回退动态路径」双开销
+// 变成回归）；结构签名变化（新结构）时重新启用。
+const luSparseStaleLimit = 3
+
+// errSkeletonStale 表示数值阶段发现骨架记录的消元计划与实际数值路径不符（主元行变了、
+// 或需要骨架没有的槽位）：骨架作废，调用方回退动态路径。
+var errSkeletonStale = errors.New("lu sparse: skeleton is stale")
+
 // luSparse 实现稀疏矩阵的 LU 分解。
 type luSparse[T Number] struct {
 	baseLU[T]
-	perm    []int  // 静态最小度重排序：U 的第 i 行 = 原矩阵 perm[i] 行（宽行排最后，抑制 fill-in）
-	permSig uint64 // 矩阵结构签名（每行非零数的 FNV hash）：结构不变时复用 perm，避免每步重复最小度排序
+	perm        []int          // 静态最小度重排序：U 的第 i 行 = 原矩阵 perm[i] 行（宽行排最后，抑制 fill-in）
+	permSig     uint64         // 矩阵结构签名（每行列号集合，见 structureSignature）：结构不变时复用 perm，避免每步重复最小度排序
+	skel        *luSkeleton[T] // 符号骨架：与 perm 同键（结构签名）复用的 U 槽位 + 消元计划；nil = 无可用骨架
+	pivotID     []int          // 最近一次动态分解记录的主元行身份序列（供 captureSkeleton 固化骨架）
+	staleStreak int            // 骨架连续失效次数（安全阀，见 luSparseStaleLimit）
+	skelOff     bool           // 骨架已被安全阀停用，直到结构签名变化
 }
 
-// computeStaticPerm 计算静态重排置换，按矩阵结构自适应选择：
-//   - 度数均匀（局部带状/低连接，maxDeg ≲ 10×avgDeg）：保持自然顺序。
-//     带状结构 fill-in 仅 ~1.5x；强行最小度会打乱带宽且被部分主元破坏，反而 fill-in 爆炸。
-//   - 存在 hub 节点（如电源/时钟总线，maxDeg >> avgDeg）：最小度重排，
-//     避免高连接密度矩阵（如 RTL CPU）的 fill-in 爆炸。
+// computeStaticPerm 计算静态重排置换，按**符号填充数预测**在自然顺序与最小度重排之间择优
+// （判据与成本护栏见函数内注释；决策只在结构签名变化时发生一次，之后由 permSig 复用）。
 func (lu *luSparse[T]) computeStaticPerm(matrix Matrix[T]) []int {
 	// 小矩阵（<500 节点）fill-in 温和，保持原顺序以维持既有数值路径
 	// （消元顺序改变会引入不同舍入误差，破坏边沿敏感的时序电路行为）。
 	if lu.n < 500 {
 		return identityPerm(lu.n)
 	}
-	// 结构签名：每行非零数的 FNV hash（电路每步矩阵结构不变，值变化不影响签名）。
-	sig := uint64(14695981039346656037)
+	// 结构签名：每行列号集合的 FNV hash（先排序再混入；电路每步矩阵结构不变，值变化不影响签名）。
+	sig := lu.structureSignature(matrix)
+	// 结构未变：复用缓存的 perm，避免每步重复最小度排序（CPU8 实测占 22% CPU）。
+	// 签名不可用（哨兵）时结构是否变化无法判定，一律走「不复用」分支；
+	// 此时不复用分支只做一次签名扫描，邻接表推迟到确实需要重排时才构建。
+	if sig != STRUCTURE_SIGNATURE_UNAVAILABLE && sig == lu.permSig && lu.perm != nil {
+		return lu.perm
+	}
+	// 结构已变（或签名不可用）：perm 与符号骨架同时作废，并重新启用骨架安全阀。
+	lu.skel = nil
+	lu.skelOff = false
+	lu.staleStreak = 0
 	adj := make([][]int, lu.n)
-	total := 0
-	maxDeg := 0
 	for i := 0; i < lu.n; i++ {
 		cols, _ := matrix.GetRow(i)
 		adj[i] = cols
-		d := len(cols)
-		sig = (sig ^ uint64(d)) * 1099511628211
-		total += d
-		if d > maxDeg {
-			maxDeg = d
-		}
-	}
-	// 结构未变：复用缓存的 perm，避免每步重复最小度排序（CPU8 实测占 22% CPU）。
-	if sig == lu.permSig && lu.perm != nil {
-		return lu.perm
 	}
 	var perm []int
-	avgDeg := float64(total) / float64(lu.n)
-	if float64(maxDeg) > 10*avgDeg {
-		perm = MinimumDegreeOrder(lu.n, adj)
-	} else {
-		perm = identityPerm(lu.n)
+	// 择优判据（UD8 修正）：按**符号填充数预测**在「自然顺序」与「最小度重排」之间取更少者。
+	//
+	// 旧判据 maxDeg > 10*avgDeg 只看度数比，会漏掉两类真实结构：
+	//   - 度数比 ≈4 的 hub（电源/时钟总线连大量节点，但每行度相近）；
+	//   - 度数比 ≈1.0 的随机稀疏（无 hub，但自然顺序填充爆炸）。
+	// 父体实测（五种 ≥500 结构）：填充预测与实际 U nnz 的优劣排序完全一致——
+	// hub600 31778→4599（−85.5%）、hub800 51120→5971（−88.3%）、
+	// random600 107486→85443 且分解 1.47s→895ms；band/tridiag 预测打平、保持自然顺序。
+	//
+	// 成本护栏：先算一次自然顺序的填充预测——填充已经很小（≤ 3n）说明该结构本身稀疏，
+	// 最小度不可能显著更优（带状/三对角的下界本就在 ~2n 量级），直接保持自然顺序，
+	// 从而不为常见带状电路多付最小度重排与第二次预测的开销。
+	// 决策只在**结构签名变化**时发生一次，之后由 permSig 复用（既有缓存语义不变）。
+	perm = identityPerm(lu.n)
+	if fillID := SymbolicFillCount(lu.n, adj, perm); fillID > 3*lu.n {
+		if mdPerm := MinimumDegreeOrder(lu.n, adj); SymbolicFillCount(lu.n, adj, mdPerm) < fillID {
+			perm = mdPerm
+		}
 	}
 	lu.perm = perm
 	lu.permSig = sig
@@ -247,8 +272,13 @@ func identityPerm(n int) []int {
 }
 
 // Decompose 对稀疏矩阵执行 LU 分解。
-// 先按静态最小度重排序（宽行排最后，抑制 fill-in）尝试；
-// 若该顺序触发数值奇异（近奇异矩阵对消元顺序敏感），回退原顺序重试一次。
+// 两个阶段分离：
+//   - 符号阶段（symbolicStage，见 computeStaticPerm）：结构签名 → 复用/重算静态重排 perm；
+//     复用命中时连符号骨架（U 槽位 + 消元计划）一起复用，符号工作完全跳过。
+//   - 数值阶段：有骨架时走 numericReplay（结构只读、只写值槽）；骨架失效则走 decomposeWithPerm
+//     动态路径，并在成功后固化新骨架。
+//
+// 若静态重排顺序触发数值奇异（近奇异矩阵对消元顺序敏感），回退原顺序重试一次。
 func (lu *luSparse[T]) Decompose(matrix Matrix[T]) error {
 	if !matrix.IsSquare() {
 		return errors.New("lu sparse decompose: input must be square matrix")
@@ -260,25 +290,323 @@ func (lu *luSparse[T]) Decompose(matrix Matrix[T]) error {
 	// 静态最小度重排序：按行宽升序排列，宽行（电源/地）最后消元。
 	// 保持对称置换 U = P·A·Pᵀ，不改变数值解，仅改变消元顺序。
 	lu.perm = lu.computeStaticPerm(matrix)
+
+	// 数值阶段（骨架重放）：结构阶段已在上一步完成，这里只写值。
+	if lu.skel != nil {
+		err := lu.numericReplay(matrix)
+		if err == nil {
+			lu.staleStreak = 0
+			return nil
+		}
+		if !errors.Is(err, errSkeletonStale) {
+			return err
+		}
+		// 骨架与实际数值路径不符：作废骨架（U 已按骨架输出，动态路径会自行重置 U/L），
+		// 并累计失效次数触发安全阀。
+		lu.skel = nil
+		lu.staleStreak++
+		if lu.staleStreak >= luSparseStaleLimit {
+			lu.skelOff = true
+			lu.staleStreak = 0
+		}
+	}
+
+	// 动态数值阶段：结构随消元生长；成功后固化骨架供后续复用。
 	if err := lu.decomposeWithPerm(matrix); err == nil {
+		lu.captureSkeleton(matrix)
 		return nil
 	} else if !strings.Contains(err.Error(), "singular") {
 		return err
 	}
 	// 奇异回退：原顺序（数值路径不同，可能避免假奇异）
-	lu.perm = make([]int, lu.n)
-	for i := range lu.perm {
-		lu.perm[i] = i
+	lu.perm = identityPerm(lu.n)
+	lu.skel = nil
+	if err := lu.decomposeWithPerm(matrix); err != nil {
+		return err
 	}
-	return lu.decomposeWithPerm(matrix)
+	lu.captureSkeleton(matrix)
+	return nil
 }
 
-// decomposeWithPerm 按当前 lu.perm 构建 U 并执行消元。
+// captureSkeleton 在动态分解成功后固化符号骨架（纯结构运算，不涉及数值）：
+// 以刚记录的消元计划（lu.pivotID）做一次「符号消元」——按主元行逐步把槽位并集传播开，
+// 得到每行的槽位上界与每步的消元行集。数值阶段据此只写值，不再重建行列结构。
+//
+// 槽位是「同一消元计划下不会发生数值消去」的符号上界，因此不会随数值变化而缺失；
+// 唯一可能失效的是消元计划本身（主元行改变），由 numericReplay 逐步校验。
+func (lu *luSparse[T]) captureSkeleton(matrix Matrix[T]) {
+	if lu.n < luSparseMinDim || lu.skelOff || matrix == nil ||
+		len(lu.perm) != lu.n || len(lu.pivotID) != lu.n {
+		lu.skel = nil
+		return
+	}
+	n := lu.n
+	pinv := make([]int, n)
+	for i, p := range lu.perm {
+		pinv[p] = i
+	}
+	sk := newLuSkeleton[T](n)
+	// 初始槽位：U = P·A·Pᵀ 的列集合（身份 i ↔ 初始位置 i ↔ 原矩阵行 perm[i]）。
+	for i := 0; i < n; i++ {
+		cols, vals := matrix.GetRow(lu.perm[i])
+		if vals == nil || vals.Length() != len(cols) {
+			lu.skel = nil
+			return
+		}
+		row := make([]int, 0, len(cols))
+		for _, c := range cols {
+			row = append(row, pinv[c])
+		}
+		slices.Sort(row)
+		sk.rowCols[i] = slices.Compact(row)
+	}
+	// colRows[j] = 含列 j 的行身份集合（无序；只用于「列 j 上有哪些行」，不做顺序依赖）。
+	colRows := make([][]int, n)
+	for i := 0; i < n; i++ {
+		for _, j := range sk.rowCols[i] {
+			colRows[j] = append(colRows[j], i)
+		}
+	}
+	idAtPos := make([]int, n)
+	posOfID := make([]int, n)
+	for i := 0; i < n; i++ {
+		idAtPos[i], posOfID[i] = i, i
+	}
+	for k := 0; k < n; k++ {
+		p := lu.pivotID[k]
+		if p < 0 || p >= n {
+			lu.skel = nil
+			return
+		}
+		// 主元搜索候选：交换前位置 > k 且列 k 有槽位的行（按位置升序）。
+		sk.searchRows[k] = luSkeletonCandidates(colRows[k], posOfID, k)
+		q := posOfID[p]
+		idAtPos[k], idAtPos[q] = idAtPos[q], idAtPos[k]
+		posOfID[idAtPos[k]], posOfID[idAtPos[q]] = k, q
+		// 消元候选：交换后位置 > k 且列 k 有槽位的行（按位置升序）。
+		sk.stepRows[k] = luSkeletonCandidates(colRows[k], posOfID, k)
+		sk.pivotID[k] = p
+		sk.pivotStep[p] = k
+		pivotCols := sk.rowCols[p]
+		from := firstAboveSorted(pivotCols, k)
+		if from == len(pivotCols) {
+			continue
+		}
+		for _, i := range sk.stepRows[k] {
+			sk.rowCols[i] = luSkeletonUnionAbove(sk.rowCols[i], pivotCols, from, i, colRows)
+		}
+	}
+	// 值槽按「符号消元结束后」的槽位上界一次性分配（槽位只增不减，此处即最终形状）。
+	for i := 0; i < n; i++ {
+		sk.rowVals[i] = make([]T, len(sk.rowCols[i]))
+	}
+	for k := 0; k < n; k++ {
+		p := sk.pivotID[k]
+		sk.pivotFrom[k] = firstAboveSorted(sk.rowCols[p], k)
+		sk.pivotSlot[k] = slotOfSorted(sk.rowCols[p], k)
+		rows := sk.stepRows[k]
+		sk.stepSlots[k] = make([]int, len(rows))
+		sk.stepStart[k] = make([]int, len(rows))
+		for t, i := range rows {
+			sk.stepSlots[k][t] = slotOfSorted(sk.rowCols[i], k)
+			sk.stepStart[k][t] = firstAboveSorted(sk.rowCols[i], k)
+		}
+	}
+	lu.skel = sk
+}
+
+// luSkeletonCandidates 取「列 k 上有槽位、且当前位置 > k」的行身份，按当前位置升序。
+func luSkeletonCandidates(colRows []int, posOfID []int, k int) []int {
+	rows := make([]int, 0, len(colRows))
+	for _, i := range colRows {
+		if posOfID[i] > k {
+			rows = append(rows, i)
+		}
+	}
+	slices.SortFunc(rows, func(a, b int) int { return posOfID[a] - posOfID[b] })
+	return rows
+}
+
+// luSkeletonUnionAbove 把 src 中列号 > k 的槽位并入 dst（升序去重），并把新增列登记进
+// colRows（供后续步骤取候选）。只做结构，不写值。
+func luSkeletonUnionAbove(dst, src []int, from int, id int, colRows [][]int) []int {
+	if from == len(src) {
+		return dst
+	}
+	out := make([]int, 0, len(dst)+len(src)-from)
+	a, b := 0, from
+	for a < len(dst) || b < len(src) {
+		switch {
+		case b == len(src):
+			out = append(out, dst[a])
+			a++
+		case a == len(dst) || dst[a] > src[b]:
+			out = append(out, src[b])
+			colRows[src[b]] = append(colRows[src[b]], id)
+			b++
+		case dst[a] < src[b]:
+			out = append(out, dst[a])
+			a++
+		default:
+			out = append(out, dst[a])
+			a++
+			b++
+		}
+	}
+	return out
+}
+
+// swapEliminationRows 交换位置 k 与 pos 的消元状态：交换 L 的前 k 列（已算出的乘子）、
+// 更新置换记录、同步行身份表。U 的行按身份索引，不需要搬运。
+// 动态路径与骨架重放共用本函数，保证两条路径的 L 行序与置换序列逐字一致。
+func (lu *luSparse[T]) swapEliminationRows(k, pos int, idAtPos []int) {
+	if pos == k {
+		return
+	}
+	// 对于稀疏矩阵，交换 U 的行，并更新置换矩阵。
+	// L 必须只交换前 k 列（已计算出的乘子），与稠密 LU 一致；
+	// 若整行交换 L，会把对角元素 1 移到次对角位置（如 L[maxRow][k]），
+	// 在前向回代中被当作乘子读取，污染解向量。
+	for j := 0; j < k; j++ {
+		vk := lu.L.Get(k, j)
+		vm := lu.L.Get(pos, j)
+		lu.L.Set(k, j, vm)
+		lu.L.Set(pos, j, vk)
+	}
+	lu.updatePermutation(k, pos)
+	if idAtPos != nil {
+		idAtPos[k], idAtPos[pos] = idAtPos[pos], idAtPos[k]
+	}
+}
+
+// numericReplay 是数值阶段：按符号骨架重放消元，行列结构只读、只写值槽。
+// 每一步都校验主元行是否仍与骨架记录一致；不一致（数值路径变了）→ 返回 errSkeletonStale。
+// 与 decomposeWithPerm 的数值路径逐字对齐：同一个消元顺序、同一个因子表达式、
+// 每个元素每步只被写一次 ⇒ 浮点累加顺序不变。
+func (lu *luSparse[T]) numericReplay(matrix Matrix[T]) error {
+	sk := lu.skel
+	n := lu.n
+	if sk == nil || sk.n != n || len(lu.perm) != n {
+		return errSkeletonStale
+	}
+	pinv := make([]int, n)
+	for i, p := range lu.perm {
+		pinv[p] = i
+	}
+	// 初始值写入固定槽位：槽位是符号上界，初始结构必然被包含；只写值，不动结构。
+	for i := 0; i < n; i++ {
+		vals := sk.rowVals[i]
+		for t := range vals {
+			vals[t] = 0
+		}
+		cols, mv := matrix.GetRow(lu.perm[i])
+		if mv == nil || mv.Length() != len(cols) {
+			return errSkeletonStale
+		}
+		for idx, c := range cols {
+			slot := slotOfSorted(sk.rowCols[i], pinv[c])
+			if slot < 0 {
+				return errSkeletonStale
+			}
+			vals[slot] = mv.Get(idx)
+		}
+	}
+	// L 与置换初始化（与动态路径一致）。
+	lu.L.Zero()
+	for i := 0; i < n; i++ {
+		lu.P[i] = i
+		lu.pinverse[i] = i
+		lu.L.Set(i, i, T(1))
+	}
+	idAtPos := make([]int, n)
+	posOfID := make([]int, n)
+	for i := 0; i < n; i++ {
+		idAtPos[i], posOfID[i] = i, i
+	}
+	for k := 0; k < n; k++ {
+		// --- 部分主元选择：先读 (k,k)，再按「交换前位置」升序扫描（与动态路径同序）---
+		var prePivot T
+		if s := slotOfSorted(sk.rowCols[idAtPos[k]], k); s >= 0 {
+			prePivot = sk.rowVals[idAtPos[k]][s]
+		}
+		if !IsValidFloat64(Abs(prePivot)) {
+			return fmt.Errorf("lu sparse decompose: pivot contains NaN/Inf at k=%d", k)
+		}
+		maxAbsVal := Abs(prePivot)
+		winner := idAtPos[k]
+		for _, i := range sk.searchRows[k] {
+			if v := Abs(sk.rowVals[i][slotOfSorted(sk.rowCols[i], k)]); v > maxAbsVal {
+				maxAbsVal = v
+				winner = i
+			}
+		}
+		if winner != sk.pivotID[k] {
+			return errSkeletonStale // 主元行变了：骨架记录的消元计划不成立
+		}
+		if maxAbsVal < Epsilon {
+			return fmt.Errorf("lu sparse decompose: matrix is singular or nearly singular (k=%d, maxAbs=%g)", k, maxAbsVal)
+		}
+		swapPos := posOfID[winner]
+		if swapPos != k {
+			lu.swapEliminationRows(k, swapPos, idAtPos)
+			posOfID[idAtPos[k]], posOfID[idAtPos[swapPos]] = k, swapPos
+		}
+		// --- 消元：只写值槽 ---
+		var pivotVal T
+		if s := sk.pivotSlot[k]; s >= 0 {
+			pivotVal = sk.rowVals[sk.pivotID[k]][s]
+		}
+		pivotVals := sk.rowVals[sk.pivotID[k]]
+		pivotCols := sk.rowCols[sk.pivotID[k]]
+		pivotFrom := sk.pivotFrom[k]
+		rows := sk.stepRows[k]
+		slots := sk.stepSlots[k]
+		for t, i := range rows {
+			valIK := sk.rowVals[i][slots[t]]
+			if valIK == 0 { // 结构零（该列无此行元素），跳过
+				continue
+			}
+			factor := valIK / pivotVal
+			lu.L.Set(posOfID[i], k, factor)
+			sk.rowVals[i][slots[t]] = 0
+			if !luSkeletonAxpyAbove(sk.rowVals[i], sk.rowCols[i], sk.stepStart[k][t],
+				pivotVals, pivotCols, pivotFrom, -factor) {
+				return errSkeletonStale
+			}
+		}
+	}
+	// U 按最终位置输出：结构到此冻结，骨架模式下不维护列索引（只读路径不依赖它）。
+	us := lu.U.(*rowSparseMatrix[T])
+	for c := range us.colIndex {
+		us.colIndex[c] = us.colIndex[c][:0]
+	}
+	// 输出时去掉已消去的次对角槽位（动态路径会把它们置零并删除）：U 的最终结构不含 j < pos，
+	// 既省内存也让 SolveReuse 的回代扫描长度与动态路径一致。
+	for pos := 0; pos < n; pos++ {
+		id := idAtPos[pos]
+		start := firstAboveSorted(sk.rowCols[id], sk.pivotStep[id]-1)
+		us.colInd[pos] = sk.rowCols[id][start:]
+		us.val[pos] = sk.rowVals[id][start:]
+	}
+	return nil
+}
+
+// decomposeWithPerm 按当前 lu.perm 构建 U 并执行消元（动态数值阶段：结构随消元生长）。
+// 同时记录主元行身份序列 lu.pivotID，供 captureSkeleton 固化符号骨架。
 func (lu *luSparse[T]) decomposeWithPerm(matrix Matrix[T]) error {
 	pinv := make([]int, lu.n)
 	for i, p := range lu.perm {
 		pinv[p] = i
 	}
+	// 行身份表：identity[pos] = 初始（perm 后）行位置；随行交换同步，用来把「当前行」映射回固定身份。
+	identity := make([]int, lu.n)
+	for i := range identity {
+		identity[i] = i
+	}
+	if cap(lu.pivotID) < lu.n {
+		lu.pivotID = make([]int, lu.n)
+	}
+	lu.pivotID = lu.pivotID[:lu.n]
 
 	// 自定义初始化：L 为单位阵，U = P·A·Pᵀ（行按 perm、列按 pinv 映射）
 	lu.L.Zero()
@@ -326,19 +654,10 @@ func (lu *luSparse[T]) decomposeWithPerm(matrix Matrix[T]) error {
 		}
 
 		if maxRow != k {
-			// 对于稀疏矩阵，交换 U 的行，并更新置换矩阵。
-			// L 必须只交换前 k 列（已计算出的乘子），与稠密 LU 一致；
-			// 若整行交换 L，会把对角元素 1 移到次对角位置（如 L[maxRow][k]），
-			// 在前向回代中被当作乘子读取，污染解向量。
 			lu.U.SwapRows(k, maxRow)
-			for j := 0; j < k; j++ {
-				vk := lu.L.Get(k, j)
-				vm := lu.L.Get(maxRow, j)
-				lu.L.Set(k, j, vm)
-				lu.L.Set(maxRow, j, vk)
-			}
-			lu.updatePermutation(k, maxRow)
+			lu.swapEliminationRows(k, maxRow, identity)
 		}
+		lu.pivotID[k] = identity[k]
 
 		// --- 消元过程 ---
 		pivotVal = lu.U.Get(k, k)
