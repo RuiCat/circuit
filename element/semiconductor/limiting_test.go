@@ -223,8 +223,14 @@ func TestD18ExtraGminHelperIsPure(t *testing.T) {
 
 const (
 	// preWireStampDigestSHA256 接线前（器件未接入限制时）六个器件盖章轨迹的 sha256。
+	//
+	// 更新记录：2026-10-14 重新捕获（旧值 2c675c73…）。原因：MOSFET/JFET 的
+	// StampVCCS 参数序修复（原先跨导项注入方向相反，导致器件反向导通，见
+	// cmd/productionModules_test.go 的方向回归判据），盖章轨迹因此改变——这是
+	// **有意的器件修复**，不是掩盖失败；摘要仍由"限幅关闭"路径捕获（M4_CAPTURE_GOLDEN），
+	// nonZero 计数不变（248），用例判别力保持。
 	// 接线后关闭限制必须复现该值；抓取命令见文件头。
-	preWireStampDigestSHA256 = "2c675c73a05aca15888148170d49d0449f59ebb72c195d5a1606744a0e3e8cd6"
+	preWireStampDigestSHA256 = "f5694741a095f13c54e9f4315940f9f95bc334cea4778d8d298160d6ce38aea7"
 	// goldenCaptureEnv 置位时只打印当前摘要（抓取 golden 用），不做断言。
 	goldenCaptureEnv = "M4_CAPTURE_GOLDEN"
 	// abLimitVolts 对照用例开启限制时使用的限幅值（V）。

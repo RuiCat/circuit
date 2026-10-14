@@ -136,7 +136,9 @@ func (JFET) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	nodeSource := value.GetNodes(2)
 
 	mna.StampAdmittance(nodeDrain, nodeSource, gds)
-	mna.StampVCCS(nodeDrain, nodeSource, nodeGate, nodeSource, gm)
+	// 同 mosfet.go：StampVCCS 的实际注入方向是「流入 cn1」，建模 gm·vgs 从漏极流向源极
+	// 必须传 (nodeSource, nodeDrain, ...)，否则 JFET 反向导通（同源缺陷，一并修）。
+	mna.StampVCCS(nodeSource, nodeDrain, nodeGate, nodeSource, gm)
 	mna.StampCurrentSource(nodeSource, nodeDrain, -iconst)
 }
 

@@ -135,7 +135,12 @@ func (MOSFET) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	nodeSource := value.GetNodes(2)
 
 	mna.StampAdmittance(nodeDrain, nodeSource, gds)
-	mna.StampVCCS(nodeDrain, nodeSource, nodeGate, nodeSource, gm)
+	// StampVCCS 的**实际**注入方向是「电流流入 cn1」（见 mna.StampVCCS 的符号），
+	// 与"cn1→cn2"的直觉相反。这里要建模的是 gm·vgs 从漏极流向源极，
+	// 故必须传 (nodeSource, nodeDrain, ...) —— 曾误传 (nodeDrain, nodeSource, ...)，
+	// 导致 MOSFET 反向导通：共源级把漏极推到高于电源、源极跟随给出负输出
+	// （2026-10-14 基础/生产电路测试发现，判据见 cmd/productionModules_test.go）。
+	mna.StampVCCS(nodeSource, nodeDrain, nodeGate, nodeSource, gm)
 	mna.StampCurrentSource(nodeSource, nodeDrain, -iconst)
 }
 
