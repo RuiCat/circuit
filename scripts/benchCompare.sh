@@ -300,11 +300,20 @@ compareGroup() {
     if [ -n "$JSON_OUT" ]; then
         cp "$dir/verdict.json" "$JSON_OUT.tmp.$$" && mv "$JSON_OUT.tmp.$$" "$JSON_OUT"
     fi
-    # D14：judged==0（全部 entry 落在噪声地板内）→ 给不出判定，退出码 3，禁止读成 PASS。
-    local label
+    # NOT_JUDGEABLE（给不出判定）→ 退出码 3，禁止读成 PASS。两个来源：
+    #   D14 judged==0（全部 entry 落在噪声地板内）；
+    #   D29 检测到公共模式漂移（跨窗口 delta 无法区分真回归与窗口漂移，整组降级）。
+    # 提示语从 verdict.json 读实际原因，避免把 D29 误报成 D14。
+    local label reason
     label="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1],encoding="utf-8")).get("verdict",""))' "$dir/verdict.json")"
     if [ "$label" = "NOT_JUDGEABLE" ]; then
-        echo "[benchCompare] group=$group verdict=NOT_JUDGEABLE（judged=0，全部 entry 落在噪声地板内，D14）→ 退出码 3" >&2
+        reason="$(python3 -c 'import json,sys
+d=json.load(open(sys.argv[1],encoding="utf-8"))
+if d.get("environmentShiftDetected"):
+    print("D29 公共模式漂移 %+.2f%%（降级前判定=%s，疑似回归 %d 条见 pendingFails）；请回同窗口复测，策略类改动用同窗口交错 A/B" % (d.get("environmentShiftPct",0.0), d.get("verdictBeforeShift","-") or "-", len(d.get("pendingFails") or [])))
+else:
+    print("D14 judged=0：全部 entry 落在噪声地板内（逐条原因见 ungaugeable）")' "$dir/verdict.json")"
+        echo "[benchCompare] group=$group verdict=NOT_JUDGEABLE（$reason）→ 退出码 3" >&2
         return 3
     fi
     return "$rc"

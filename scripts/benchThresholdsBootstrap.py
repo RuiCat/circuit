@@ -26,10 +26,18 @@ TEMPLATE = """# 基准阈值记录（K1）——「性能阈值」与「噪声�
 > 代价（须知）：有效灵敏度 = 1.5× 地板。地板 13% 的条目需 >19.5% 的 delta 才「可判」，
 > 中等真实改善（−15%~−34%）在高地板窗口会被算作不可判 —— delta 仍打印在判定表里，不得读成"无改善"。
 
+## 1.1 公共模式漂移 → 整组降级（D29）
+
+`environmentShiftPct`（各 entry deltaPct 的中位数）**显著且各条目围绕它聚集**时
+（`|中位| > shiftLimit` 且 `极差 ≤ max(shiftLimit, 0.5×|中位|)`），判定为跨窗口漂移 →
+`verdict=NOT_JUDGEABLE`（退出码 3），并写 `verdictBeforeShift`（降级前判定）与
+`pendingFails`（疑似回归条目，不静默吞掉）。不聚集则保留逐条判定，避免把单点真回归
+（如 `{+40%, +0.4%}`）误当漂移。策略类改动请用**同窗口受控交错 A/B** 作为主证据。
+
 ## 2. 退出码语义（单个 group）
 
 `0=PASS`（judged>0 且无 FAIL）/ `1=FAIL` / `2=用法或基线缺失` / `3=给不出判定`
-（compare 时 `judged==0`；`--write-baseline` 时 `maxMinRatio > 1.15` 拒绝写入）。
+（compare 时 `judged==0` 即 D14，或检测到公共模式漂移即 D29；`--write-baseline` 时 `maxMinRatio > 1.15` 拒绝写入）。
 `--group all` 取最严重者。**同代码对自身基线自比得到 rc=3 是预期语义**（delta 落在判定带内）。
 
 ## 3. 标定结果（数值区由 `benchThresholds.py sync` 生成）

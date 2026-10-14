@@ -191,6 +191,34 @@ func benchlibMedian(values []float64) float64 {
 	return (s[n/2-1] + s[n/2]) / 2
 }
 
+// benchlibMax 返回最大值（D29 的聚集性判据用；空切片返回 NaN）。
+func benchlibMax(values []float64) float64 {
+	if len(values) == 0 {
+		return math.NaN()
+	}
+	m := values[0]
+	for _, v := range values[1:] {
+		if v > m {
+			m = v
+		}
+	}
+	return m
+}
+
+// benchlibMin 返回最小值（D29 的聚集性判据用；空切片返回 NaN）。
+func benchlibMin(values []float64) float64 {
+	if len(values) == 0 {
+		return math.NaN()
+	}
+	m := values[0]
+	for _, v := range values[1:] {
+		if v < m {
+			m = v
+		}
+	}
+	return m
+}
+
 // benchlibEntryDoc 是 bench.json 的单条 benchmark 记录（字段名冻结于 K1）。
 type benchlibEntryDoc struct {
 	Name        string             `json:"name"`
@@ -424,20 +452,24 @@ type benchlibUngaugeable struct {
 // noiseSafetyFactor×(标定 maxMinRatio-1)×100。检出时判定仍按 K1 走（不自动豁免），
 // 但会写入 notes 提示"需在同窗口重新标定后再判"。
 type benchlibVerdictDoc struct {
-	Group                    string                 `json:"group"`
-	Commit                   string                 `json:"commit"`
-	Verdict                  string                 `json:"verdict"`
-	BaselineFile             string                 `json:"baselineFile"`
-	CurrentFile              string                 `json:"currentFile"`
-	JudgedCount              int                    `json:"judgedCount"`
-	PerfThresholdPct         float64                `json:"perfThresholdPct"`
-	BaselineLoadAvg          string                 `json:"baselineLoadAvg,omitempty"`
-	CurrentLoadAvg           string                 `json:"currentLoadAvg,omitempty"`
-	EnvironmentShiftPct      float64                `json:"environmentShiftPct"`
-	EnvironmentShiftDetected bool                   `json:"environmentShiftDetected"`
-	Notes                    []string               `json:"notes,omitempty"`
-	PerBenchmark             []benchlibVerdictEntry `json:"perBenchmark"`
-	Ungaugeable              []benchlibUngaugeable  `json:"ungaugeable"`
+	Group                    string  `json:"group"`
+	Commit                   string  `json:"commit"`
+	Verdict                  string  `json:"verdict"`
+	BaselineFile             string  `json:"baselineFile"`
+	CurrentFile              string  `json:"currentFile"`
+	JudgedCount              int     `json:"judgedCount"`
+	PerfThresholdPct         float64 `json:"perfThresholdPct"`
+	BaselineLoadAvg          string  `json:"baselineLoadAvg,omitempty"`
+	CurrentLoadAvg           string  `json:"currentLoadAvg,omitempty"`
+	EnvironmentShiftPct      float64 `json:"environmentShiftPct"`
+	EnvironmentShiftDetected bool    `json:"environmentShiftDetected"`
+	// VerdictBeforeShift / PendingFails 是 D29 的追溯字段：检测到公共模式漂移时整组降级为
+	// NOT_JUDGEABLE，但"降级前的判定"与"疑似回归条目"都要留痕，避免把真回归静默吞掉。
+	VerdictBeforeShift string                 `json:"verdictBeforeShift,omitempty"`
+	PendingFails       []string               `json:"pendingFails,omitempty"`
+	Notes              []string               `json:"notes,omitempty"`
+	PerBenchmark       []benchlibVerdictEntry `json:"perBenchmark"`
+	Ungaugeable        []benchlibUngaugeable  `json:"ungaugeable"`
 }
 
 // benchlibJudge 是判定本体（纯函数：只吃两份 doc，不读文件、不碰 flag），
@@ -545,12 +577,23 @@ func benchlibJudge(t *testing.T, base, cur benchlibDoc, baselinePath, currentPat
 	}
 	if len(deltas) > 0 {
 		doc.EnvironmentShiftPct = benchlibMedian(deltas)
-		doc.EnvironmentShiftDetected = math.Abs(doc.EnvironmentShiftPct) > shiftLimitPct
+		// D29 收紧后的判据：不仅要求"中位漂移显著"，还要求各条目**围绕中位聚集**（公共模式）。
+		// 只用中位数会把"单点大回归 + 其余持平"误判成漂移（例：{+40%, +0.4%} 的中位 ≈ +20%），
+		// 从而把真回归静默吞掉。聚集性判据（极差 ≤ max(shiftLimit, 0.5×|中位|)）能区分两者：
+		//   {+35%, +33%, +36%} → 聚集 ⇒ 漂移；{+40%, +0.4%} → 不聚集 ⇒ 保留 FAIL 判定。
+		if len(deltas) >= 2 {
+			spread := benchlibMax(deltas) - benchlibMin(deltas)
+			clusterLimit := shiftLimitPct
+			if half := math.Abs(doc.EnvironmentShiftPct) * 0.5; half > clusterLimit {
+				clusterLimit = half
+			}
+			doc.EnvironmentShiftDetected = math.Abs(doc.EnvironmentShiftPct) > shiftLimitPct && spread <= clusterLimit
+		}
 	}
 	if doc.EnvironmentShiftDetected {
 		doc.Notes = append(doc.Notes, fmt.Sprintf(
-			"公共模式漂移 %+.2f%% 超过 %.2f%%：本次与基线很可能不在同一负载窗口，delta 仅供方向参考；"+
-				"结论请在原窗口重新 --write-baseline 后复测（标定 loadAvg=%q，本次 loadAvg=%q）",
+			"公共模式漂移 %+.2f%% 超过 %.2f%%（且各条目围绕该中位聚集）：本次与基线很可能不在同一负载窗口，"+
+				"delta 仅供方向参考；结论请在原窗口重新 --write-baseline 后复测（标定 loadAvg=%q，本次 loadAvg=%q）",
 			doc.EnvironmentShiftPct, shiftLimitPct, doc.BaselineLoadAvg, doc.CurrentLoadAvg))
 		t.Logf("WARN: %s", doc.Notes[len(doc.Notes)-1])
 	}
@@ -560,6 +603,26 @@ func benchlibJudge(t *testing.T, base, cur benchlibDoc, baselinePath, currentPat
 		doc.Notes = append(doc.Notes, fmt.Sprintf(
 			"judged=0：%d 个 entry 全部落在噪声地板内，给不出判定（D14）→ 退出码 3；"+
 				"每条原因见 ungaugeable", len(doc.Ungaugeable)))
+	}
+	// D29：检测到公共模式漂移时**不判 PASS/FAIL** —— 跨窗口的 delta 无法区分"真回归"与
+	// "换了个时间窗"（实测：同一改动被跨窗口对比报 +36%，而同窗口受控交错 A/B 显示无变化）。
+	// 逐条 delta 仍留在 perBenchmark；降级前的判定与疑似回归条目进 verdictBeforeShift/pendingFails，
+	// 便于人工回同窗口复测，不做静默吞掉。
+	if doc.EnvironmentShiftDetected {
+		if doc.Verdict != "NOT_JUDGEABLE" {
+			doc.VerdictBeforeShift = doc.Verdict
+		}
+		for _, e := range doc.PerBenchmark {
+			if e.Judgeable && e.DeltaPct > e.FailThresholdPct {
+				doc.PendingFails = append(doc.PendingFails, fmt.Sprintf("%s %+.2f%%（门槛 %.2f%%）", e.Name, e.DeltaPct, e.FailThresholdPct))
+			}
+		}
+		doc.Verdict = "NOT_JUDGEABLE"
+		doc.Notes = append(doc.Notes, fmt.Sprintf(
+			"D29：公共模式漂移 → 整组降级为 NOT_JUDGEABLE（退出码 3）；降级前判定=%q，疑似回归 %d 条见 pendingFails。"+
+				"策略类改动的收益/回归请用**同窗口受控交错 A/B**（两个二进制交替、各 3 次取中位），见 docs/library-conventions.md",
+			doc.VerdictBeforeShift, len(doc.PendingFails)))
+		t.Logf("WARN: %s", doc.Notes[len(doc.Notes)-1])
 	}
 	t.Logf("VERDICT=%s group=%s judged=%d ungaugeable=%d environmentShift=%+.2f%% detected=%v",
 		doc.Verdict, doc.Group, doc.JudgedCount, len(doc.Ungaugeable),
@@ -616,6 +679,10 @@ func TestBenchlibJudge(t *testing.T) {
 			deltas: []float64{80.0}, want: "NOT_JUDGEABLE", wantJudge: 0},
 		{name: "本次窗口自身噪声大但确实稳→仍可判", baseRat: 1.02, curRat: 1.001,
 			deltas: []float64{40.0}, want: "FAIL", wantJudge: 1},
+		{name: "公共模式漂移（聚集）→整组 NOT_JUDGEABLE（D29）", baseRat: 1.02, curRat: 1.001,
+			deltas: []float64{35.0, 33.0, 36.0}, want: "NOT_JUDGEABLE", wantJudge: 3},
+		{name: "单点大回归+其余持平→不判漂移，保留 FAIL（D29）", baseRat: 1.02, curRat: 1.001,
+			deltas: []float64{40.0, 0.4}, want: "FAIL", wantJudge: 1},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -653,8 +720,11 @@ func TestBenchlibJudge(t *testing.T) {
 			if got.JudgedCount != c.wantJudge {
 				t.Fatalf("judgedCount=%d, 期望 %d", got.JudgedCount, c.wantJudge)
 			}
-			if got.Verdict == "NOT_JUDGEABLE" && len(got.Ungaugeable) == 0 {
-				t.Fatal("NOT_JUDGEABLE 必须逐条保留 ungaugeable 原因")
+			// NOT_JUDGEABLE 必须有**可追溯的原因**，不允许无解释的降级：
+			//   - D14：条目全落在判定带内 → ungaugeable 逐条列出；
+			//   - D29：公共模式漂移 → environmentShiftDetected 置位（并记录降级前判定与疑似回归）。
+			if got.Verdict == "NOT_JUDGEABLE" && len(got.Ungaugeable) == 0 && !got.EnvironmentShiftDetected {
+				t.Fatal("NOT_JUDGEABLE 必须逐条保留 ungaugeable 原因，或因检测到公共模式漂移而降级（D29）")
 			}
 		})
 	}

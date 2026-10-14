@@ -218,6 +218,26 @@ func (o *myObserver) NextNonlinearIter() bool { /* 统计 … */; return o.Engin
 **破坏性但正确**：自行实现 `mna.Time` 的第三方类型若被直接交给 `TransientSimulation`
 会开始报错（此前是静默降级）——这是有意的，属 UD7 的修复目标。
 
+### 3.1.2.1 公共模式漂移时整组降级（D29）
+
+基线对比是**跨窗口**测量。本机 16 核在 load 7~14 波动时，同一份代码的整组读数可以整体偏移
+（实测 `environmentShiftPct` 达 24%），足以把窗口漂移读成 30%+ 的"回归"。
+
+为区分"**公共模式漂移**"与"**单点真回归**"，判定器用**聚集性**判据：
+
+- `environmentShiftPct` = 各 entry `deltaPct` 的中位数；
+- **聚集**判据：`|中位| > shiftLimit` **且** `极差 ≤ max(shiftLimit, 0.5×|中位|)`；
+- 聚集 ⇒ 判定为漂移 → `verdict=NOT_JUDGEABLE`（退出码 3），并在
+  `verdictBeforeShift` 记录降级前判定、在 `pendingFails` 点名疑似回归条目（不静默吞掉）；
+- 不聚集 ⇒ 保留逐条判定（例：`{+40%, +0.4%}` 是单点回归，不会被当成漂移）。
+
+因此：**策略类改动（允许改变数值结果的那类）的收益/回归以同窗口受控交错 A/B 为主证据**
+（两个二进制交替运行、各 3 次取中位），基线对比只作方向参考。判定器打印的
+`environmentShift`/`detected` 与 `pendingFails` 就是这条纪律的机检入口。
+
+**NOT_JUDGEABLE 必须可追溯**（判据不变量）：要么 `ungaugeable` 逐条列出（D14，条目全落在
+噪声地板内），要么 `environmentShiftDetected=true`（D29，漂移降级）；两者皆无即视为判据缺陷。
+
 ### 3.2 新物理域
 
 1. 新建 `element/<domain>/` 包并在 `element/register/register.go` 的导入表中登记；
