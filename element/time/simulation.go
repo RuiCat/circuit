@@ -28,6 +28,18 @@ import (
 //     e. 纯DC电路：估计局部截断误差(LTE)并自适应调整步长
 //     f. 推进仿真时间，调用用户回调
 func TransientSimulation(con *element.Context, call func([]float64)) error {
+	// 引擎契约（UD7）：本函数消费的策略状态、有界牛顿事件计数、强制重盖标志
+	// 都经 EngineTime 接口访问（*TimeMNA 实现）。此前这些点用 `con.Time.(*TimeMNA)`
+	// 逐处断言，一旦 con.Time 被装饰器包装就会**静默跳过**（策略不生效、重盖请求丢失、
+	// 计数不增），结果看似正常却已失去这些语义。故在入口一次性断言并**显式报错**。
+	//
+	// 装饰器怎么包：匿名嵌入 *TimeMNA 或 element/time.EngineTime（见 strategy.go 的
+	// EngineTime 注释），方法会被整体转发；只嵌入 mna.Time 的包装会被这里拒绝。
+	et, okEngineTime := con.Time.(EngineTime)
+	if !okEngineTime {
+		return fmt.Errorf("TransientSimulation: con.Time 必须实现 element/time.EngineTime（策略同步/有界牛顿事件计数/强制重盖标志经它访问）；"+
+			"装饰器请匿名嵌入 *TimeMNA 或 element/time.EngineTime 以转发这些方法。实际类型 %T", con.Time)
+	}
 	// 初始化阶段：获取电路规模并创建求解器
 	nodesNum, voltageSourcesNum := con.GetNodeNum(), con.GetVoltageSourcesNum()
 	// LU 分解器懒创建：首次线性加盖完成后根据矩阵非零密度自动选择
@@ -50,13 +62,12 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 	// 同步一次 TimeMNA 的策略状态（GminFinal<=0 即回默认值）。旧的
 	// "仅当 GminFinal>0 才推送"写法会让同一 Context 的第二次运行沿用上一次的终值，
 	// 结果依赖运行历史——这是 C5 明令取消的隐式行为。
-	tm, isTimeMNA := con.Time.(*TimeMNA)
-	if isTimeMNA {
-		if err := ApplyStrategy(tm, StrategyBindingOf(con)); err != nil {
+	{
+		if err := et.ApplyStrategyBinding(StrategyBindingOf(con)); err != nil {
 			return fmt.Errorf("策略同步失败: %w", err)
 		}
 		// 有界牛顿事件计数（K4）：每次仿真启动重置（计数只增不减，见 strategy.go）。
-		tm.BeginBoundedNewtonEvents()
+		et.BeginBoundedNewtonEvents()
 	}
 	// 牛顿迭代计数（K4 的迭代数出口之一）：本时间步内的轮数，跨步累加进 totalNewtonIters。
 	newtonIterCount := 0
@@ -64,16 +75,13 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 	// 大 Gmin 把交叉耦合双稳态阻尼成单稳态，随迭代收敛逐级下调至自然 gmin，
 	// 解决锁存器/触发器在 t=0 的对称振荡不收敛问题。默认关闭（策略字段 gminCont，
 	// load 从 CIRCUIT_GMCONT 解析，经 ApplyStrategy 同步），不影响普通电路的既有行为。
-	gminContEnabled := isTimeMNA && tm.GminCont()
+	gminContEnabled := et.GminCont()
 	// 全局 gmin（策略字段 globalGmin，load 解析 CIRCUIT_GLOBALGMIN）：
 	// 到地电导，仅给弱连接节点（如只接截止晶体管基极的控制线）接地。
 	// 值必须远小于 RTL 上拉电导（1kΩ=1e-3 S），否则会把逻辑节点拉到中间电平、
 	// 门失去增益、锁存器焊死中间态；不叠加 continuationGmin（延续阻尼只由
 	// PN 结元件自身读取，不进入矩阵对角）。
-	naturalGmin, globalGmin := 0.0, 0.0
-	if isTimeMNA {
-		naturalGmin, globalGmin = tm.NaturalGmin(), tm.GlobalGmin()
-	}
+	naturalGmin, globalGmin := et.NaturalGmin(), et.GlobalGmin()
 	for !con.IsSimulationFinished() {
 		// 将事件值同步到元件 NodeValue
 		if !con.PushEvents() {
@@ -119,7 +127,8 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 		}
 		// 外部强制重盖请求（暂停中修改元件参数后）：置位 needLinearStamp，
 		// 恢复仿真时线性元件按新参数重新加盖。
-		if tm, ok := con.Time.(*TimeMNA); ok && tm.ConsumeForceStamp() {
+		// 经 EngineTime 消费：入口已保证类型，此处不再逐处断言（断言失败即静默丢请求，UD7）。
+		if et.ConsumeForceStamp() {
 			needLinearStamp = true
 		}
 		// 线性元件处理
@@ -296,9 +305,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 			// 如果循环结束，意味着即使经过额外的迭代也未能收敛
 			// 交叉耦合门可能永远无法收敛；继续牛顿外循环而非失败
 			if con.IsElemIterExhausted() {
-				if isTimeMNA {
-					tm.boundedEvents.AddIterExhausted()
-				}
+				et.AddIterExhausted()
 				// 标准 Gmin 步进：当前阻尼水平下元件子迭代耗尽（振荡）→
 				// 增大阻尼一档重试；若已到起始阻尼或恢复超限，回退原有强制推进。
 				if con.Time.GminSteppingActive() {
@@ -328,14 +335,10 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 			}
 		}
 		if luRetry {
-			if isTimeMNA {
-				tm.AddNewtonIters(newtonIterCount)
-			}
+			et.AddNewtonIters(newtonIterCount)
 			continue
 		}
-		if isTimeMNA {
-			tm.AddNewtonIters(newtonIterCount)
-		}
+		et.AddNewtonIters(newtonIterCount)
 		// 检查牛顿迭代是否成功收敛
 		if !newtonConverged {
 			return fmt.Errorf("牛顿迭代在时间 %.6e 未收敛（达到最大迭代次数 %d）", con.CurrentTime(), con.MaxNonlinearIter())
@@ -350,9 +353,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 		// 提取并验证节点电压
 		if !extractAndValidateVoltages(con, nodesNum, voltageSourcesNum, voltages) {
 			// K4 计数：NaN/Inf 拒绝。此处不新增恢复路径——既有语义仍是终止仿真。
-			if isTimeMNA {
-				tm.boundedEvents.AddNaNRejected()
-			}
+			et.AddNaNRejected()
 			return fmt.Errorf("检测到无效电压值（NaN/Inf）在时间 %.6e，停止仿真", con.CurrentTime())
 		}
 		// 积分误差估计与步长自适应
@@ -414,10 +415,8 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 		} else {
 			// 残差不可接受，减小步长并重新计算当前步。
 			// K4 计数：该解被拒绝（StepRejected），随后减半步长重试（StepHalved）。
-			if isTimeMNA {
-				tm.boundedEvents.AddStepRejected()
-				tm.boundedEvents.AddStepHalved()
-			}
+			et.AddStepRejected()
+			et.AddStepHalved()
 			newStep := con.CurrentStep() / 2
 			if newStep < con.MinTimeStep() {
 				return fmt.Errorf("步长已降至最小限制 %.6e，仿真在时间 %.6e 无法收敛", con.MinTimeStep(), con.CurrentTime())
@@ -570,11 +569,11 @@ func extractAndValidateVoltages(mnaSolver mna.Mna, nodesNum int, voltageSourcesN
 // TransientSimulationContinuous 运行连续仿真（永不停止，直到外部调用 Stop()）。
 // 包装 TransientSimulation，自动设置连续模式。
 func TransientSimulationContinuous(con *element.Context, call func([]float64)) error {
-	tm, ok := con.Time.(*TimeMNA)
+	et, ok := con.Time.(EngineTime)
 	if !ok {
-		return fmt.Errorf("TransientSimulationContinuous: Time 不是 *TimeMNA 类型")
+		return fmt.Errorf("TransientSimulationContinuous: con.Time 必须实现 element/time.EngineTime，实际类型 %T", con.Time)
 	}
-	tm.SetContinuousMode()
+	et.SetContinuousMode()
 	return TransientSimulation(con, call)
 }
 

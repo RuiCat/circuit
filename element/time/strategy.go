@@ -17,6 +17,7 @@ package time
 
 import (
 	"circuit/element"
+	"circuit/mna"
 	"fmt"
 	"math"
 	"sync/atomic"
@@ -199,11 +200,64 @@ func halveStepOnFailure(con *element.Context, needLinearStamp, luRetry *bool) er
 	con.SetTimeStep(newStep)
 	*needLinearStamp = true
 	*luRetry = true
-	if tm, ok := con.Time.(*TimeMNA); ok {
-		tm.boundedEvents.AddStepHalved()
-	}
+	// 经 EngineTime 计数：TransientSimulation 入口已保证 con.Time 实现 EngineTime，
+	// 此处不再用具体类型断言（断言失败会静默少计，UD7）。
+	con.Time.(EngineTime).AddStepHalved()
 	return nil
 }
+
+// ------------------------------
+// EngineTime：仿真循环需要的引擎状态接口（UD7）
+// ------------------------------
+
+// EngineTime 是 TransientSimulation 在本层需要的**引擎状态**面：策略同步、有界牛顿事件
+// 计数、强制重盖标志、gmin 策略读值与连续模式。*TimeMNA 实现它。
+//
+// 为什么不放进 mna.Time：这些方法里 ApplyStrategyBinding 的参数是 element/time 自己的
+// StrategyBinding 类型，而 mna 不能反向 import element/time（会成环）。
+//
+// 装饰器约定（重要）：想在 TransientSimulation 外面包一层观测/拦截时，
+// **匿名嵌入 *TimeMNA 或 element/time.EngineTime** —— 这样上述方法会被整体转发。
+// 只嵌入 mna.Time 的包装会缺少这些方法，入口会**显式报错**而不是静默丢失语义（UD7）。
+type EngineTime interface {
+	mna.Time
+	// ApplyStrategyBinding 按当前绑定同步策略状态（封装 ApplyStrategy，含"GminFinal<=0 回默认"）。
+	ApplyStrategyBinding(s StrategyBinding) error
+	// BeginBoundedNewtonEvents 重置本次仿真的有界牛顿事件计数。
+	BeginBoundedNewtonEvents()
+	// ConsumeForceStamp 消费一次"强制重新加盖线性元件"请求。
+	ConsumeForceStamp() bool
+	// AddNewtonIters 累加本步牛顿迭代轮数（跨重试累加）。
+	AddNewtonIters(n int)
+	// 下面四个是 K4 有界牛顿事件计数的自增入口（诊断口径，见 NewtonEventCounts）。
+	AddStepHalved()
+	AddStepRejected()
+	AddIterExhausted()
+	AddNaNRejected()
+	// gmin 策略读值（仿真循环据其决定是否启用延续/全局 gmin）。
+	GminCont() bool
+	NaturalGmin() float64
+	GlobalGmin() float64
+	// SetContinuousMode 置连续模式（TransientSimulationContinuous 用）。
+	SetContinuousMode()
+}
+
+// ApplyStrategyBinding 见 EngineTime：把绑定同步到自身。
+func (t *TimeMNA) ApplyStrategyBinding(s StrategyBinding) error {
+	return ApplyStrategy(t, s)
+}
+
+// AddStepHalved 见 EngineTime。
+func (t *TimeMNA) AddStepHalved() { t.boundedEvents.AddStepHalved() }
+
+// AddStepRejected 见 EngineTime。
+func (t *TimeMNA) AddStepRejected() { t.boundedEvents.AddStepRejected() }
+
+// AddIterExhausted 见 EngineTime。
+func (t *TimeMNA) AddIterExhausted() { t.boundedEvents.AddIterExhausted() }
+
+// AddNaNRejected 见 EngineTime。
+func (t *TimeMNA) AddNaNRejected() { t.boundedEvents.AddNaNRejected() }
 
 // ------------------------------
 // 迭代数读出口（K4/C11，含 D18 修正出口）

@@ -179,6 +179,45 @@ solver, err := mna.NewMnaUpdateFor[float64](mna.PathTransientSparse, nodes, vsNu
 注意：**跨窗口的基线对比在本机负载波动下会给出假回归**（同一改动曾被工具报 `LoadDiode +36%`，
 而交错 A/B 显示无变化）——策略类改动应以同窗口交错 A/B 为主证据，基线对比仅作参考。
 
+### 3.1.3 仿真入口的类型契约：`EngineTime`（UD7）
+
+`TransientSimulation(con, cb)` 在本层需要访问**引擎状态**：策略同步、有界牛顿事件计数、
+强制重盖标志（`forceStamp`）、gmin 策略读值、连续模式。这些方法此前用
+`con.Time.(*TimeMNA)` **逐处断言**，一旦 `con.Time` 被装饰器包造就**静默跳过**
+（策略不生效、重盖请求丢失、计数不增），而仿真仍跑完、结果看似正常。
+
+现在入口一次性断言 `element/time.EngineTime` 并**显式报错**：
+
+```go
+type EngineTime interface {
+    mna.Time
+    ApplyStrategyBinding(StrategyBinding) error
+    BeginBoundedNewtonEvents()
+    ConsumeForceStamp() bool
+    AddNewtonIters(n int)
+    AddStepHalved(); AddStepRejected(); AddIterExhausted(); AddNaNRejected()
+    GminCont() bool; NaturalGmin() float64; GlobalGmin() float64
+    SetContinuousMode()
+}
+```
+
+**为什么声明在 `element/time` 而不是 `mna`**：`ApplyStrategyBinding` 的参数是
+`element/time.StrategyBinding`，而 `mna` 不能反向依赖 `element/time`（会成环）。
+
+**装饰器约定（要观测/拦截引擎时照此写）**：
+
+```go
+type myObserver struct{ etime.EngineTime }   // 匿名嵌入 → 引擎状态方法整体转发
+func (o *myObserver) NextNonlinearIter() bool { /* 统计 … */; return o.EngineTime.NextNonlinearIter() }
+```
+
+只嵌入 `mna.Time` 的包装会被入口拒绝，错误信息会点明缺 `EngineTime` 与修法
+（宁可报错，也不要静默丢语义）。判据见 `element/time/timeMnaGuard_test.go`：
+①只转发 `mna.Time` 的装饰器必须被拒绝；②嵌入 `EngineTime` 的装饰器必须被接受并跑完。
+
+**破坏性但正确**：自行实现 `mna.Time` 的第三方类型若被直接交给 `TransientSimulation`
+会开始报错（此前是静默降级）——这是有意的，属 UD7 的修复目标。
+
 ### 3.2 新物理域
 
 1. 新建 `element/<domain>/` 包并在 `element/register/register.go` 的导入表中登记；

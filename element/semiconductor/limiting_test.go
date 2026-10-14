@@ -560,12 +560,17 @@ func TestLimitingDisabledBitExactGolden(t *testing.T) {
 
 // timeDecorator 以不同字段名内嵌 mna.Time：直接内嵌 mna.Time 会与接口方法
 // Time() float64 同名冲突（字段遮蔽方法，包装类型不满足 mna.Time）。
+// timeDecorator 转发**引擎状态面** EngineTime（UD7 约定写法）。
+//
+// 起初它只嵌入 mna.Time，但 TransientSimulation 需要策略同步/有界牛顿事件计数/
+// 强制重盖标志这些方法（见 element/time.EngineTime）；只转发 mna.Time 的包装会被
+// 入口显式拒绝（UD7：宁可报错，也不静默丢语义）。匿名嵌入 EngineTime 即可整体转发。
 type timeDecorator interface {
-	mna.Time
+	etime.EngineTime
 }
 
-// countingTime 包装 mna.Time，统计引擎的非线性迭代轮次与未收敛信号。
-// K4 的 BoundedNewtonEvents 由 m5 落地；本包装只复用 mna.Time 接口上既有的计数方法，
+// countingTime 包装 EngineTime，统计引擎的非线性迭代轮次与未收敛信号。
+// K4 的 BoundedNewtonEvents 由 m5 落地；本包装只复用接口上既有的计数方法，
 // 不进入 element/time 写域（m5）。
 type countingTime struct {
 	timeDecorator
