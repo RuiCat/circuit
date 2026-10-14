@@ -238,6 +238,16 @@ func (o *myObserver) NextNonlinearIter() bool { /* 统计 … */; return o.Engin
 **NOT_JUDGEABLE 必须可追溯**（判据不变量）：要么 `ungaugeable` 逐条列出（D14，条目全落在
 噪声地板内），要么 `environmentShiftDetected=true`（D29，漂移降级）；两者皆无即视为判据缺陷。
 
+### 3.1.4 快照证据必须带二进制身份（D32）
+
+`regressSnapshot.sh` 默认**每次调用都重建** CLI（`$ROOT/.cache/regress-cli`），并在输出目录写
+`_binary.txt`（`binary_sha256` / `binary_freshness` / `head_commit` / `worktree_dirty_files`）。
+引用任何"逐位一致/有差异"结论时，**必须同时说明两侧快照的 `_binary.txt`**：
+曾经因为工具复用旧二进制，把"旧二进制 vs 旧二进制"误当成"改动前后逐位一致"（结论无效，已更正）。
+
+A/B 对照需要两个不同的二进制时，用 `BENCH_CLI=<路径>` 显式指定（不自动重建，工具会打印提示），
+或 `REGRESS_NO_BUILD=1` 复用（结论自负）。
+
 ### 3.2 新物理域
 
 1. 新建 `element/<domain>/` 包并在 `element/register/register.go` 的导入表中登记；
