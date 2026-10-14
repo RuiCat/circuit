@@ -1,0 +1,23 @@
+# benchGroups.tsv —— K1 的 group 定义（单一事实来源：scripts/benchCompare.sh 与 scripts/benchSelfcheck.py 都读它）
+#
+# 列（TAB 分隔，顺序固定）：
+#   group        取值 m1..m6（一个 group 可以有多行：跨包/跨 benchmark 集合）
+#   pkg          go test 的包路径（逐字进被测命令）
+#   benchRegex   `go test -bench` 的名单正则（^...$ 锚定；多行按包并集）
+#   benchtime    `go test -benchtime`（逐字进被测命令与基线头；同 group 各行必须一致）
+#   count        `go test -count`（= 每 benchmark 的样本数 = 基线 runs）
+#
+# 名单口径：m2 = maths 算子内核（m2 写域）；m3 = 稀疏 LU/ordering 算子 + 大稀疏数字电路端到端；
+# m4 = 非线性电路端到端；m5 = 步长/策略相关端到端；m6 = 引擎加载/拆分相关端到端；
+# m1 = 轻量端到端（m1 自己的工具链 sanity 窗口）。
+#
+# benchtime 取值依据（2026-10-12 实测，load average 9.0~10.0）：200ms 下 m2 组最差 maxMinRatio=1.29
+# （BenchmarkUpdateMatrixRollback 1.354 / DenseVectorSet 1.354），1s 下同组最差 1.118 → 取 1s。
+# 换 benchtime 即改变被测命令，基线必须重新标定（K1：命令逐字一致）。
+m1	./element/time/	^BenchmarkE2E(Load|Step)(Resistor|RcFilter)$	1s	3
+m2	./maths/	^Benchmark(LuDenseDecompose|LuDenseSolve|RowSparseSet|RowSparseSetAdd|RowSparseGet|DenseVectorSet|UpdateVectorSet|VectorIncrement|UpdateMatrix_GetRow|UpdateMatrixRollback)$	1s	3
+m3	./maths/	^Benchmark(LuSparseDecompose|LuSparseSolve|MinimumDegreeOrder)$	1s	3
+m3	./element/time/	^BenchmarkE2EStepRam16x8$	1s	3
+m4	./element/time/	^BenchmarkE2E(Step|Load)Diode$	1s	3
+m5	./element/time/	^BenchmarkE2E(StepRcFilter|StepRam16x8)$	1s	3
+m6	./element/time/	^BenchmarkE2E(Load|Step)Ram16x8$	1s	3
