@@ -113,6 +113,10 @@ func (Transistor) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	// 限制电压步长以保证数值稳定性
 	vbc = limitStepTransistor(vbc, lastvbc, value)
 	vbe = limitStepTransistor(vbe, lastvbe, value)
+	// 迭代电压限制（默认关闭，见 limiting.go）：在既有 CircuitJS1 限幅之后再限一次，
+	// 保证最终存储并参与盖章的两个结电压各自受 maxStep 约束。关闭时该调用为恒等变换。
+	vbc = limitJunctionStep(vbc, lastvbc)
+	vbe = limitJunctionStep(vbe, lastvbe)
 	value.SetFloat64(3, vbc)
 	value.SetFloat64(4, vbe)
 

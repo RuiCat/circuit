@@ -14,16 +14,16 @@ var MOSFETType element.NodeType = element.AddElement(36, &MOSFET{
 		Name: "m",
 		Pin:  element.SetPin(element.PinLowVoltage, "drain", "gate", "source"),
 		ValueInit: []any{
-			int(0),          // 0: 类型 type (0=NMOS, 1=PMOS)
-			float64(1.5),    // 1: 阈值电压 VTO (V)
-			float64(2e-5),   // 2: 跨导参数 KP (A/V²)
-			float64(0.01),   // 3: 沟道长度调制系数 LAMBDA (1/V)
-			float64(0),      // 4: Vgs (V)
-			float64(0),      // 5: Vds (V)
-			float64(0),      // 6: Ids (A)
-			float64(0),      // 7: gm (S)
-			float64(0),      // 8: gds (S)
-			int(0),          // 9: lastMode (0=截止/1=线性/2=饱和)
+			int(0),        // 0: 类型 type (0=NMOS, 1=PMOS)
+			float64(1.5),  // 1: 阈值电压 VTO (V)
+			float64(2e-5), // 2: 跨导参数 KP (A/V²)
+			float64(0.01), // 3: 沟道长度调制系数 LAMBDA (1/V)
+			float64(0),    // 4: Vgs (V)
+			float64(0),    // 5: Vds (V)
+			float64(0),    // 6: Ids (A)
+			float64(0),    // 7: gm (S)
+			float64(0),    // 8: gds (S)
+			int(0),        // 9: lastMode (0=截止/1=线性/2=饱和)
 		},
 		ValueName: []string{"type", "VTO", "KP", "LAMBDA", "Vgs", "Vds", "Ids", "gm", "gds", "lastMode"},
 		Current:   []int{6},
@@ -81,6 +81,11 @@ func (MOSFET) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	if math.Abs(vgs-vgsPrev) > 0.01 || math.Abs(vds-vdsPrev) > 0.01 {
 		time.NoConverged()
 	}
+
+	// 迭代电压限制（默认关闭，见 limiting.go）：把本次迭代的 vgs/vds 变化限幅在设定值内。
+	// 关闭时该调用为恒等变换，取值与盖章方程均不变。
+	vgs = limitJunctionStep(vgs, vgsPrev)
+	vds = limitJunctionStep(vds, vdsPrev)
 
 	value.SetFloat64(4, vgs)
 	value.SetFloat64(5, vds)

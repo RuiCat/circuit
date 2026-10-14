@@ -139,6 +139,9 @@ func (Zener) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 			}
 			mna.StampImpedance(value.GetNodesInternal(0), value.GetNodes(1), 1e8)
 			voltdiff = zenerLimitStep(voltdiff, lastvoltdiff, time, value)
+			// 迭代电压限制（默认关闭，见 limiting.go）：在既有 CircuitJS1 限幅之后再限一次，
+			// 保证最终存储并参与盖章的结电压受 maxStep 约束。关闭时该调用为恒等变换。
+			voltdiff = limitJunctionStep(voltdiff, lastvoltdiff)
 			value.SetFloat64(5, voltdiff)
 			zenerDoStepWeighted(mna, value, voltdiff, weight)
 			Rs := value.GetFloat64(3)
@@ -150,6 +153,7 @@ func (Zener) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 	}
 
 	voltdiff = zenerLimitStep(voltdiff, lastvoltdiff, time, value)
+	voltdiff = limitJunctionStep(voltdiff, lastvoltdiff)
 	value.SetFloat64(5, voltdiff)
 
 	zenerDoStep(mna, time, value, voltdiff)
@@ -250,18 +254,10 @@ func zenerDoStep(mna mna.Mna, time mna.Time, value element.NodeFace, voltdiff fl
 		gmin = cg
 	}
 
-	subIterations := time.GoodIterations()
-	if subIterations > 100 {
-		ratio := 1.0 - math.Min(float64(subIterations)/1000.0, 1.0)
-		extraGmin := math.Exp(-12 * math.Ln10 * ratio)
-		if extraGmin < 1e-15 {
-			extraGmin = 0
-		}
-		if extraGmin > 1e-6 {
-			extraGmin = 1e-6
-		}
-		gmin += extraGmin
-	}
+	// 加性 gmin：按**当前时间步的元件迭代次数**启用（D18/UD10 修正）。
+	// 历史上此处传 GoodIterations()（累计成功步数、从不重置），使 ≥500 步的仿真
+	// 恒被钳到 1e-6、每个 PN 结长期并联 ~1MΩ。语义与算式已抽到 extraGminForIterations。
+	gmin += extraGminForIterations(time.CurrentElemIter())
 
 	if voltdiff >= 0 || Vz == 0 {
 		eval := zenerSafeExp(voltdiff * vdcoef)

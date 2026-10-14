@@ -164,6 +164,9 @@ func (Diode) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 
 			// 齐纳模型贡献（按权重混合）
 			voltdiff = limitDiodeStep(voltdiff, lastvoltdiff, time, value)
+			// 迭代电压限制（默认关闭，见 limiting.go）：在既有 CircuitJS1 限幅之后再限一次，
+			// 保证最终存储并参与盖章的结电压受 maxStep 约束。关闭时该调用为恒等变换。
+			voltdiff = limitJunctionStep(voltdiff, lastvoltdiff)
 			value.SetFloat64(5, voltdiff)
 
 			// 执行MNA建模，但按权重缩放贡献
@@ -182,6 +185,7 @@ func (Diode) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 
 	// 限制电压步长
 	voltdiff = limitDiodeStep(voltdiff, lastvoltdiff, time, value)
+	voltdiff = limitJunctionStep(voltdiff, lastvoltdiff)
 	value.SetFloat64(5, voltdiff)
 
 	// 执行MNA建模
@@ -298,21 +302,10 @@ func doDiodeStep(mna mna.Mna, time mna.Time, value element.NodeFace, voltdiff fl
 	// 只有在收敛困难时才增加gmin，且增加幅度要小
 	// 原始CircuitJS1代码中这个逻辑可能导致gmin过大
 	// 这里使用更保守的值
-	subIterations := time.GoodIterations()
-	if subIterations > 100 {
-		// 缓慢增加gmin，但最大值限制在1e-6
-		// 防止 subIterations > 1000 导致指数参数为正（溢出）
-		ratio := 1.0 - math.Min(float64(subIterations)/1000.0, 1.0)
-		extraGmin := math.Exp(-12 * math.Ln10 * ratio) // 使用 math.Ln10 常量避免重复计算；下界防止 underflow 产生极小值
-		// 设置下界防止 underflow，上界钳位防止 gmin 过大
-		if extraGmin < 1e-15 {
-			extraGmin = 0 // underflow 保护：极小值视为 0
-		}
-		if extraGmin > 1e-6 {
-			extraGmin = 1e-6
-		}
-		gmin += extraGmin
-	}
+	// 加性 gmin：按**当前时间步的元件迭代次数**启用（D18/UD10 修正）。
+	// 历史上此处传 GoodIterations()（累计成功步数、从不重置），使 ≥500 步的仿真
+	// 恒被钳到 1e-6、每个 PN 结长期并联 ~1MΩ。语义与算式已抽到 extraGminForIterations。
+	gmin += extraGminForIterations(time.CurrentElemIter())
 
 	if voltdiff >= 0 || Vz == 0 {
 		// 常规二极管或正向偏置齐纳二极管

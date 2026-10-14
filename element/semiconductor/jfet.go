@@ -13,16 +13,16 @@ var JFETType element.NodeType = element.AddElement(37, &JFET{
 		Name: "j",
 		Pin:  element.SetPin(element.PinLowVoltage, "drain", "gate", "source"),
 		ValueInit: []any{
-			int(0),          // 0: 类型 type (0=NJF, 1=PJF)
-			float64(2.0),    // 1: 夹断电压绝对值 VTO (V)
-			float64(1e-4),   // 2: 跨导参数 BETA (A/V²)
-			float64(0.02),   // 3: 沟道长度调制系数 LAMBDA (1/V)
-			float64(0),      // 4: Vgs (V) (内部存储，带符号)
-			float64(0),      // 5: Vds (V) (内部存储，带符号)
-			float64(0),      // 6: Ids (A)
-			float64(0),      // 7: gm (S)
-			float64(0),      // 8: gds (S)
-			int(0),          // 9: lastMode (0=截止/1=线性/2=饱和)
+			int(0),        // 0: 类型 type (0=NJF, 1=PJF)
+			float64(2.0),  // 1: 夹断电压绝对值 VTO (V)
+			float64(1e-4), // 2: 跨导参数 BETA (A/V²)
+			float64(0.02), // 3: 沟道长度调制系数 LAMBDA (1/V)
+			float64(0),    // 4: Vgs (V) (内部存储，带符号)
+			float64(0),    // 5: Vds (V) (内部存储，带符号)
+			float64(0),    // 6: Ids (A)
+			float64(0),    // 7: gm (S)
+			float64(0),    // 8: gds (S)
+			int(0),        // 9: lastMode (0=截止/1=线性/2=饱和)
 		},
 		ValueName: []string{"type", "VTO", "BETA", "LAMBDA", "Vgs", "Vds", "Ids", "gm", "gds", "lastMode"},
 		Current:   []int{6},
@@ -79,6 +79,11 @@ func (JFET) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 		time.NoConverged()
 	}
 
+	// 迭代电压限制（默认关闭，见 limiting.go）：把本次迭代的 vgs/vds 变化限幅在设定值内。
+	// 关闭时该调用为恒等变换，取值与盖章方程均不变。
+	vgs = limitJunctionStep(vgs, vgsPrev)
+	vds = limitJunctionStep(vds, vdsPrev)
+
 	value.SetFloat64(4, vgs)
 	value.SetFloat64(5, vds)
 
@@ -99,7 +104,7 @@ func (JFET) DoStep(mna mna.Mna, time mna.Time, value element.NodeFace) {
 			mode = 1
 			ids = beta * (2*vgsMinusVto*vds - vds*vds) * (1 + lambda*vds)
 			gm = beta * 2 * vds * (1 + lambda*vds)
-			gds = beta * (2*vgsMinusVto - 2*vds) * (1+lambda*vds) + beta*(2*vgsMinusVto*vds-vds*vds)*lambda
+			gds = beta*(2*vgsMinusVto-2*vds)*(1+lambda*vds) + beta*(2*vgsMinusVto*vds-vds*vds)*lambda
 		} else {
 			// 饱和区
 			mode = 2
