@@ -5,7 +5,9 @@ import (
 	"circuit/load/ast"
 	"circuit/mna"
 	"fmt"
+	"math"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -69,7 +71,7 @@ func buildComponentTypes() []ComponentTypeInfo {
 		for i, pn := range cfg.ValueName {
 			var def any
 			if i < len(cfg.ValueInit) {
-				def = cfg.ValueInit[i]
+				def = jsonSafeValue(cfg.ValueInit[i])
 			}
 			info.Params = append(info.Params, ParamInfo{
 				Index:   i,
@@ -138,11 +140,24 @@ func (h *Handler) handleComponentHelp(args map[string]any) (any, error) {
 	for i, pn := range cfg.ValueName {
 		var def any
 		if i < len(cfg.ValueInit) {
-			def = cfg.ValueInit[i]
+			def = jsonSafeValue(cfg.ValueInit[i])
 		}
 		info.Params = append(info.Params, ParamInfo{Index: i, Name: pn, Type: paramType(def), Default: def})
 	}
 	return info, nil
+}
+
+// jsonSafeValue 把不能进 JSON 的数值（NaN / ±Inf）转成字符串表示，其余原样返回。
+//
+// 存在理由（实测）：K1 约定元件把幂等戳之类的槽初始化为 math.NaN()，而本工具的返回值要
+// JSON 序列化——直接放 NaN 会让整个 circuit_list_component_types 调用失败
+// （TestToolComponentCatalog 报 "序列化失败: json: unsupported value: NaN"）。
+// 序列化层必须容忍合法取值，而不是要求元件改初值。
+func jsonSafeValue(v any) any {
+	if f, ok := v.(float64); ok && (math.IsNaN(f) || math.IsInf(f, 0)) {
+		return strconv.FormatFloat(f, 'g', -1, 64)
+	}
+	return v
 }
 
 // handleListElements circuit_list_elements：会话内元件清单。

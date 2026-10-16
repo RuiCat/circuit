@@ -15,6 +15,8 @@ import (
 	_ "circuit/element/pneumatic"
 	_ "circuit/element/semiconductor"
 	_ "circuit/element/sensor"
+	_ "circuit/element/serial" // UART（TTL 电平串口，NodeType 48）
 	_ "circuit/element/source"
 	_ "circuit/element/switch"
+	_ "circuit/element/ttl" // TTL 电气级器件（TTLNAND/TTLAND/TTLDFF，NodeType 50/52/54）
 )
