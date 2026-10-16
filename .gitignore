@@ -39,3 +39,6 @@ PROJECT_MEMORY.md
 runs/
 # 项目级技能与规划工作区（本机协作状态，出仓）
 .dsh/
+
+# 验证门台账缓存（本机状态）
+.gatecache/
