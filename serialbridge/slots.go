@@ -24,8 +24,16 @@ const (
 	SlotFrameError = 13 // frameError：非 0 表示当前字节帧错误
 	SlotLastRxTime = 14 // lastRxTime：最近一次接收时刻
 	SlotAckFlag    = 15 // ackFlag：ACK 事件目标槽；非 0 ⇒ 本步内 dataReady=false、ackFlag=0
-	SlotCount      = 16 // 槽总数（越界判定的边界）
+	SlotCount      = 16 // K2 槽总数（0..15 的越界判定边界）
 )
+
+// SlotByteAck 是 K1 追加的 13 针字节口槽（K4/C7）：
+// 非 0 表示 UART 已收到加载器对「当前字节」的 ACK（4 相握手的第 2 相完成）。
+//
+// 13 针专用，3 针实例不读：3 针形态（68/69 网表）从不写该槽，桥也只在
+// Config.WaitByteAck 显式启用时才读它；追加槽只在 22+，0..15 的 K2 槽语义不变。
+// 数值与 element/serial/uartSlots.go 的 slotByteAck 对齐（22）。
+const SlotByteAck = 22
 
 // SlotIo 是桥对仿真引擎的最小依赖面：读槽 / 写事件 / 推进仿真。
 // 桥不 import element/**（K2 的 element/serial 由批 2 提供，本包不依赖其类型）；

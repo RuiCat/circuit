@@ -1,4 +1,6 @@
-// pty_test.go 用自建 pty（golang.org/x/sys/unix，无 socat）验证真实字节流双向一致，
+//go:build unix
+
+// ptyUnix_test.go 用自建 pty（golang.org/x/sys/unix，无 socat）验证真实字节流双向一致，
 // 并把桥接到 pty 上跑通 16 字节双向端到端；同时覆盖读超时与对端关闭。
 // 判定口径按 C13：只断言字节序列的数量/顺序/内容，不断言真实波特率时序。
 package serialbridge

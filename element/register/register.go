@@ -9,6 +9,7 @@ import (
 	_ "circuit/element/hierarchical"
 	_ "circuit/element/hydraulic"
 	_ "circuit/element/interactive"
+	_ "circuit/element/loader" // 串口加载控制器（LOADER，NodeType 49）
 	_ "circuit/element/logic"
 	_ "circuit/element/magnetic"
 	_ "circuit/element/passive"

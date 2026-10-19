@@ -95,6 +95,29 @@ func (f *DFlipFlop) DoStep(m mna.Mna, t mna.Time, value element.NodeFace) {
 	m.UpdateVoltageSource(value.GetVoltSource(1), desiredNQ)
 }
 
+// Reset 把触发器复位到初值（K5/C12）：Q=0、NQ=V_high，并清掉边沿检测与初始化标记；
+// 重复调用幂等。槽 1..4（prev_clk / q_state / initialized / prev_d）恢复为
+// Config.ValueInit 的初值，槽 0（V_high）是参数、保持不动。
+func (f *DFlipFlop) Reset(value element.NodeFace) {
+	if value == nil {
+		return
+	}
+	cfg := value.Config()
+	node := value.Base()
+	if cfg == nil || node == nil {
+		return
+	}
+	for i := 1; i <= 4; i++ {
+		if i < len(cfg.ValueInit) && i < len(node.NodeValue) {
+			node.NodeValue[i] = cfg.ValueInit[i]
+			// 同步刷新备份：引擎每步的 MarkRollbackElements 只回滚 OrigValue 里登记的槽。
+			if _, ok := node.OrigValue[i]; ok {
+				node.OrigValue[i] = cfg.ValueInit[i]
+			}
+		}
+	}
+}
+
 // StepFinished 在时间步收敛完成后调用。
 // 保存 D 输入电压供下一边沿判断，并延迟初始化直到时钟达到干净低电平。
 func (f *DFlipFlop) StepFinished(m mna.Mna, t mna.Time, value element.NodeFace) {

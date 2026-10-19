@@ -6,11 +6,14 @@
 //   - Q[0:7]：读数据输出（电压源驱动，组合读：Q = mem[A]）
 //   - 参数 0：size（字节数，默认 256，范围 1..65536）
 //   - 参数 1：init_hex（十六进制初始化内容，如 "08 19 2A"；空=全 0）
+//
 // 内存状态存于参数 2（string，十六进制，每字节 2 字符）：
 //   - 仿真中 DoStep 写入时更新该字符串
 //   - 外部可通过 SetString(2, ...) 动态装载程序（MCP set_element_param）
+//
 // 用途：CPU 的冯·诺依曼统一内存——程序与数据同址存放；
-//       装载模式（WE 由外部控制）逐字节写入程序后切换运行。
+//
+//	装载模式（WE 由外部控制）逐字节写入程序后切换运行。
 package logic
 
 import (
@@ -24,10 +27,11 @@ import (
 
 // RAMType RAM 元件类型标识(NodeType=47)，网表"RAM<name> <A[0:7],D[0:7],WE,Q[0:7]> [size, init]"。
 // 引脚布局（24 引脚）：
-//   0-7:  A0..A7 地址
-//   8-15: D0..D7 写数据
-//   16:   WE 写使能
-//   17-24:Q0..Q7 读输出
+//
+//	0-7:  A0..A7 地址
+//	8-15: D0..D7 写数据
+//	16:   WE 写使能
+//	17-24:Q0..Q7 读输出
 var RAMType element.NodeType = element.AddElement(47, &RAM{
 	&element.Config{
 		Name: "RAM",
@@ -68,6 +72,50 @@ func ensureMem(value element.NodeFace) string {
 		b.WriteByte('0')
 	}
 	return b.String()
+}
+
+// normalizeHex 按 size 把十六进制串去空白后截断/补零（与 ensureMem 的 mem_hex 长度口径一致）。
+func normalizeHex(value element.NodeFace, hexStr string) string {
+	size := int(value.GetFloat64(0))
+	if size <= 0 {
+		size = 256
+	}
+	s := strings.ReplaceAll(hexStr, " ", "")
+	if len(s) > size*2 {
+		return s[:size*2]
+	}
+	if len(s) < size*2 {
+		s += strings.Repeat("0", size*2-len(s))
+	}
+	return s
+}
+
+// Reset 把内存恢复到初值（K5/C12），重复调用幂等。
+//
+// 语义（Lead D4 批准的 K5 修订）：
+//   - init_hex 非空：mem_hex 恢复为 init_hex（去空白，按 size 截断/补零）；
+//   - init_hex 为空：首次 Reset 把当前 mem_hex（含 InitFromHex/MCP 外部预载）快照进
+//     init_hex 作为初值，之后每次 Reset 都恢复该初值。
+//
+// 之所以对空 init_hex 做首次快照而非直接清空：引擎每次 TransientSimulation 启动都会
+// 自动调用 MarkReset（element/time/simulation.go:57），直接清空会抹掉仿真前的程序预载
+// （如 cmd/verify_digital_test.go 的 InitFromHex 用法）。快照口径下，未预载的新 Context
+// 初值仍为全 0，等价于清空。
+func (r *RAM) Reset(value element.NodeFace) {
+	initHex := strings.TrimSpace(value.GetString(1))
+	if initHex == "" {
+		initHex = normalizeHex(value, value.GetString(2))
+		value.SetString(1, initHex)
+	} else {
+		initHex = normalizeHex(value, initHex)
+	}
+	value.SetString(2, initHex)
+	// 同步刷新备份：引擎每步的 MarkRollbackElements 只回滚 OrigValue 里登记的槽。
+	if node := value.Base(); node != nil {
+		if _, ok := node.OrigValue[2]; ok {
+			node.OrigValue[2] = initHex
+		}
+	}
 }
 
 // Stamp 驱动 Q0..Q7 输出电压源为当前地址对应字节。

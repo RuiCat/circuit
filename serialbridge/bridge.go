@@ -15,6 +15,11 @@ type Config struct {
 	TxEvent    string // 覆盖入站事件名（非空则优先于 Instance）
 	AckEvent   string // 覆盖 ACK 事件名（非空则优先于 Instance）
 	StepBudget int    // 单次等待的步数预算；≤0 时取 DefaultStepBudget
+	// WaitByteAck 启用 13 针字节口的 ACK 背压（K4/C7）：SendByte 写入入站事件后，
+	// 还要等到 UART 槽 22 完成一次 0→1（本字节已被元件取走、加载器已 ACK）才返回；
+	// 预算内未完成返回 ErrStepBudget，不静默覆盖槽 3。
+	// 零值 false ⇒ 只保留原有的「事件被消费」判据，3 针（68/69）行为逐位不变。
+	WaitByteAck bool
 }
 
 // Bridge 把串口字节流与 K2 槽表对接。
@@ -22,11 +27,12 @@ type Config struct {
 // 引擎的 SetEvent 是单值存储、PushEvents 消费后置 nil（element/context.go:304,371-396），
 // 不确认就连发会让先写的字节被静默覆盖（C15）。
 type Bridge struct {
-	io         SlotIo
-	txEvent    string
-	ackEvent   string
-	stepBudget int
-	pendingTx  bool // 已写入 txEvent 但引擎尚未在 Advance 中报告消费
+	io          SlotIo
+	txEvent     string
+	ackEvent    string
+	stepBudget  int
+	waitByteAck bool // 13 针 ACK 背压开关（Config.WaitByteAck；零值 = 关闭）
+	pendingTx   bool // 已写入 txEvent 但引擎尚未在 Advance 中报告消费
 }
 
 // NewBridge 校验配置并构造桥；io 为空或事件名无法确定时返回错误。
@@ -51,7 +57,8 @@ func NewBridge(io SlotIo, cfg Config) (*Bridge, error) {
 	if budget <= 0 {
 		budget = DefaultStepBudget
 	}
-	return &Bridge{io: io, txEvent: txEvent, ackEvent: ackEvent, stepBudget: budget}, nil
+	return &Bridge{io: io, txEvent: txEvent, ackEvent: ackEvent,
+		stepBudget: budget, waitByteAck: cfg.WaitByteAck}, nil
 }
 
 // TxEvent 返回入站事件名（供诊断与网表对照）。
@@ -66,6 +73,8 @@ func (br *Bridge) Pending() bool { return br.pendingTx }
 // SendByte 把一个字节写进入站事件（K2：入站事件是槽 3 的唯一来源）。
 // 流控：上一字节未被引擎消费时直接返回 ErrByteInFlight——拒绝而不是排队，
 // 因为排队会掩盖"元件没取走字节"这一故障，且桥无法知道元件何时能收。
+// 13 针开启 WaitByteAck 时，本调用还等到槽 22 完成 0→1（加载器已 ACK），
+// 预算内未完成返回 ErrStepBudget；关闭时（默认/3 针）行为与改动前完全一致。
 func (br *Bridge) SendByte(b byte) error {
 	if br.pendingTx {
 		return ErrByteInFlight
@@ -74,7 +83,42 @@ func (br *Bridge) SendByte(b byte) error {
 		return err
 	}
 	br.pendingTx = true
-	return nil
+	if !br.waitByteAck {
+		return nil
+	}
+	return br.waitByteAckHandshake()
+}
+
+// waitByteAckHandshake 是 13 针字节口的每字节完成判据（K4/C7）：
+// 事件被引擎消费后，槽 22 必须先回到 0（元件已取走本字节并清掉上一字节的 ACK 标记），
+// 再变为 1（加载器已 ACK 本字节）。只看「事件被消费」不够——PushEvents 只是把字节放进槽 3，
+// 元件可能因上一字节的握手未完成而尚未取走；此时再写下一字节会让槽 3 被静默覆盖。
+// 两段都在同一个步数预算内，超出即 ErrStepBudget（绝不静默丢字节）。
+func (br *Bridge) waitByteAckHandshake() error {
+	cleared := false
+	for i := 0; i < br.stepBudget; i++ {
+		if err := br.Advance(); err != nil {
+			return err
+		}
+		if br.pendingTx {
+			continue // 事件尚未被引擎消费
+		}
+		ack, err := br.io.ReadSlot(SlotByteAck)
+		if err != nil {
+			return err
+		}
+		if !cleared {
+			if ack != 0 {
+				continue // 上一字节留下的 1：等元件取走本字节把它清 0
+			}
+			cleared = true
+			continue
+		}
+		if ack != 0 {
+			return nil // 加载器已 ACK 本字节
+		}
+	}
+	return ErrStepBudget
 }
 
 // Advance 推进一个仿真步；只有引擎报告消费了入站事件时才解除在途标记（背压）。

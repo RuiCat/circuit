@@ -18,4 +18,8 @@ var (
 	ErrTimeout = errors.New("serialbridge: 串口超时")
 	// ErrLinkClosed：串口侧已关闭或对端已断开。
 	ErrLinkClosed = errors.New("serialbridge: 串口通道已关闭")
+	// ErrPortName：PortConfig.Name 为空或无法转成平台端点名。
+	ErrPortName = errors.New("serialbridge: 宿主端点名为空或非法")
+	// ErrPortNotFound：宿主端点不存在或无法打开（Unix 路径不存在 / Windows COM 端口不可用）。
+	ErrPortNotFound = errors.New("serialbridge: 宿主端点不存在或无法打开")
 )

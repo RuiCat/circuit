@@ -6,7 +6,12 @@ package serial
 //
 // 契约（K2，冻结；槽位表见 uartSlots.go）：
 //   - 网表: UART<id> [tx, rx, intr] [baud, ackEvent, VHigh]；三根引脚均 PinBoolean，
-//     与既有逻辑域（element/logic）同域；
+//     与既有逻辑域（element/logic）同域；Base 按 len(Pins) 成对切换形态：
+//     3 针 = 3 引脚/2 电压源（tx、intr）；13 针 = 13 引脚/11 电压源，
+//     脚位固定 0=tx、1=rx、2=intr、3..10=D0..D7、11=RDY、12=ACK（ACK 是输入，不配电压源）；
+//   - 13 针字节口（K1）：槽 3 的字节取走后锁存到 D0..D7 并拉起 RDY；加载器拉高 ACK 后
+//     UART 拉低 RDY（槽 22=1 记录「已 ACK」）；ACK 回低且 RDY 已低之前不得取下一字节。
+//     3 针实例不分配 D/RDY 电压源、不加 ACK 门控，行为与改动前逐位一致；
 //   - 入站字节事件 "<实例名>.TX" → 槽 3（float64，0..255）；
 //     ACK 事件（槽 1，网表未给时默认 "<实例名>.ACK"）→ 槽 15（float64，非 0 即确认）；
 //   - 槽 12 == true ⇒ intr 钳位 VHigh，否则 0V；槽 15 非 0 ⇒ 本步内 dataReady=false、ackFlag=0；

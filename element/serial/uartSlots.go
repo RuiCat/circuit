@@ -27,11 +27,20 @@ const (
 	slotTxQueue             // 18：追加——TX 翻转队列 base（占 4 个连续槽位）。
 )
 
+// K1 追加的 13 针握手槽：必须显式从 22 起（Tx 队列占 18..21），不能用 iota 续写，
+// 否则会覆盖既有槽位。3 针实例同样持有这些槽，但不读也不驱动对应引脚。
+const (
+	slotByteAck   = slotTxQueue + queueSlots // 22：加载器已 ACK 当前字节（1 = 已确认）。
+	slotByteRdy   = slotByteAck + 1          // 23：RDY 内部状态（1 = 数据有效、等待 ACK）。
+	slotByteLatch = slotByteRdy + 1          // 24：D0..D7 锁存的当前字节。
+)
+
 // queueSlots 是 digital.DelayQueue 单个 base 占用的连续槽位数（K1：4）。
 const queueSlots = 4
 
-// slotNum 是槽位总数（0..21）。
-const slotNum = slotTxQueue + queueSlots
+// slotNum 是槽位总数（0..24）：0..21 为既有槽（其中 0..15 是 K2 冻结槽），
+// 22..24 是 K1 追加的 13 针握手槽——追加槽只放在 22 起，既有槽值不变。
+const slotNum = slotByteLatch + 1
 
 // txBitIdle 是发送空闲的位序号（10 = 一帧 10 位全部发完）。
 const txBitIdle = 10
@@ -56,6 +65,7 @@ var uartValueNames = []string{
 	"frameError", "lastRxTime", "ackFlag",
 	"lastStepTime", "rxEventName",
 	"txQueueArmed", "txQueueAt", "txQueueValue", "txQueueNow",
+	"byteAck", "byteRdy", "byteLatch",
 }
 
 // uartRuntimeSlots 是必须登记进 Config.OrigValue 的运行态槽（C3/C4）。
@@ -66,6 +76,7 @@ var uartRuntimeSlots = []int{
 	slotDataReady, slotFrameError, slotLastRxTime,
 	slotLastStepTime,
 	slotTxQueue, slotTxQueue + 1, slotTxQueue + 2, slotTxQueue + 3,
+	slotByteAck, slotByteRdy, slotByteLatch,
 }
 
 // uartEventSlots 是事件名槽 → 事件值槽的映射（两者都是消费者：引擎 PushEvents 写入值槽）。

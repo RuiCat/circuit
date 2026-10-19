@@ -31,13 +31,15 @@ func stepUartTx(m mna.Mna, t mna.Time, value element.NodeFace, now, period float
 	}
 
 	// 帧间空闲且上一帧（含停止位）已发完 → 取走待发字节并立即发出起始位。
-	if txBit == txBitIdle && now >= lastTxTime+float64(txBitIdle)*period {
+	// 13 针形态额外要求 4 相握手已完成（uartTakeAllowed）：ACK 回低且 RDY 已回低。
+	if txBit == txBitIdle && now >= lastTxTime+float64(txBitIdle)*period && uartTakeAllowed(m, value) {
 		if b, ok := takeTxByte(value); ok {
 			shifter := float64(b)
 			value.SetFloat64(slotTxShifter, shifter)
 			value.SetFloat64(slotLastTxTime, now)
 			lastTxTime = now
 			txBit = 1 // 起始位（位 0）已由下面立即驱动，下一个待排边沿是位 1
+			uartByteTaken(value, b)
 			digital.DriveNow(m, value.GetVoltSource(volTx), uartBitVolts(value.GetFloat64(slotVHigh), shifter, 0))
 			needPlan = true
 		}

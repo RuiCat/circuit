@@ -1,3 +1,5 @@
+//go:build unix
+
 // uart_e2e_test.go：B 档端到端验收 —— 真实 pty ↔ 桥 ↔ SlotIo 适配器 ↔ UART 元件。
 //
 // 本文件由 Lead 在集成阶段补写：它闭合 m5 自陈的「未验证 1」（与 UART 元件的端到端往返）
@@ -79,15 +81,11 @@ func TestUartPtyStreamEndToEnd(t *testing.T) {
 		t.Skipf("pty 自建不可用，跳过端到端: %v", err)
 	}
 	defer func() { _ = master.Close() }()
-	slave, err := serialbridge.OpenSlave(slavePath)
+	link, err := serialbridge.OpenPort(serialbridge.PortConfig{Name: slavePath, Timeout: 500 * time.Millisecond})
 	if err != nil {
 		t.Fatalf("打开 pty 从设备失败: %v", err)
 	}
-	defer func() { _ = slave.Close() }()
-	if err := serialbridge.SetRaw(slave); err != nil {
-		t.Fatalf("设置原始模式失败: %v", err)
-	}
-	link := serialbridge.NewPtyLink(slave, 500*time.Millisecond)
+	defer func() { _ = link.Close() }()
 
 	payload := make([]byte, 16)
 	for i := range payload {

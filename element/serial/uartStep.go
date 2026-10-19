@@ -39,16 +39,19 @@ func (u *Uart) DoStep(m mna.Mna, t mna.Time, value element.NodeFace) {
 	driveUartOutputs(m, value)
 }
 
-// advanceUart 推进一个仿真时刻的 UART 状态，顺序固定：ACK 清除 → 发送 → 接收。
-// 先清 ACK 再收新字节，保证「确认上一字节」不会吃掉同一步内刚到的新字节。
+// advanceUart 推进一个仿真时刻的 UART 状态，顺序固定：ACK 清除 → 13 针握手 → 发送 → 接收。
+// 先清 ACK 再收新字节，保证「确认上一字节」不会吃掉同一步内刚到的新字节；
+// 13 针握手先于发送推进，保证「ACK 高」优先于「从槽 3 取下一字节」（K1 的 4 相握手）。
 func advanceUart(m mna.Mna, t mna.Time, value element.NodeFace, now, period float64) {
 	clearUartAck(value)
+	stepUartByteTap(m, value)
 	stepUartTx(m, t, value, now, period)
 	stepUartRx(m, value, now, period)
 }
 
-// driveUartOutputs 把 tx（当前位电平）与 intr（dataReady 高有效）写回各自的电压源。
-// 每步、每次 DoStep 调用都必须执行（K2：槽 12 == true ⇒ intr 钳位 VHigh，否则 0V）。
+// driveUartOutputs 把 tx（当前位电平）、intr（dataReady 高有效）与 13 针形态的
+// D0..D7/RDY 写回各自的电压源。每步、每次 DoStep 调用都必须执行。
+// （K2：槽 12 == true ⇒ intr 钳位 VHigh，否则 0V。）
 func driveUartOutputs(m mna.Mna, value element.NodeFace) {
 	high := value.GetFloat64(slotVHigh)
 	digital.DriveNow(m, value.GetVoltSource(volTx), uartTxLineLevel(value, high))
@@ -57,4 +60,5 @@ func driveUartOutputs(m mna.Mna, value element.NodeFace) {
 		intrLevel = high
 	}
 	digital.DriveNow(m, value.GetVoltSource(volIntr), intrLevel)
+	driveUartByteOutputs(m, value, high)
 }
