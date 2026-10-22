@@ -268,16 +268,13 @@ func limitDiodeStep(vnew, vold float64, time mna.Time, value element.NodeFace) f
 	return vnew
 }
 
-// safeExp 计算 math.Exp(x)，将参数钳位在 [-700, 700] 防止溢出
-// exp(700) ≈ 1e304, exp(710) → +Inf
+// safeExp 计算 e^x，将参数钳位在 [-700, 700] 防止溢出
+// exp(700) ≈ 1e304, exp(710) → +Inf。
+//
+// 这里只是 deviceExp（见 expTable.go）的别名：默认走解析路径，与改造前逐位一致；
+// 开启 T4 表驱动后由查表+插值给出（表外仍回退到本解析路径）。
 func safeExp(x float64) float64 {
-	const maxExpArg = 700.0
-	if x > maxExpArg {
-		x = maxExpArg
-	} else if x < -maxExpArg {
-		x = -maxExpArg
-	}
-	return math.Exp(x)
+	return deviceExp(x)
 }
 
 // doDiodeStep 执行二极管MNA建模（基于CircuitJS1算法）

@@ -279,8 +279,8 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 	voltageSourcesNum := int(currentVoltageID)
 
 	// 校验矩阵总维度，防止 O(n²) 稠密分配耗尽内存。
-	if totalDim := nodesNum + voltageSourcesNum; totalDim > maxNodeCount {
-		return nil, fmt.Errorf("电路规模过大: %d 个节点/电压源（上限 %d）", totalDim, maxNodeCount)
+	if totalDim := nodesNum + voltageSourcesNum; totalDim > maxNodeLimit() {
+		return nil, fmt.Errorf("电路规模过大: %d 个节点/电压源（上限 %d）", totalDim, maxNodeLimit())
 	}
 
 	// === 第五阶段：创建上下文 ===
@@ -545,7 +545,18 @@ const maxSubCircuitDepth = 100
 
 // maxNodeCount MNA 稠密矩阵总维度（节点数+电压源数）上限。
 // 该实现使用稠密矩阵，分配规模为 O(n²)，需限制 n 防止恶意网表耗尽内存。
+// 可用环境变量 CIRCUIT_MAX_NODES 覆盖（例如万级节点仿真），非正数/非法值忽略。
 const maxNodeCount = 5000
+
+// maxNodeLimit 返回当前生效的矩阵维度上限：CIRCUIT_MAX_NODES 为正整数时覆盖默认值。
+func maxNodeLimit() int {
+	if s := strings.TrimSpace(os.Getenv("CIRCUIT_MAX_NODES")); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
+			return n
+		}
+	}
+	return maxNodeCount
+}
 
 // maxRawNodeID 网表原始节点号的上限（防止 nextNodeID 整数回绕为负）。
 // 原始节点号经压缩后映射为 0..N-1，此上限仅用于防回绕，设置得足够宽裕。

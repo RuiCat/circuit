@@ -4,6 +4,7 @@ import (
 	"circuit/utils"
 	"fmt"
 	"sort"
+	"time"
 )
 
 // updateMatrix 为任矩阵实现提供了一个带缓存的装饰器，以优化频繁、临时的修改操作。
@@ -100,6 +101,7 @@ func (um *updateMatrix[T]) resetDirtyRows() {
 // 2. 如果是，则从缓存中读取最新值。
 // 3. 如果否，则从底层矩阵中读取稳定值。
 func (um *updateMatrix[T]) Get(row, col int) T {
+	recordMatrixGet()
 	rows, cols := um.Rows(), um.Cols()
 	if row < 0 || row >= rows || col < 0 || col >= cols {
 		panic(fmt.Sprintf("matrix index out of range: row=%d, col=%d (rows=%d, cols=%d)", row, col, rows, cols))
@@ -118,6 +120,7 @@ func (um *updateMatrix[T]) Get(row, col int) T {
 // 2. 把新值写入缓存。
 // 3. 在位图中标记该元素为“已修改”，并登记到该行的脏列集合。
 func (um *updateMatrix[T]) Set(row, col int, value T) {
+	recordMatrixSet()
 	rows, cols := um.Rows(), um.Cols()
 	if row < 0 || row >= rows || col < 0 || col >= cols {
 		panic(fmt.Sprintf("matrix index out of range: row=%d, col=%d (rows=%d, cols=%d)", row, col, rows, cols))
@@ -135,6 +138,7 @@ func (um *updateMatrix[T]) Set(row, col int, value T) {
 // 1. 如果元素已在缓存中，直接在缓存值上进行累加。
 // 2. 如果元素不在缓存中，则先从底层矩阵读取原值，与增量相加后，将结果存入缓存，并标记该位置。
 func (um *updateMatrix[T]) Increment(row, col int, value T) {
+	recordMatrixInc()
 	rows, cols := um.Rows(), um.Cols()
 	if row < 0 || row >= rows || col < 0 || col >= cols {
 		panic(fmt.Sprintf("matrix index out of range: row=%d, col=%d (rows=%d, cols=%d)", row, col, rows, cols))
@@ -238,6 +242,8 @@ func (um *updateMatrix[T]) Copy(a Matrix[T]) {
 // GetRow 获取指定行的非零元素列索引副本和值副本，合并缓存与底层数据。
 // 返回的切片和向量均为独立分配，与内部缓冲区无共享，修改不会影响矩阵状态。
 func (um *updateMatrix[T]) GetRow(row int) ([]int, Vector[T]) {
+	start := time.Now()
+	defer func() { recordGetRow(time.Since(start)) }()
 	rows := um.Rows()
 	if row < 0 || row >= rows {
 		panic(fmt.Sprintf("row index out of range: %d (rows: %d)", row, rows))

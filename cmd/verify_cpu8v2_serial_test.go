@@ -13,6 +13,9 @@ package main_test
 
 import (
 	"fmt"
+	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -135,9 +138,13 @@ func TestCPU8v2SerialLoad(t *testing.T) {
 	t.Setenv("CIRCUIT_GMINFINAL", "1e-5")
 	t.Setenv("CIRCUIT_GLOBALGMIN", "1e-3")
 
-	con, err := load.LoadString(readNetlist(t, "57_cpu8v2_serial_load.net"))
+	netName := os.Getenv("CIRCUIT_SERIAL_NET")
+	if netName == "" {
+		netName = "57_cpu8v2_serial_load.net"
+	}
+	con, err := load.LoadString(readNetlist(t, netName))
 	if err != nil {
-		t.Fatalf("加载 57 网表失败: %v", err)
+		t.Fatalf("加载 %s 网表失败: %v", netName, err)
 	}
 	uart := cpu8v2FindInstance(t, con, "UART1")
 	loader := cpu8v2FindInstance(t, con, "LOADER1")
@@ -152,10 +159,16 @@ func TestCPU8v2SerialLoad(t *testing.T) {
 		t.Fatalf("LOADER1 的 CpuMode=%q，期望 v2", got)
 	}
 
+	maxStep := cpu8v2MaxStep
+	if v := os.Getenv("CIRCUIT_SERIAL_MAXSTEP"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 {
+			maxStep = f
+		}
+	}
 	ad, err := elementio.NewAdapter(con, "UART1", elementio.Options{
 		TargetTime:   1,
 		MinStep:      cpu8v2MinStep,
-		MaxStep:      cpu8v2MaxStep,
+		MaxStep:      maxStep,
 		StepTimeout:  60 * time.Second,
 		CloseTimeout: 30 * time.Second,
 	})
@@ -189,6 +202,10 @@ func TestCPU8v2SerialLoad(t *testing.T) {
 		if pc := cpu8v2ReadBus(con, "X1.PC"); pc != 0 {
 			t.Fatalf("第 %d 字节后加载仍在进行，但 PC=%02X：LOAD=1 期间 PC 未冻结", i, pc)
 		}
+		if i == len(frame)-1 && os.Getenv("CIRCUIT_MACRO_DEBUG") != "" {
+			t.Logf("最后字节 ACK 后：UART latch=0x%02X D0=%.3f D1=%.3f",
+				int(uart.GetFloat64(24)), con.GetHierarchicalNodeVoltage("D0"), con.GetHierarchicalNodeVoltage("D1"))
+		}
 		if i%4 == 3 || i == len(frame)-1 {
 			t.Logf("加载进度 %d/%d 步=%d simT=%.6g", i+1, len(frame), totalSteps, con.Time.CurrentTime())
 		}
@@ -206,6 +223,12 @@ func TestCPU8v2SerialLoad(t *testing.T) {
 		t.Fatalf("加载完成时 PC=%02X，期望 0（PC 冻结）", pc)
 	}
 	loadSteps := totalSteps
+	for _, e := range con.Nodelist {
+		base := e.Base()
+		if base != nil && strings.HasSuffix(base.InstanceName, "RAM1") {
+			t.Logf("加载后 iram %s mem=%q", base.InstanceName, base.GetString(2))
+		}
+	}
 	if loadSteps > 2000 {
 		t.Errorf("12B 串口加载 steps=%d > 2000（C5/C14 预算）", loadSteps)
 	}

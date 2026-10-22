@@ -69,6 +69,14 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 		// 有界牛顿事件计数（K4）：每次仿真启动重置（计数只增不减，见 strategy.go）。
 		et.BeginBoundedNewtonEvents()
 	}
+	// 多速率调度（P3/T6，multiRate.go）：默认关闭；只有显式 Context 开关或
+	// CIRCUIT_MULTIRATE 打开、且电路中至少一个元件实现 MultiRateSteppable 且倍率 >1
+	// 时才构建计划。否则 plan 为 nil，doStep 走原 CallMark/ParallelCallMark 路径，
+	// 默认行为与数值结果逐字不变。
+	mrPlan, mrErr := newMultiRatePlan(con, resolveMultiRateEnabled(con))
+	if mrErr != nil {
+		return fmt.Errorf("多速率调度初始化失败: %w", mrErr)
+	}
 	// 牛顿迭代计数（K4 的迭代数出口之一）：本时间步内的轮数，跨步累加进 totalNewtonIters。
 	newtonIterCount := 0
 	// Gmin 延续（标准 SPICE Gmin stepping）：t=0 直流求解启动延续步进。
@@ -173,7 +181,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 			con.A.Rollback()
 			con.Z.Rollback()
 			// 遍历所有非线性元件，计算其贡献
-			if err := doStep(con); err != nil {
+			if err := doStep(con, mrPlan); err != nil {
 				return err
 			}
 			// 求解MNA方程（使用均衡化LU分解以处理混合域）
@@ -219,7 +227,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 				con.A.Rollback()
 				con.Z.Rollback()
 				// 重新计算所有非线性元件的贡献
-				if err := doStep(con); err != nil {
+				if err := doStep(con, mrPlan); err != nil {
 					return err
 				}
 				// 重新求解MNA方程（使用均衡化LU分解以处理混合域）
@@ -262,7 +270,7 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 					// X 已更新为补轮解，外层继续迭代直至稳定。
 					con.A.Rollback()
 					con.Z.Rollback()
-					if err := doStep(con); err != nil {
+					if err := doStep(con, mrPlan); err != nil {
 						return err
 					}
 					rowScale, colScale, err := equilibrateDecompose(luSolver, con.GetA(), sparseLU, gminForLU(naturalGmin, globalGmin), con.EngineCfg.NoEq)
@@ -438,8 +446,12 @@ func TransientSimulation(con *element.Context, call func([]float64)) error {
 	return nil
 }
 
-// doStep 执行一步 DoStep，根据 ParallelOpts 选择串行或并行
-func doStep(con *element.Context) error {
+// doStep 执行一步 DoStep：多速率计划非空时按快慢组分派，否则沿用原路径。
+// plan 为 nil 时行为与改造前逐字一致（串行 CallMark / 并行 ParallelCallMark）。
+func doStep(con *element.Context, plan *multiRatePlan) error {
+	if plan != nil {
+		return plan.run(con)
+	}
 	if con.ParallelOpts != nil {
 		return con.ParallelCallMark(element.MarkDoStep)
 	}

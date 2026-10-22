@@ -121,6 +121,9 @@ type TimeMNA struct {
 	noEq          bool                // 跳过行/列均衡化（CIRCUIT_NOEQ）
 	boundedEvents BoundedNewtonEvents // 有界牛顿事件计数（K4，启动时重置）
 
+	// 多速率调度开关（P3/T6，multiRate*.go）：默认关闭；explicit 置位后覆盖 CIRCUIT_MULTIRATE。
+	multiRate multiRateState
+
 	// 局部截断误差（LTE）相关
 	localTruncError float64 // 局部截断误差估计
 

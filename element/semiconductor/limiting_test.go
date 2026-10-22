@@ -239,10 +239,11 @@ const (
 	abCorpusDir = "../../cmd/circuits"
 )
 
-// TestMain 强制包内测试默认关闭限制：环境变量 CIRCUIT_ITERLIMIT_V 只应影响 CLI/基准复跑，
-// 不应改变既有器件测试与 golden 用例的前提。
+// TestMain 强制包内测试默认关闭限制与 T4 表驱动：环境变量 CIRCUIT_ITERLIMIT_V /
+// CIRCUIT_EXPTABLE 只应影响 CLI/基准复跑，不应改变既有器件测试与 golden 用例的前提。
+// 两个开关的复位都放在 resetTestToggles 里（本文件已超告警阈值，新增代码不增加其有效行数）。
 func TestMain(m *testing.M) {
-	_ = SetIterationLimiting(false, 0)
+	resetTestToggles()
 	os.Exit(m.Run())
 }
 

@@ -63,7 +63,7 @@ func orderingProductionRun(t *testing.T, m Matrix[float64]) (bool, int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lus := lu.(*luSparse[float64])
+	lus := lu.(*kluSparse[float64])
 	if err := lus.Decompose(m); err != nil {
 		t.Fatalf("Decompose: %v", err)
 	}
@@ -169,9 +169,10 @@ func permSolveWith(t *testing.T, m Matrix[float64], perm []int, b Vector[float64
 	if err != nil {
 		return nil, err
 	}
-	lus := lu.(*luSparse[float64])
+	lus := lu.(*kluSparse[float64])
 	lus.perm = perm
-	if err := lus.decomposeWithPerm(m); err != nil {
+	lus.permSig = structureSignature(m)
+	if err := lus.Decompose(m); err != nil {
 		return nil, err
 	}
 	x := NewDenseVector[float64](m.Rows())
