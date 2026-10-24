@@ -7,15 +7,57 @@ package time
 
 import (
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	stdtime "time"
 
 	"circuit/element"
+	"circuit/element/logic"
 	"circuit/load"
 
 	"testing"
 )
+
+// 生产元件示例：RAM 已实现多速率接口（C9/D10），默认 stride=1 不参与。
+var _ MultiRateSteppable = (*logic.RAM)(nil)
+
+// TestRamMultiRateStride 验证 RAM 的 MultiRateStride 读实例槽 7（默认 1，可设 >1）。
+func TestRamMultiRateStride(t *testing.T) {
+	data, err := os.ReadFile("../../cmd/circuits/58_cpu8v2_macro.net")
+	if err != nil {
+		t.Fatalf("读取 58 网表失败: %v", err)
+	}
+	con, err := load.LoadString(string(data))
+	if err != nil {
+		t.Fatalf("加载 58 失败: %v", err)
+	}
+	var ram element.NodeFace
+	for _, node := range con.Nodelist {
+		if base := node.Base(); base != nil && strings.HasSuffix(base.InstanceName, "RAM1") {
+			ram = node
+			break
+		}
+	}
+	if ram == nil {
+		t.Fatalf("58 中未找到 RAM1")
+	}
+	face, ok := element.ElementList[ram.Type()]
+	if !ok {
+		t.Fatalf("RAM 类型未注册")
+	}
+	st, ok := face.(MultiRateSteppable)
+	if !ok {
+		t.Fatalf("RAM 未实现 MultiRateSteppable")
+	}
+	if got := st.MultiRateStride(ram); got != 1 {
+		t.Errorf("默认 stride=%d，期望 1", got)
+	}
+	ram.SetFloat64(7, 2)
+	if got := st.MultiRateStride(ram); got != 2 {
+		t.Errorf("设置 stride=2 后返回 %d", got)
+	}
+}
 
 // multiRateTestTemplate 是测试网表模板：%d = 慢组的步长倍率（快组固定 1）。
 // 实例名以元件类型名 MRTEST 开头，网表解析器才会按类型 MRTEST + 数字 ID 拆分。

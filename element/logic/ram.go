@@ -48,8 +48,9 @@ var RAMType element.NodeType = element.AddElement(47, &RAM{
 			float64(0),   // 4: WE 上升沿锁存的写数据
 			float64(0),   // 5: 上一步 WE（0/1）
 			float64(-1),  // 6: 幂等戳（上次更新锁存的接受步时刻）
+			float64(1),   // 7: 多速率倍率（1 = 不参与）
 		},
-		ValueName: []string{"size", "init_hex", "mem_hex", "latch_addr", "latch_data", "prev_we", "last_step"},
+		ValueName: []string{"size", "init_hex", "mem_hex", "latch_addr", "latch_data", "prev_we", "last_step", "stride"},
 		Voltage:   []string{"vq0", "vq1", "vq2", "vq3", "vq4", "vq5", "vq6", "vq7"},
 		Flags:     element.FlagNonlinear,
 		OrigValue: []int{2},
@@ -66,7 +67,53 @@ const (
 	slotRamLatchData = 4
 	slotRamPrevWE    = 5
 	slotRamLastStep  = 6
+	slotRamStride    = 7 // 多速率倍率（默认 1）
 )
+
+// MultiRateStride 返回本 RAM 实例的多速率倍率（槽 7，默认 1 = 不参与多速率）。
+func (r *RAM) MultiRateStride(value element.NodeFace) int {
+	if value == nil {
+		return 1
+	}
+	s := int(value.GetFloat64(slotRamStride))
+	if s < 1 {
+		return 1
+	}
+	return s
+}
+
+// HoldStep 在多速率的非宏步只重驱动 Q（读当前 mem[A]，不写、不推进状态）。
+func (r *RAM) HoldStep(m mna.Mna, t mna.Time, value element.NodeFace) {
+	if m == nil || value == nil {
+		return
+	}
+	high := 5.0
+	size := int(value.GetFloat64(0))
+	if size <= 0 {
+		size = 256
+	}
+	mem, _ := hex.DecodeString(ensureMem(value))
+	if len(mem) < size {
+		mem = append(mem, make([]byte, size-len(mem))...)
+	}
+	addr := 0
+	for i := 0; i < 8; i++ {
+		if m.GetNodeVoltage(value.GetNodes(i)) > high*0.5 {
+			addr |= 1 << i
+		}
+	}
+	if addr >= size {
+		addr = size - 1
+	}
+	byteVal := mem[addr]
+	for i := 0; i < 8; i++ {
+		volt := 0.0
+		if byteVal&(1<<i) != 0 {
+			volt = high
+		}
+		m.UpdateVoltageSource(value.GetVoltSource(i), volt)
+	}
+}
 
 // ensureMem 确保 mem_hex 与 size 匹配：扩展/截断到 size 字节。
 func ensureMem(value element.NodeFace) string {
