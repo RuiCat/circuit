@@ -13,6 +13,17 @@ bash scripts/benchAccuracy/run.sh --selfcheck
 # 参考器缺失/校验失败: {"blocked":true,...} 且 exit 3
 ```
 
+## 真实对比结果（2026-10-24，circuit vs ngspice-47）
+
+| 用例 | 节点 | circuit | ngspice | rel | verdict |
+|---|---|---|---|---|---|
+| 01_divider（DC 线性） | 2 | 3.3333333 | 3.333333 | 1.0e-7 | PASS |
+| 02_rc（RC 瞬态，t=0.1ms，uic 初值 0） | 2 | 0.47807 | 0.47581 | 4.75e-3 | **FAIL** |
+| 07_rlc（RLC 瞬态，t=0.1ms，uic 初值 0） | 3 | 3.15310 | 3.14441 | 2.76e-3 | **FAIL** |
+
+命令：`bash scripts/benchAccuracy/compare.sh`（任一 rel>1e-3 时 exit 1）。
+结论：DC 线性一致；**瞬态（RC/RLC）与 ngspice 差 0.3–0.5%，未达 1e-3**——积分器/误差控制/初值处理存在差异，需后续对齐（C3 降级，见 40-plan）。
+
 ## 已知边界（本轮最小闭环）
 
 - 语料 10 条（不是 ≥20）；误差对比循环与 golden 输出冻结留待 m5 前补齐。
