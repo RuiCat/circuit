@@ -162,11 +162,16 @@ func (um *updateMatrix[T]) Increment(row, col int, value T) {
 // 故直接遍历缓存提交，随后整体清位图与缓存。
 func (um *updateMatrix[T]) Update() {
 	cols := um.Cols()
-	for index, value := range um.cache {
-		if !um.bitmap.Get(utils.BitmapFlag(index)) {
-			continue
+	if sm, ok := um.Matrix.(*sparseMatrix[T]); ok {
+		// 稀疏底层：批量归并重建，避免逐元素 InsertInPlace 搬移（1e5 时累计百 GB）。
+		sm.updateBatch(um.cache)
+	} else {
+		for index, value := range um.cache {
+			if !um.bitmap.Get(utils.BitmapFlag(index)) {
+				continue
+			}
+			um.Matrix.Set(index/cols, index%cols, value)
 		}
-		um.Matrix.Set(index/cols, index%cols, value)
 	}
 	um.bitmap.ClearAll()
 	clear(um.cache)
