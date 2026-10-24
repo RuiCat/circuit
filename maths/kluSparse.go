@@ -269,28 +269,9 @@ func (lu *kluSparse[T]) applyPivot(k, maxRow int) {
 	us := lu.U.(*kluMatrix[T])
 	ls := lu.L.(*kluMatrix[T])
 	us.SwapRows(k, maxRow)
-	for j := 0; j < k; j++ {
-		hasK := ls.hasSlot(k, j)
-		hasR := ls.hasSlot(maxRow, j)
-		if !hasK && !hasR {
-			continue
-		}
-		if hasK && hasR {
-			// 两边都有槽位：只交换值，不删/插（避免 4 次搬移）。
-			vK, vR := ls.Get(k, j), ls.Get(maxRow, j)
-			ls.Set(k, j, vR)
-			ls.Set(maxRow, j, vK)
-			continue
-		}
-		v := ls.Get(k, j) + ls.Get(maxRow, j)
-		if hasR {
-			ls.deleteSlot(maxRow, j)
-			ls.Set(k, j, v)
-		} else {
-			ls.deleteSlot(k, j)
-			ls.Set(maxRow, j, v)
-		}
-	}
+	// L 只交换列 < k 的槽位（列 k 对角为 1、列 > k 未消元不在 L）；
+	// 一次归并重建两行，替代逐列 hasSlot/delete/Set 的 O(k²) 二分与搬移。
+	ls.swapRowPrefix(k, maxRow, k)
 	lu.P[k], lu.P[maxRow] = lu.P[maxRow], lu.P[k]
 }
 

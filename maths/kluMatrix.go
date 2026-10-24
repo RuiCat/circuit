@@ -3,7 +3,10 @@
 
 package maths
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+)
 
 // kluMatrix 是行切片稀疏矩阵(零元素不占槽位;Set 写零即删槽)。
 type kluMatrix[T Number] struct {
@@ -151,6 +154,47 @@ func (m *kluMatrix[T]) removeAt(row, pos int) {
 	if rp, ok := findCol(rows, row); ok {
 		m.colRows[col] = append(rows[:rp], rows[rp+1:]...)
 	}
+}
+
+// swapRowPrefix 交换两行在列 < limit 的槽位（行内有序，一次归并）。
+// 用于 LU 行置换：列 >= limit 的部分（对角/未消元列）保持原位。
+func (m *kluMatrix[T]) swapRowPrefix(r1, r2, limit int) {
+	c1, v1 := m.rowCols[r1], m.rowVals[r1]
+	c2, v2 := m.rowCols[r2], m.rowVals[r2]
+	p1 := sort.SearchInts(c1, limit)
+	p2 := sort.SearchInts(c2, limit)
+	n1c := make([]int, 0, p2+len(c1)-p1)
+	n1c = append(n1c, c2[:p2]...)
+	n1c = append(n1c, c1[p1:]...)
+	n1v := make([]T, 0, len(n1c))
+	n1v = append(n1v, v2[:p2]...)
+	n1v = append(n1v, v1[p1:]...)
+	n2c := make([]int, 0, p1+len(c2)-p2)
+	n2c = append(n2c, c1[:p1]...)
+	n2c = append(n2c, c2[p2:]...)
+	n2v := make([]T, 0, len(n2c))
+	n2v = append(n2v, v1[:p1]...)
+	n2v = append(n2v, v2[p2:]...)
+	m.rowCols[r1], m.rowVals[r1] = n1c, n1v
+	m.rowCols[r2], m.rowVals[r2] = n2c, n2v
+	for _, c := range n1c {
+		m.replaceColRow(c, r2, r1)
+	}
+	for _, c := range n2c {
+		m.replaceColRow(c, r1, r2)
+	}
+}
+
+// replaceColRow 把列 col 的反向索引中的 oldRow 换成 newRow（保持升序）。
+func (m *kluMatrix[T]) replaceColRow(col, oldRow, newRow int) {
+	rows := m.colRows[col]
+	pos, ok := findCol(rows, oldRow)
+	if !ok {
+		return
+	}
+	rows = append(rows[:pos], rows[pos+1:]...)
+	np, _ := findCol(rows, newRow)
+	m.colRows[col] = insertAt(rows, np, newRow)
 }
 
 // findRowPos 返回在列 row 的升序行号里 row 应插入的位置。
