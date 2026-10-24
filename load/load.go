@@ -310,13 +310,17 @@ func LoadContext(r io.Reader) (con *element.Context, err error) {
 	// 下面对存储的选择直接取绑定记录，保证"绑定"与"实际存储"同一判据。
 	con.Backend.Bind(con.EngineCfg.SparseLU, con.EngineCfg.ForceDense)
 
-	mnaUpdate := mna.NewMnaUpdate(nodesNum, voltageSourcesNum)
 	// 稀疏存储：显式 CIRCUIT_LUSPARSE=1 强制；自动模式（未设 CIRCUIT_LUSDENSE
 	// 强制稠密）默认用稀疏存储——稀疏 LU 分解器需要稀疏存储才完整生效
 	// （自动选择见 element/time/simulation.go chooseLUSolver，按矩阵密度）。
 	// 稀疏存储对稠密小电路仅 GetRow/Get 微开销，数值等价。
+	// 注意：按绑定直接创建对应存储，不能先建稠密再替换——1e5 节点时稠密
+	// n×n 会先分配 80GB 直接 OOM（实测）。
+	var mnaUpdate mna.MnaUpdate
 	if con.Backend.BoundSparse {
 		mnaUpdate = mna.NewMnaUpdateSparse(nodesNum, voltageSourcesNum)
+	} else {
+		mnaUpdate = mna.NewMnaUpdate(nodesNum, voltageSourcesNum)
 	}
 	if mnaUpdateType, ok := mnaUpdate.(*mna.MnaUpdateType[float64]); ok {
 		con.MnaUpdateType = mnaUpdateType
