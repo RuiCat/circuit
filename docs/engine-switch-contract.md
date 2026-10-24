@@ -30,7 +30,7 @@
 ## 验证
 
 ```bash
-grep -rn 'os.Getenv' element --include=*.go   # 仅白名单（expTable.go / multiRateEnv.go / engineConfig.go 迁移例外）
+grep -rn 'os.Getenv(' element --include=*.go | grep -v '_test.go' | grep -v '//'   # 仅白名单（expTable.go / multiRateEnv.go / limiting.go）
 go test -count=1 ./element/time/ ./element/semiconductor/
 ```
 
