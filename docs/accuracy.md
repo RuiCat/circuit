@@ -30,6 +30,12 @@ bash scripts/benchAccuracy/run.sh --selfcheck
 - 解析解 5(1-e^-0.1)=0.475813（ngspice 与解析解一致，circuit 偏高 0.47%）。
 - 结论：0.47% 偏差来自**积分器/局部截断误差控制**（非步长/容差），需升级积分器（TRAP/GEAR）或与 ngspice 对齐；C3 保持降级。
 
+## Golden 冻结（2026-10-25）
+
+- `bash scripts/benchAccuracy/freeze.sh` → `runs/engine-production/evidence/acc-golden/`（28 条 CSV + `SHA256SUMS`，3.4s）。
+- 复算：`(cd runs/engine-production/evidence/acc-golden && sha256sum -c SHA256SUMS)`。
+- ngspice 双格式对照见 `cmd/circuits/acc-spice/`（01/02/07 三条，见上节）。
+
 ## 已知边界（本轮最小闭环）
 
 - 语料 10 条（不是 ≥20）；误差对比循环与 golden 输出冻结留待 m5 前补齐。

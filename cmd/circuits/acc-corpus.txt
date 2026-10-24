@@ -1,6 +1,6 @@
 # acc-corpus.txt：V1 精度基准语料（m1，C4）
-# 每行 <网表路径>\t<参考器与 circuit 共用的运行参数>；后续轮次补到 ≥20 条并冻结 sha256。
-# 当前最小闭环 10 条（01-10），覆盖 RC/二极管/晶体管/逻辑门/子电路。
+# 每行 <网表路径>\t<运行参数>；golden 由 scripts/benchAccuracy/freeze.sh 冻结（sha256）。
+# 当前 28 条（01-28）；SPICE 双格式对照见 acc-spice/（01/02/07）。
 cmd/circuits/01_resistor_divider.net	-t 1e-4
 cmd/circuits/02_rc_filter.net	-t 1e-4
 cmd/circuits/03_diode_rectifier.net	-t 1e-4
@@ -11,3 +11,21 @@ cmd/circuits/07_rlc_circuit.net	-t 1e-4
 cmd/circuits/08_subcircuit.net	-t 1e-4
 cmd/circuits/09_half_adder.net	-t 1e-4
 cmd/circuits/10_latch_self_hold.net	-t 1e-4
+cmd/circuits/11_mixed_domain.net	-t 1e-4
+cmd/circuits/12_current_source.net	-t 1e-4
+cmd/circuits/13_controlled_sources.net	-t 1e-4
+cmd/circuits/14_zener_regulator.net	-t 1e-4
+cmd/circuits/15_mosfet_switch.net	-t 1e-4
+cmd/circuits/16_led_driver.net	-t 1e-4
+cmd/circuits/17_logic_gates.net	-t 1e-4
+cmd/circuits/18_d_flipflop.net	-t 1e-4
+cmd/circuits/19_comparator_schmitt.net	-t 1e-4
+cmd/circuits/20_switches.net	-t 1e-4
+cmd/circuits/21_dc_motor.net	-t 1e-4
+cmd/circuits/22_transformer.net	-t 1e-4
+cmd/circuits/23_pneumatic_full.net	-t 1e-4
+cmd/circuits/24_hydraulic_circuit.net	-t 1e-4
+cmd/circuits/25_current_sensor.net	-t 1e-4
+cmd/circuits/26_eh_converter.net	-t 1e-4
+cmd/circuits/27_ac_filter.net	-t 1e-4
+cmd/circuits/28_small_signal.net	-t 1e-4
