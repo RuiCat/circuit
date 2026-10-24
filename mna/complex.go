@@ -36,10 +36,18 @@ func NewMnaUpdateT[T maths.Number](nodesNum, vsNum int) *MnaUpdateType[T] {
 
 // NewMnaUpdateSparseT 泛型工厂：与 NewMnaUpdateT 相同，但 A 使用 CSR 稀疏基矩阵。
 // 供瞬态引擎在稀疏模式下使用（与稀疏 LU 分解器配套）。
+// 不调用 NewMnaT：后者无条件分配 n×n 稠密 A，1e5 节点会先分配 80GB 再被覆盖。
 func NewMnaUpdateSparseT[T maths.Number](nodesNum, vsNum int) *MnaUpdateType[T] {
 	n := nodesNum + vsNum
+	base := &MnaType[T]{
+		A:                 maths.NewSparseMatrix[T](n, n),
+		Z:                 maths.NewDenseVector[T](n),
+		X:                 maths.NewDenseVector[T](n),
+		NodesNum:          nodesNum,
+		VoltageSourcesNum: vsNum,
+	}
 	mna := &MnaUpdateType[T]{
-		MnaType: NewMnaT[T](nodesNum, vsNum),
+		MnaType: base,
 		A:       maths.NewUpdateMatrixPtr(maths.NewSparseMatrix[T](n, n)),
 		Z:       maths.NewUpdateVectorPtr(maths.NewDenseVector[T](n)),
 		X:       maths.NewDenseVector[T](n),
