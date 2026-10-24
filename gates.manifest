@@ -1,0 +1,4 @@
+gate build inputs:go.mod,go.sum,vendor tool:go version cmd:go build ./...
+gate test  inputs:maths,load,element,analysis,cmd tool:go version cmd:go test -count=1 ./maths/ ./load/ ./element/logic/ ./element/semiconductor/ ./element/time/ ./analysis/
+gate c7    inputs:cmd/circuits/58_cpu8v2_macro.net,cmd/circuits/59_cpu8v2_serial_macro.net,element/logic/ram.go tool:go version cmd:go test -count=1 -run 'TestCPU8v2SerialLoad' ./cmd/
+gate snapshot inputs:cmd/circuits,runs/circuit-perf-optimization/baselines/corpus.txt tool:bash cmd:bash scripts/ci/run.sh --snapshot-check
