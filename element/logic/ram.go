@@ -44,16 +44,29 @@ var RAMType element.NodeType = element.AddElement(47, &RAM{
 			float64(256), // 0: 容量（字节）
 			"",           // 1: 初始化内容（十六进制，可选）
 			"",           // 2: 当前内存状态（十六进制）
+			float64(0),   // 3: WE 上升沿锁存的写地址
+			float64(0),   // 4: WE 上升沿锁存的写数据
+			float64(0),   // 5: 上一步 WE（0/1）
+			float64(-1),  // 6: 幂等戳（上次更新锁存的接受步时刻）
 		},
-		ValueName: []string{"size", "init_hex", "mem_hex"},
+		ValueName: []string{"size", "init_hex", "mem_hex", "latch_addr", "latch_data", "prev_we", "last_step"},
 		Voltage:   []string{"vq0", "vq1", "vq2", "vq3", "vq4", "vq5", "vq6", "vq7"},
 		Flags:     element.FlagNonlinear,
 		OrigValue: []int{2},
 	},
 })
 
-// RAM 随机存取存储器。组合读（Q=mem[A]），电平写（WE=1 时 mem[A]=D）。
+// RAM 随机存取存储器。组合读（Q=mem[A]）；写为 WE 上升沿锁存 A/D、WE 高期间只写锁存值。
 type RAM struct{ *element.Config }
+
+// RAM 写锁存槽（ValueInit 3..6）：WE 上升沿锁存 A/D，WE 高期间只写锁存值，
+// 避免地址/数据在 WE 高期间切换时写到旧地址（与门级 SRAM 的 WL 时序对齐）。
+const (
+	slotRamLatchAddr = 3
+	slotRamLatchData = 4
+	slotRamPrevWE    = 5
+	slotRamLastStep  = 6
+)
 
 // ensureMem 确保 mem_hex 与 size 匹配：扩展/截断到 size 字节。
 func ensureMem(value element.NodeFace) string {
@@ -162,16 +175,37 @@ func (r *RAM) DoStep(m mna.Mna, t mna.Time, value element.NodeFace) {
 		addr = size - 1
 	}
 
-	// WE 高电平写：mem[addr] = D
-	if m.GetNodeVoltage(value.GetNodes(16)) > high*0.5 {
-		data := 0
-		for i := 0; i < 8; i++ {
-			if m.GetNodeVoltage(value.GetNodes(8+i)) > high*0.5 {
-				data |= 1 << i
-			}
+	// WE 上升沿锁存 A/D；WE 高期间只写锁存值（与门级 SRAM 的 WL 时序对齐）。
+	// 每个接受步只更新一次锁存（幂等戳），同一步的牛顿迭代不重复锁存。
+	data := 0
+	for i := 0; i < 8; i++ {
+		if m.GetNodeVoltage(value.GetNodes(8+i)) > high*0.5 {
+			data |= 1 << i
 		}
-		if mem[addr] != byte(data) {
-			mem[addr] = byte(data)
+	}
+	we := m.GetNodeVoltage(value.GetNodes(16)) > high*0.5
+	now := 0.0
+	if t != nil {
+		now = t.Time()
+	}
+	if last := value.GetFloat64(slotRamLastStep); last != now {
+		prev := value.GetFloat64(slotRamPrevWE) != 0
+		if we && !prev {
+			value.SetFloat64(slotRamLatchAddr, float64(addr))
+			value.SetFloat64(slotRamLatchData, float64(data))
+		}
+		if we {
+			value.SetFloat64(slotRamPrevWE, 1)
+		} else {
+			value.SetFloat64(slotRamPrevWE, 0)
+		}
+		value.SetFloat64(slotRamLastStep, now)
+	}
+	if we {
+		latchAddr := int(value.GetFloat64(slotRamLatchAddr))
+		latchData := int(value.GetFloat64(slotRamLatchData))
+		if latchAddr >= 0 && latchAddr < size && mem[latchAddr] != byte(latchData) {
+			mem[latchAddr] = byte(latchData)
 			value.SetString(2, hex.EncodeToString(mem))
 			t.NoConverged()
 		}

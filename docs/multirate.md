@@ -16,7 +16,7 @@
 
 | 开关 | 取值规则 | 绑定时刻 |
 |---|---|---|
-| `CIRCUIT_MULTIRATE` | 值解析：`1/true/on/yes` 开；`""/0/false/off/no` 关；其他值告警保持关 | 仿真启动（`resolveMultiRateEnabled`） |
+| `CIRCUIT_MULTIRATE` | 值解析：`""/0/false/off/no` 关；其他非空值（含未知值）开（`default: true`，不告警） | 仿真启动（`resolveMultiRateEnabled`） |
 | `TimeMNA.EnableMultiRate()` / `DisableMultiRate()` | 显式 Context 配置，优先于 env | 下次 `TransientSimulation` 启动 |
 
 ## 已知边界（C9 降级）

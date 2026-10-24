@@ -10,7 +10,7 @@
 |---|---|---|---|
 | `CIRCUIT_GMCONT` | **存在即真**（`=0` 也开启） | 每次仿真启动（`StrategyBinding`） | `load/load.go` → `element.EngineCfg.GminCont` |
 | `CIRCUIT_GLOBALGMIN` / `CIRCUIT_GMINFINAL` / `CIRCUIT_NATGMIN` | 数值解析（非正回退默认） | 每次仿真启动 | `load/load.go` → `EngineCfg` |
-| `CIRCUIT_MULTIRATE` | **值解析**：`1/true/on/yes` 开；`""/0/false/off/no` 关；其他值告警保持关 | 仿真启动（`resolveMultiRateEnabled`） | `element/time/multiRateEnv.go` |
+| `CIRCUIT_MULTIRATE` | **值解析**：`""/0/false/off/no` 关；其他非空值（含未知值）开（`default: true`，不告警） | 仿真启动（`resolveMultiRateEnabled`） | `element/time/multiRateEnv.go` |
 | `CIRCUIT_EXPTABLE` | **ParseBool**：`0/false` 关、非法值告警并保持原状态 | 进程内全局（`init`） | `element/semiconductor/expTable.go` |
 | `CIRCUIT_KLU_BTF` / `CIRCUIT_KLU_DROP` | `1/true` 开；`ParseFloat` 非负 | 每次 `NewLUSparse`（新建求解器） | `maths/kluOptions.go` |
 
@@ -20,6 +20,7 @@
 
 - `element/semiconductor/expTable.go`（`CIRCUIT_EXPTABLE`，进程级）
 - `element/time/multiRateEnv.go`（`CIRCUIT_MULTIRATE`）
+- `element/semiconductor/limiting.go`（`ITERATION_LIMIT_ENV`，既有迭代限制开关；登记为例外）
 - `element/time/engineConfig.go`（迁移过渡：只读 `EngineCfg`，不直接读 env；登记为例外）
 - `load/load.go`（`GMCONT`/`GLOBALGMIN`/`GMINFINAL`/`NATGMIN`/`LUSPARSE`/`LUSDENSE` 等 → `EngineCfg`）
 - `maths/kluOptions.go`（`KLU_BTF`/`KLU_DROP`）
