@@ -322,9 +322,9 @@ func TestCPU8v2SerialLoad(t *testing.T) {
 				runSteps, con.Time.CurrentTime(), con.Time.CurrentStep(), acc,
 				ram14Read(), sampled)
 		}
-		if time.Since(started) > 9*time.Minute {
-			t.Fatalf("CPU 运行超过 9 分钟墙钟（step=%d simT=%.6g Q=%02X RAM14=%02X 序列=%v）",
-				runSteps, con.Time.CurrentTime(), acc, ram14Read(), sampled)
+		if time.Since(started) > serialWall() {
+			t.Fatalf("CPU 运行超过墙钟上限 %s（step=%d simT=%.6g Q=%02X RAM14=%02X 序列=%v）",
+				serialWall(), runSteps, con.Time.CurrentTime(), acc, ram14Read(), sampled)
 		}
 		if cpu8v2AllSeen(seen) && ram14Read() == 0xF9 {
 			runSteps++
@@ -349,6 +349,17 @@ func TestCPU8v2SerialLoad(t *testing.T) {
 	}
 	t.Logf("ACC 序列: %v（期望含 %02X..）", sampled, cpu8v2WantAcc)
 	t.Logf("12B 加载 steps=%d（含 %d 字节帧）；CPU 运行 steps=%d；wall=%s", loadSteps, len(frame), runSteps, wall)
+}
+
+// serialWall 返回测试自身墙钟上限：默认 9 分钟；CIRCUIT_SERIAL_WALL 可覆盖（nightly 57 用 90m）。
+func serialWall() time.Duration {
+	d := 9 * time.Minute
+	if v := os.Getenv("CIRCUIT_SERIAL_WALL"); v != "" {
+		if parsed, err := time.ParseDuration(v); err == nil && parsed > 0 {
+			d = parsed
+		}
+	}
+	return d
 }
 
 // cpu8v2AllSeen 报告 54b 期望的 ACC 值是否全部出现过。
