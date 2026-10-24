@@ -151,15 +151,23 @@ func EquilibrateAndDecomposeSparse[T Number](luSolver LU[T], A Matrix[T]) (rowSc
 	}
 
 	// 构建缩放后的稀疏矩阵 A'[i][j] = rowScale[i]·A[i][j]·colScale[j]
-	scaledA := NewSparseMatrix[T](n, n)
+	// 直接追加 CSR（行内已有序），避免逐元素 Set → insertElement 搬移（1e5 实测 13s/步）。
+	sm := NewSparseMatrix[T](n, n).(*sparseMatrix[T])
+	var zero T
 	for i := 0; i < n; i++ {
 		cols, vals := A.GetRow(i)
 		rs := rowScale[i]
+		sm.rowPtr[i] = len(sm.colInd)
 		for idx, j := range cols {
-			scaledA.Set(i, j, scaleNum(vals.Get(idx), rs*colScale[j]))
+			v := scaleNum(vals.Get(idx), rs*colScale[j])
+			if v != zero {
+				sm.colInd = append(sm.colInd, j)
+				sm.DataManager.AppendInPlace(v)
+			}
 		}
 	}
+	sm.rowPtr[n] = len(sm.colInd)
 
-	err = luSolver.Decompose(scaledA)
+	err = luSolver.Decompose(sm)
 	return rowScale, colScale, err
 }
