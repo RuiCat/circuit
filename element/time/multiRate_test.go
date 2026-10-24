@@ -257,6 +257,41 @@ func TestMultiRateNoSlowElementIsNoop(t *testing.T) {
 	}
 }
 
+// TestMultiRatePlanNil 验证计划构建的 nil 路径：开关关闭、或开关打开但电路里没有
+// 倍率 >1 的元件时，newMultiRatePlan 必须返回 nil，调用方才会走原
+// CallMark/ParallelCallMark 路径。倍率 1 的实例不算慢组（与 MultiRateSteppable 契约一致）。
+func TestMultiRatePlanNil(t *testing.T) {
+	t.Setenv(multiRateEnvName, "")
+	if plan, err := newMultiRatePlan(multiRateLoad(t, 4), false); err != nil || plan != nil {
+		t.Fatalf("开关关闭时应返回 (nil,nil)：plan=%v err=%v", plan, err)
+	}
+
+	noSlow, err := load.LoadString(strategyTestNetlist)
+	if err != nil {
+		t.Fatalf("装载无慢元件网表失败: %v", err)
+	}
+	if plan, err := newMultiRatePlan(noSlow, true); err != nil || plan != nil {
+		t.Fatalf("无慢元件时应返回 (nil,nil)：plan=%v err=%v", plan, err)
+	}
+
+	if plan, err := newMultiRatePlan(multiRateLoad(t, 1), true); err != nil || plan != nil {
+		t.Fatalf("倍率 1 的实例不构成慢组，应返回 (nil,nil)：plan=%v err=%v", plan, err)
+	}
+
+	withSlow := multiRateLoad(t, 4)
+	plan, err := newMultiRatePlan(withSlow, true)
+	if err != nil {
+		t.Fatalf("构建多速率计划失败: %v", err)
+	}
+	if plan == nil {
+		t.Fatal("有慢元件时应构建计划，实际为 nil")
+	}
+	if plan.slow != 1 || len(plan.entries) != len(withSlow.Nodelist) {
+		t.Fatalf("计划内容不符：slow=%d entries=%d nodelist=%d",
+			plan.slow, len(plan.entries), len(withSlow.Nodelist))
+	}
+}
+
 // TestMultiRateParallelRejected 验证多速率与并行 DoStep 互斥（显式报错，不静默降级）。
 func TestMultiRateParallelRejected(t *testing.T) {
 	con := multiRateLoad(t, 4)

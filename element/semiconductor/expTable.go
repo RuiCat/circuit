@@ -1,9 +1,15 @@
 // expTable.go —— T4：器件指数求值的表驱动路径（分区查表 + 线性插值），默认关闭。
 //
-// 热点依据：Diode.go 的 safeExp 在每个牛顿迭代、每个 PN 结上至少调用 1 次（齐纳分支 2 次；
-// Transistor.go 每迭代 2 次），是全包唯一的超越函数热点。本文件提供 deviceExp 作为
-// 器件侧唯一入口：
-//   - 关闭（默认）：deviceExp == math.Exp(clampExpArg(x))，与改造前 safeExp 逐位一致；
+// 热点依据：PN 结的 e^(v/NVt) 在每个牛顿迭代、每个结上至少调用 1 次，是全包唯一的
+// 超越函数热点。接入面（deviceExp 是器件侧唯一入口）：
+//   - Diode.go 的 safeExp（Transistor.go 的两处调用同走它）；
+//   - led.go 的正向线性化与支路电流（原私有 ledSafeExp 已删除）；
+//   - zener.go 的正向与齐纳击穿双分支（原私有 zenerSafeExp 已删除）。
+//
+// 登记排除：limiting.go 的加性 gmin 限流因子 exp(-12·ln10·ratio) 不是器件 I-V，
+// 接入只会把插值误差带进限流步长且该路径默认关闭、无性能收益，故保留解析 math.Exp
+// （该行有排除注释，供 grep 核对）。
+//   - 关闭（默认）：deviceExp == math.Exp(clampExpArg(x))，与改造前各私有 safeExp 逐位一致；
 //   - 开启：x∈[-expTableMax, expTableMax] 在等距表上做线性插值，表外（含 ±Inf/NaN）
 //     回退解析路径——回退分支与关闭路径逐位相同，故只有表内区间引入插值误差。
 //

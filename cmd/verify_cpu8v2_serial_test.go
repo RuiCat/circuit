@@ -12,6 +12,7 @@
 package main_test
 
 import (
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strconv"
@@ -114,6 +115,33 @@ func cpu8v2ReadRamByte(con *element.Context, instance string, addr int) int {
 		}
 	}
 	return v
+}
+
+// cpu8v2FindMacroRam 按实例名后缀找宏 RAM（59 的 logic.RAM：X1.X2.RAM1 / X1.X5.RAM2）。
+func cpu8v2FindMacroRam(con *element.Context, suffix string) element.NodeFace {
+	for _, e := range con.Nodelist {
+		base := e.Base()
+		if base != nil && strings.HasSuffix(base.InstanceName, suffix) {
+			return base
+		}
+	}
+	return nil
+}
+
+// cpu8v2ReadMacroRamByte 从宏 RAM 的 mem_hex（槽 2）读第 addr 字节。
+func cpu8v2ReadMacroRamByte(node element.NodeFace, addr int) int {
+	if node == nil || addr < 0 {
+		return 0
+	}
+	mem := node.GetString(2)
+	if len(mem) < addr*2+2 {
+		return 0
+	}
+	b, err := hex.DecodeString(mem[addr*2 : addr*2+2])
+	if err != nil || len(b) != 1 {
+		return 0
+	}
+	return int(b[0])
 }
 
 // cpu8v2AdvanceUntil 推进适配器直到 done() 成立，返回推进步数；超预算或引擎报错即终止用例。
@@ -247,14 +275,27 @@ func TestCPU8v2SerialLoad(t *testing.T) {
 		t.Fatalf("加载完成后 LWE=%.3fV，期望 0（写使能不得保持高）", v)
 	}
 
+	iramRead := func(addr int) int {
+		if n := cpu8v2FindMacroRam(con, "RAM1"); n != nil {
+			return cpu8v2ReadMacroRamByte(n, addr)
+		}
+		return cpu8v2ReadRamByte(con, "X1.X2", addr)
+	}
+	ram14Read := func() int {
+		if n := cpu8v2FindMacroRam(con, "RAM2"); n != nil {
+			return cpu8v2ReadMacroRamByte(n, 14)
+		}
+		return cpu8v2ReadRamByte(con, "X1.X5", 14)
+	}
+
 	// ④ 程序确实被串口写入 iram（X1.X2= cpu8 的 iram16x8）：逐字节比对，未写地址保持 0。
 	for addr, want := range cpu8v2Program {
-		if got := cpu8v2ReadRamByte(con, "X1.X2", addr); got != want {
+		if got := iramRead(addr); got != want {
 			t.Errorf("iram[%d]=%02X，期望 %02X（串口加载未按字节写入）", addr, got, want)
 		}
 	}
 	for addr := len(cpu8v2Program); addr < 16; addr++ {
-		if got := cpu8v2ReadRamByte(con, "X1.X2", addr); got != 0 {
+		if got := iramRead(addr); got != 0 {
 			t.Errorf("iram[%d]=%02X，未加载地址应保持 0", addr, got)
 		}
 	}
@@ -274,18 +315,18 @@ func TestCPU8v2SerialLoad(t *testing.T) {
 			prev = acc
 			t.Logf("ACC 变化 step=%d simT=%.6g Q=%02X PC=%02X IR=%02X RAM14=%02X",
 				runSteps, con.Time.CurrentTime(), acc, cpu8v2ReadBus(con, "X1.PC"),
-				cpu8v2ReadBus(con, "X1.IRQ"), cpu8v2ReadRamByte(con, "X1.X5", 14))
+				cpu8v2ReadBus(con, "X1.IRQ"), ram14Read())
 		}
 		if runSteps%100 == 0 {
 			t.Logf("运行诊断 step=%d simT=%.6g dt=%.3g Q=%02X RAM14=%02X 序列=%v",
 				runSteps, con.Time.CurrentTime(), con.Time.CurrentStep(), acc,
-				cpu8v2ReadRamByte(con, "X1.X5", 14), sampled)
+				ram14Read(), sampled)
 		}
 		if time.Since(started) > 9*time.Minute {
 			t.Fatalf("CPU 运行超过 9 分钟墙钟（step=%d simT=%.6g Q=%02X RAM14=%02X 序列=%v）",
-				runSteps, con.Time.CurrentTime(), acc, cpu8v2ReadRamByte(con, "X1.X5", 14), sampled)
+				runSteps, con.Time.CurrentTime(), acc, ram14Read(), sampled)
 		}
-		if cpu8v2AllSeen(seen) && cpu8v2ReadRamByte(con, "X1.X5", 14) == 0xF9 {
+		if cpu8v2AllSeen(seen) && ram14Read() == 0xF9 {
 			runSteps++
 			break
 		}
@@ -298,7 +339,7 @@ func TestCPU8v2SerialLoad(t *testing.T) {
 			t.Errorf("ACC 未出现期望值 %02X（采样序列 %v）", want, sampled)
 		}
 	}
-	if got := cpu8v2ReadRamByte(con, "X1.X5", 14); got != 0xF9 {
+	if got := ram14Read(); got != 0xF9 {
 		t.Errorf("RAM[14]=%02X，期望 F9（与 54b 预置期望一致）", got)
 	}
 	if got := cpu8v2ReadBus(con, "Q"); got != 0xF9 {

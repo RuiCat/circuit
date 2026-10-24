@@ -1,5 +1,6 @@
 // 稳压管(Zener Diode)元件实现，基于Diode模型的齐纳击穿封装。
 // 默认Vz=5.1V，固定工作在反偏齐纳击穿模式，提供稳定的参考电压。
+// 指数求值统一走 deviceExp（见 expTable.go），与二极管共享 CIRCUIT_EXPTABLE 开关。
 package semiconductor
 
 import (
@@ -175,16 +176,6 @@ func (Zener) CalculateCurrent(mna mna.Mna, time mna.Time, value element.NodeFace
 	value.SetFloat64(15, current) // 记录支路电流供输出
 }
 
-func zenerSafeExp(x float64) float64 {
-	const maxExpArg = 700.0
-	if x > maxExpArg {
-		x = maxExpArg
-	} else if x < -maxExpArg {
-		x = -maxExpArg
-	}
-	return math.Exp(x)
-}
-
 func zenerLimitStep(vnew, vold float64, time mna.Time, value element.NodeFace) float64 {
 	vscale := value.GetFloat64(6)
 	if vscale == 0 {
@@ -260,15 +251,15 @@ func zenerDoStep(mna mna.Mna, time mna.Time, value element.NodeFace, voltdiff fl
 	gmin += extraGminForIterations(time.CurrentElemIter())
 
 	if voltdiff >= 0 || Vz == 0 {
-		eval := zenerSafeExp(voltdiff * vdcoef)
+		eval := deviceExp(voltdiff * vdcoef)
 		geq := vdcoef*leakage*eval + gmin
 		nc := (eval-1)*leakage - geq*voltdiff
 		mna.StampAdmittance(value.GetNodesInternal(0), value.GetNodes(1), geq)
 		mna.StampCurrentSource(value.GetNodesInternal(0), value.GetNodes(1), nc)
 	} else {
-		geq := leakage*(vdcoef*zenerSafeExp(voltdiff*vdcoef)+vzcoef*zenerSafeExp((-voltdiff-zoffset)*vzcoef)) + gmin
-		nc := leakage*(zenerSafeExp(voltdiff*vdcoef)-
-			zenerSafeExp((-voltdiff-zoffset)*vzcoef)-
+		geq := leakage*(vdcoef*deviceExp(voltdiff*vdcoef)+vzcoef*deviceExp((-voltdiff-zoffset)*vzcoef)) + gmin
+		nc := leakage*(deviceExp(voltdiff*vdcoef)-
+			deviceExp((-voltdiff-zoffset)*vzcoef)-
 			1) + geq*(-voltdiff)
 		mna.StampAdmittance(value.GetNodesInternal(0), value.GetNodes(1), geq)
 		mna.StampCurrentSource(value.GetNodesInternal(0), value.GetNodes(1), nc)
@@ -288,15 +279,15 @@ func zenerDoStepWeighted(mna mna.Mna, value element.NodeFace, voltdiff, weight f
 	}
 
 	if voltdiff >= 0 || Vz == 0 {
-		eval := zenerSafeExp(voltdiff * vdcoef)
+		eval := deviceExp(voltdiff * vdcoef)
 		geq := vdcoef*leakage*eval + gmin
 		nc := (eval-1)*leakage - geq*voltdiff
 		mna.StampAdmittance(value.GetNodesInternal(0), value.GetNodes(1), geq*weight)
 		mna.StampCurrentSource(value.GetNodesInternal(0), value.GetNodes(1), nc*weight)
 	} else {
-		geq := leakage*(vdcoef*zenerSafeExp(voltdiff*vdcoef)+vzcoef*zenerSafeExp((-voltdiff-zoffset)*vzcoef)) + gmin
-		nc := leakage*(zenerSafeExp(voltdiff*vdcoef)-
-			zenerSafeExp((-voltdiff-zoffset)*vzcoef)-
+		geq := leakage*(vdcoef*deviceExp(voltdiff*vdcoef)+vzcoef*deviceExp((-voltdiff-zoffset)*vzcoef)) + gmin
+		nc := leakage*(deviceExp(voltdiff*vdcoef)-
+			deviceExp((-voltdiff-zoffset)*vzcoef)-
 			1) + geq*(-voltdiff)
 		mna.StampAdmittance(value.GetNodesInternal(0), value.GetNodes(1), geq*weight)
 		mna.StampCurrentSource(value.GetNodesInternal(0), value.GetNodes(1), nc*weight)
@@ -311,9 +302,9 @@ func zenerCalculateCurrent(voltdiff float64, value element.NodeFace) float64 {
 	Vz := value.GetFloat64(1)
 
 	if voltdiff >= 0 || Vz == 0 {
-		return leakage * (zenerSafeExp(voltdiff*vdcoef) - 1)
+		return leakage * (deviceExp(voltdiff*vdcoef) - 1)
 	}
-	return leakage * (zenerSafeExp(voltdiff*vdcoef) -
-		zenerSafeExp((-voltdiff-zoffset)*vzcoef) -
+	return leakage * (deviceExp(voltdiff*vdcoef) -
+		deviceExp((-voltdiff-zoffset)*vzcoef) -
 		1)
 }

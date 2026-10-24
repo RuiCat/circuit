@@ -15,8 +15,8 @@ import (
 const multiRateEnvName = "CIRCUIT_MULTIRATE"
 
 // multiRateEnabledFromEnv 读取 CIRCUIT_MULTIRATE 开关。
-// 非空且不是 0/false/off/no 时启用；未设置或解析为关闭时返回 false（默认关闭）。
-// 解析失败按项目既有约定回退默认值（关闭），不中断仿真。
+// 非空且不是 0/false/off/no 时启用；未设置或显式关闭时返回 false（默认关闭）。
+// 未知取值按"非空即开"处理（与 load 包 env 布尔约定一致，见 C8 白名单），不中断仿真。
 func multiRateEnabledFromEnv() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(multiRateEnvName))) {
 	case "", "0", "false", "off", "no":

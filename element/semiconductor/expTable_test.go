@@ -120,6 +120,48 @@ func TestExpTableSwitchAndEnv(t *testing.T) {
 	}
 }
 
+// TestExpTableLedZenerShareDeviceExp 钉住任务 1：LED / Zener 的私有 clamp+math.Exp
+// 已删除、统一走 deviceExp。判据两半：
+//   - 关闭时与解析算式逐位一致（默认行为不变）；
+//   - 开启时结果必须与解析值不同（证明真的走了查表插值，而非残留 math.Exp），
+//     且相对误差 < 1e-5。
+func TestExpTableLedZenerShareDeviceExp(t *testing.T) {
+	defer SetExpTableEnabled(false)
+	const vdcoef = 38.66
+	// vd=0.35 ⇒ 参数 x≈13.53，落在 LED/Zener 典型导通区；先确认它不在 1/256 表节点上，
+	// 否则插值恰好等于解析值，无法区分"查表"与"解析"。
+	// vd 用变量而非无类型常量：保证 arg 与器件内 voltdiff*vdcoef 同一运算顺序与舍入。
+	vd := 0.35
+	arg := vd * vdcoef
+	if pos := (arg + expTableMax) * expTableScale; pos == math.Trunc(pos) {
+		t.Fatalf("测试参数 %v 恰落在表节点上，无法区分查表与解析", arg)
+	}
+	node := diodeHarnessNode()
+	node.SetFloat64(7, vdcoef) // 1/(N·Vt)
+	want := node.GetFloat64(13) * (expAnalytic(arg) - 1)
+
+	for _, c := range []struct {
+		name string
+		fn   func(float64, element.NodeFace) float64
+	}{
+		{"LED", ledCalculateCurrent},
+		{"Zener", zenerCalculateCurrent},
+	} {
+		SetExpTableEnabled(false)
+		if off := c.fn(vd, node); math.Float64bits(off) != math.Float64bits(want) {
+			t.Errorf("%s 关闭表驱动时 = %v，期望解析值 %v（位模式不同）", c.name, off, want)
+		}
+		SetExpTableEnabled(true)
+		on := c.fn(vd, node)
+		if math.Float64bits(on) == math.Float64bits(want) {
+			t.Errorf("%s 开启表驱动后与解析值逐位相同：该路径未走 deviceExp", c.name)
+		}
+		if rel := math.Abs(on-want) / math.Abs(want); !(rel < 1e-5) {
+			t.Errorf("%s 开启表驱动相对误差 %g 超过阈值 1e-5", c.name, rel)
+		}
+	}
+}
+
 // BenchmarkDeviceExp 对比单次指数求值：解析 math.Exp vs 查表插值。
 func BenchmarkDeviceExp(b *testing.B) {
 	xs := benchExpArgs()

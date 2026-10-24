@@ -1,5 +1,6 @@
 // 发光二极管(LED)元件实现，基于Diode模型的低电流变体。
 // 典型参数: Is=1e-18A, N=1.5, Rs=5Ω, Vf≈2.0V(参考)。
+// 指数求值统一走 deviceExp（见 expTable.go），与二极管共享 CIRCUIT_EXPTABLE 开关。
 package semiconductor
 
 import (
@@ -131,16 +132,6 @@ func (LED) CalculateCurrent(mna mna.Mna, time mna.Time, value element.NodeFace) 
 	value.SetFloat64(16, current) // 记录支路电流供输出
 }
 
-func ledSafeExp(x float64) float64 {
-	const maxExpArg = 700.0
-	if x > maxExpArg {
-		x = maxExpArg
-	} else if x < -maxExpArg {
-		x = -maxExpArg
-	}
-	return math.Exp(x)
-}
-
 func ledLimitStep(vnew, vold float64, time mna.Time, value element.NodeFace) float64 {
 	vscale := value.GetFloat64(6)
 	if vscale == 0 {
@@ -182,7 +173,9 @@ func ledDoStep(mna mna.Mna, time mna.Time, value element.NodeFace, voltdiff floa
 	// 恒被钳到 1e-6、每个 PN 结长期并联 ~1MΩ。语义与算式已抽到 extraGminForIterations。
 	gmin += extraGminForIterations(time.CurrentElemIter())
 
-	eval := ledSafeExp(voltdiff * vdcoef)
+	// 指数统一走 deviceExp（见 expTable.go）：默认解析、CIRCUIT_EXPTABLE=1 时查表；
+	// 原私有 ledSafeExp（clamp + math.Exp）已删除，避免第三份分叉副本。
+	eval := deviceExp(voltdiff * vdcoef)
 	geq := vdcoef*leakage*eval + gmin
 	nc := (eval-1)*leakage - geq*voltdiff
 	mna.StampAdmittance(value.GetNodesInternal(0), value.GetNodes(1), geq)
@@ -192,5 +185,5 @@ func ledDoStep(mna mna.Mna, time mna.Time, value element.NodeFace, voltdiff floa
 func ledCalculateCurrent(voltdiff float64, value element.NodeFace) float64 {
 	leakage := value.GetFloat64(13)
 	vdcoef := value.GetFloat64(7)
-	return leakage * (ledSafeExp(voltdiff*vdcoef) - 1)
+	return leakage * (deviceExp(voltdiff*vdcoef) - 1)
 }

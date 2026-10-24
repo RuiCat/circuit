@@ -147,12 +147,12 @@ func TestCPU8v3MacroNetlist(t *testing.T) {
 		t.Errorf("60 的 RAM 内容与 55 不一致（60=%s 55=%s）", run60.ramHex, run55.ramHex)
 	}
 
-	// 规模对比：60 节点数须明显低于 55（要求 <75%）。
+	// 规模对比：60 节点降幅 ≥30%（nodes*10 <= 55.nodes*7）。
 	t.Logf("对比：55 元件=%d 节点=%d；60 元件=%d 节点=%d（节点降低 %.1f%%）",
 		run55.elems, run55.nodes, run60.elems, run60.nodes,
 		100*float64(run55.nodes-run60.nodes)/float64(run55.nodes))
-	if run60.nodes*4 >= run55.nodes*3 {
-		t.Errorf("60 节点数未明显低于 55: 60=%d 55=%d（要求 <75%%）", run60.nodes, run55.nodes)
+	if run60.nodes*10 > run55.nodes*7 {
+		t.Errorf("60 节点降幅不足 30%%: 60=%d 55=%d（要求 nodes*10 <= 55.nodes*7）", run60.nodes, run55.nodes)
 	}
 	if run60.elems >= run55.elems {
 		t.Errorf("60 元件数未低于 55: 60=%d 55=%d", run60.elems, run55.elems)

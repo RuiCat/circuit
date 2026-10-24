@@ -152,6 +152,9 @@ func extraGminForIterations(iterations int) float64 {
 	}
 	extraGminActivations.Add(1)
 	ratio := 1.0 - math.Min(float64(iterations)/1000.0, 1.0)
+	// T4 表驱动登记排除项：这里的指数是迭代限流因子（收敛辅助），不是器件 I-V 的
+	// e^(v/NVt)；接入 deviceExp 会把 ~1.9e-6 的插值误差带进限流步长，而该路径默认
+	// 关闭、无性能收益。故保留解析 math.Exp（全包仅此一处排除，见 expTable.go 顶部）。
 	extraGmin := math.Exp(-12 * math.Ln10 * ratio)
 	if extraGmin < 1e-15 {
 		return 0
