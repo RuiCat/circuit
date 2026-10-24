@@ -272,15 +272,23 @@ func (lu *kluSparse[T]) applyPivot(k, maxRow int) {
 	for j := 0; j < k; j++ {
 		hasK := ls.hasSlot(k, j)
 		hasR := ls.hasSlot(maxRow, j)
-		vK := ls.Get(k, j)
-		vR := ls.Get(maxRow, j)
-		ls.deleteSlot(k, j)
-		ls.deleteSlot(maxRow, j)
-		if hasR {
-			ls.Set(k, j, vR)
+		if !hasK && !hasR {
+			continue
 		}
-		if hasK {
+		if hasK && hasR {
+			// 两边都有槽位：只交换值，不删/插（避免 4 次搬移）。
+			vK, vR := ls.Get(k, j), ls.Get(maxRow, j)
+			ls.Set(k, j, vR)
 			ls.Set(maxRow, j, vK)
+			continue
+		}
+		v := ls.Get(k, j) + ls.Get(maxRow, j)
+		if hasR {
+			ls.deleteSlot(maxRow, j)
+			ls.Set(k, j, v)
+		} else {
+			ls.deleteSlot(k, j)
+			ls.Set(maxRow, j, v)
 		}
 	}
 	lu.P[k], lu.P[maxRow] = lu.P[maxRow], lu.P[k]
