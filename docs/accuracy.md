@@ -24,6 +24,12 @@ bash scripts/benchAccuracy/run.sh --selfcheck
 命令：`bash scripts/benchAccuracy/compare.sh`（任一 rel>1e-3 时 exit 1）。
 结论：DC 线性一致；**瞬态（RC/RLC）与 ngspice 差 0.3–0.5%，未达 1e-3**——积分器/误差控制/初值处理存在差异，需后续对齐（C3 降级，见 40-plan）。
 
+## 瞬态误差根因实验（2026-10-24，RC）
+
+- 容差/步长：`--min-step 1e-12 --max-step 1e-9` 下，`--rel-tol` 1e-3/1e-4/1e-5、`--abs-tol` 1e-12/1e-6/1e-9 的末值**均为 0.4780739（不变）**；ngspice 为 0.4758129。
+- 解析解 5(1-e^-0.1)=0.475813（ngspice 与解析解一致，circuit 偏高 0.47%）。
+- 结论：0.47% 偏差来自**积分器/局部截断误差控制**（非步长/容差），需升级积分器（TRAP/GEAR）或与 ngspice 对齐；C3 保持降级。
+
 ## 已知边界（本轮最小闭环）
 
 - 语料 10 条（不是 ≥20）；误差对比循环与 golden 输出冻结留待 m5 前补齐。
