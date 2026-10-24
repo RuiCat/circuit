@@ -177,10 +177,12 @@ func (m *kluMatrix[T]) swapRowPrefix(r1, r2, limit int) {
 	n2v = append(n2v, v2[p2:]...)
 	m.rowCols[r1], m.rowVals[r1] = n1c, n1v
 	m.rowCols[r2], m.rowVals[r2] = n2c, n2v
-	for _, c := range n1c {
+	// 只有前缀列的行号发生变化（后缀列保持原行），按前缀逐列更新反向索引，
+	// 避免对整行每列做 findCol + memmove。
+	for _, c := range c2[:p2] {
 		m.replaceColRow(c, r2, r1)
 	}
-	for _, c := range n2c {
+	for _, c := range c1[:p1] {
 		m.replaceColRow(c, r1, r2)
 	}
 }
