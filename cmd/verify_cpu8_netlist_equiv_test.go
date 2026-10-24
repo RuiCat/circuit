@@ -22,8 +22,14 @@ func TestCPU8NetlistEquivalence(t *testing.T) {
 	nl59 := readNetlist(t, "59_cpu8v2_serial_macro.net")
 	nl60 := readNetlist(t, "60_cpu8v3_macro.net")
 
-	wantIram := iramHex(t, nl54b)
-	wantRam := ramHex(t, nl54b)
+	wantIram, okIram := load.IramHex(nl54b)
+	if !okIram {
+		t.Fatalf("从 54b 提取 iRAM 预置失败")
+	}
+	wantRam, okRam := load.RamHex(nl54b)
+	if !okRam {
+		t.Fatalf("从 54b 提取数据 RAM 预置失败")
+	}
 	if !strings.Contains(nl58, `[16,"`+wantIram+`"]`) {
 		t.Errorf("58 的 iRAM 预置不等于 54b 的 sram8_pi0..pi10：%s", wantIram)
 	}

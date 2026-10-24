@@ -15,82 +15,6 @@ import (
 	"circuit/mna"
 )
 
-// subcktRange 返回 .subckt name ... 到下一个 .ends 行的 [start,end) 范围。
-// 用「下一个 .ends」而非精确名字匹配：网表里部分子电路的 .ends 带参数化名字
-// （如 sram8_p{addr}），精确匹配会找不到。
-func subcktRange(t *testing.T, nl, name string) (int, int) {
-	t.Helper()
-	start := strings.Index(nl, ".subckt "+name+" ")
-	if start < 0 {
-		t.Fatalf("找不到 .subckt %s", name)
-	}
-	rel := strings.Index(nl[start:], "\n.ends ")
-	if rel < 0 {
-		t.Fatalf("找不到 %s 的 .ends", name)
-	}
-	endStart := start + rel + 1
-	if lineEnd := strings.Index(nl[endStart:], "\n"); lineEnd >= 0 {
-		return start, endStart + lineEnd
-	}
-	return start, len(nl)
-}
-
-// replaceSubckt 把网表中的 .subckt name ... .ends 整段替换为 repl。
-func replaceSubckt(t *testing.T, nl, name, repl string) string {
-	t.Helper()
-	start, end := subcktRange(t, nl, name)
-	return nl[:start] + repl + nl[end:]
-}
-
-// subcktSegment 返回 .subckt name ... .ends 的文本。
-func subcktSegment(t *testing.T, nl, name string) string {
-	t.Helper()
-	start, end := subcktRange(t, nl, name)
-	return nl[start:end]
-}
-
-// presetByte 从 sram8_pX 子电路的 SR1..SR8 初始状态提取字节（bit0..bit7）。
-func presetByte(t *testing.T, nl, name string) byte {
-	t.Helper()
-	seg := subcktSegment(t, nl, name)
-	var b byte
-	for bit := 0; bit < 8; bit++ {
-		marker := fmt.Sprintf("SR%d [", bit+1)
-		idx := strings.Index(seg, marker)
-		if idx < 0 {
-			t.Fatalf("%s 缺 %s", name, marker)
-		}
-		line := seg[idx:]
-		if nl := strings.IndexByte(line, '\n'); nl >= 0 {
-			line = line[:nl]
-		}
-		if strings.Contains(line, "true") {
-			b |= 1 << bit
-		}
-	}
-	return b
-}
-
-// iramHex 从 sram8_pi0..pi10 提取 16 字节程序（其余地址为 0）。
-func iramHex(t *testing.T, nl string) string {
-	t.Helper()
-	buf := make([]byte, 16)
-	for addr := 0; addr < 11; addr++ {
-		buf[addr] = presetByte(t, nl, fmt.Sprintf("sram8_pi%d", addr))
-	}
-	return hex.EncodeToString(buf)
-}
-
-// ramHex 从 sram8_p8..p13 提取 16 字节数据（RAM[8..13]）。
-func ramHex(t *testing.T, nl string) string {
-	t.Helper()
-	buf := make([]byte, 16)
-	for addr := 8; addr <= 13; addr++ {
-		buf[addr] = presetByte(t, nl, fmt.Sprintf("sram8_p%d", addr))
-	}
-	return hex.EncodeToString(buf)
-}
-
 // TestCPU8MacroModel 用 RAM 行为模型替换 54b 的 iram16x8/ram16x8，跑 24ms 验证行为。
 func TestCPU8MacroModel(t *testing.T) {
 	t.Setenv("CIRCUIT_LUSPARSE", "1")
@@ -98,8 +22,14 @@ func TestCPU8MacroModel(t *testing.T) {
 	t.Setenv("CIRCUIT_GMINFINAL", "1e-5")
 	t.Setenv("CIRCUIT_GLOBALGMIN", "1e-3")
 	nl := readNetlist(t, "54b_cpu8_preloaded.net")
-	prog := iramHex(t, nl)
-	data := ramHex(t, nl)
+	prog, okIram := load.IramHex(nl)
+	if !okIram {
+		t.Fatalf("从 54b 提取 iRAM 预置失败")
+	}
+	data, okRam := load.RamHex(nl)
+	if !okRam {
+		t.Fatalf("从 54b 提取数据 RAM 预置失败")
+	}
 	t.Logf("宏模型预置：iram=%s ram=%s", prog, data)
 
 	iram := fmt.Sprintf(`.subckt iram16x8 A[0:3] RW D[0:7] Q[0:7]
@@ -108,8 +38,14 @@ RAM1 [A0,A1,A2,A3,-1,-1,-1,-1,D0,D1,D2,D3,D4,D5,D6,D7,RW,Q0,Q1,Q2,Q3,Q4,Q5,Q6,Q7
 	ram := fmt.Sprintf(`.subckt ram16x8 A[0:3] RW D[0:7] Q[0:7]
 RAM2 [A0,A1,A2,A3,-1,-1,-1,-1,D0,D1,D2,D3,D4,D5,D6,D7,RW,Q0,Q1,Q2,Q3,Q4,Q5,Q6,Q7] [16,"%s"]
 .ends ram16x8`, data)
-	nl = replaceSubckt(t, nl, "iram16x8", iram)
-	nl = replaceSubckt(t, nl, "ram16x8", ram)
+	nl, okIram = load.ReplaceSubckt(nl, "iram16x8", iram)
+	if !okIram {
+		t.Fatalf("替换 iram16x8 失败")
+	}
+	nl, okRam = load.ReplaceSubckt(nl, "ram16x8", ram)
+	if !okRam {
+		t.Fatalf("替换 ram16x8 失败")
+	}
 
 	con, err := load.LoadString(nl)
 	if err != nil {
