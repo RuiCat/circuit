@@ -7,6 +7,8 @@ export GOCACHE="${GOCACHE:-$PWD/.cache/go-build}"
 export GOPATH="${GOPATH:-$PWD/.cache/gopath}"
 export GOMODCACHE="${GOMODCACHE:-$PWD/.cache/go-mod}"
 
+test -s runs/engine-intelligence/thresholds.md || { echo "FAIL: thresholds.md 缺失/为空（40-plan §2 契约）" >&2; exit 1; }
+
 count="${BENCH_COUNT:-1}"
 
 echo "=== KLU（1e4 Poisson / 1e4 MNA / SolveReuse）==="
