@@ -7,6 +7,33 @@ import (
 	"testing"
 )
 
+// TestAutoSynthMacro 验证自动识别地址范围得到的宏段与手动规则一致。
+func TestAutoSynthMacro(t *testing.T) {
+	data, err := os.ReadFile("../cmd/circuits/54b_cpu8_preloaded.net")
+	if err != nil {
+		t.Fatalf("读取 54b 网表失败: %v", err)
+	}
+	nl := string(data)
+	auto, ok := AutoSynthMacro(nl)
+	if !ok {
+		t.Fatalf("AutoSynthMacro 失败")
+	}
+	manual, ok := SynthMacroSubckt(nl, "iram16x8", "RAM1", "pi", 0, 11)
+	if !ok {
+		t.Fatalf("手动合成 iram16x8 失败")
+	}
+	manual, ok = SynthMacroSubckt(manual, "ram16x8", "RAM2", "p", 8, 6)
+	if !ok {
+		t.Fatalf("手动合成 ram16x8 失败")
+	}
+	if auto != manual {
+		t.Errorf("自动合成与手动规则不一致")
+	}
+	if got := CollectSramAddrs(".subckt x\nX2 [a] sram8_pi0\nX3 [b] sram8_pi5", "pi"); len(got) != 2 || got[0] != 0 || got[1] != 5 {
+		t.Errorf("CollectSramAddrs=%v，期望 [0 5]", got)
+	}
+}
+
 // TestSynthMacroSubckt 验证 iram16x8/ram16x8 合成出与预置一致的宏 RAM 段。
 func TestSynthMacroSubckt(t *testing.T) {
 	data, err := os.ReadFile("../cmd/circuits/54b_cpu8_preloaded.net")
