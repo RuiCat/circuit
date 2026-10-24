@@ -17,6 +17,8 @@ if [ ! -s "$GEN" ]; then
     for i in $(seq 2 "$N"); do
       echo "R$i [$((i - 1)),$i] [1000]"
     done
+    # 末端接地：链式电阻末端若无接地路径，MNA 对悬空节点奇异（t=0 不收敛）。
+    echo "R$((N + 1)) [$N,-1] [1000]"
   } >"$GEN"
 fi
 export CIRCUIT_MAX_NODES=$((N + 10))
