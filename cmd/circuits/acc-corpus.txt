@@ -1,0 +1,13 @@
+# acc-corpus.txt：V1 精度基准语料（m1，C4）
+# 每行 <网表路径>\t<参考器与 circuit 共用的运行参数>；后续轮次补到 ≥20 条并冻结 sha256。
+# 当前最小闭环 10 条（01-10），覆盖 RC/二极管/晶体管/逻辑门/子电路。
+cmd/circuits/01_resistor_divider.net	-t 1e-4
+cmd/circuits/02_rc_filter.net	-t 1e-4
+cmd/circuits/03_diode_rectifier.net	-t 1e-4
+cmd/circuits/04_transistor_switch.net	-t 1e-4
+cmd/circuits/05_opamp_amplifier.net	-t 1e-4
+cmd/circuits/06_voltage_sources.net	-t 1e-4
+cmd/circuits/07_rlc_circuit.net	-t 1e-4
+cmd/circuits/08_subcircuit.net	-t 1e-4
+cmd/circuits/09_half_adder.net	-t 1e-4
+cmd/circuits/10_latch_self_hold.net	-t 1e-4

@@ -1,0 +1,9 @@
+ngspice reference binary (vendored)
+
+- 名称: ngspice
+- 版本: ngspice-47（本机 /usr/bin/ngspice 复制）
+- 来源: 系统安装的 ngspice（非 dpkg 记录），2026-10-24 复制入仓
+- 许可证: ngspice 采用 GPL-3.0（上游：https://ngspice.sourceforge.io/）
+- 完整性: 见同目录 SHA256SUMS；scripts/benchAccuracy/run.sh --selfcheck 会校验
+- 说明: 本机 /usr/share/doc 无 ngspice copyright 文件；许可证文本以上游 GPL-3.0 为准，
+  分发/再分发需遵守 GPL-3.0。若需重新获取，请用发行版官方包或上游源码构建后替换并更新 SHA256SUMS。
